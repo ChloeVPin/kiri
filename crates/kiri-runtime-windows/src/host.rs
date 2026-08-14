@@ -435,7 +435,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         );
         if is_app {
             if let Some(rt) = unsafe { get_runtime(hwnd) } {
-                rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+                // First signal wins: when delivery is prompt this is the real
+                // navigation completion (before dom); when the event lags the
+                // dom message, the fallback in handle_web_message already
+                // recorded at dom time, which is closer to the true value
+                // than the late delivery timestamp.
+                if !rt.markers.has(Marker::WebViewReady) {
+                    rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+                }
             } else {
                 eprintln!("[kiri] NavigationCompleted: runtime missing");
             }
