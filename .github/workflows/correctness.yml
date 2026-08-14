@@ -42,8 +42,13 @@ jobs:
         name: Native smoke run (wry/tao backend)
         run: |
           MARKERS=/tmp/kiri-startup.json
-          export LIBGL_ALWAYS_SOFTWARE=1
           if [ "$RUNNER_OS" = "Linux" ]; then
+            # WebKitGTK's DMABUF renderer and GPU process hang under a virtual
+            # framebuffer; disable them and force software GL so the WebView
+            # compositor can render headlessly.
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GALLIUM_DRIVER=llvmpipe
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
             xvfb-run -a ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
           else
             ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
@@ -52,8 +57,10 @@ jobs:
       - if: runner.os != 'Windows'
         name: Native stress run (wry/tao backend)
         run: |
-          export LIBGL_ALWAYS_SOFTWARE=1
           if [ "$RUNNER_OS" = "Linux" ]; then
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GALLIUM_DRIVER=llvmpipe
+            export WEBKIT_DISABLE_DMABUF_RENDERER=1
             xvfb-run -a ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
           else
             ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
