@@ -49,7 +49,10 @@ jobs:
             export LIBGL_ALWAYS_SOFTWARE=1
             export GALLIUM_DRIVER=llvmpipe
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
-            xvfb-run -a ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
+            # Belt-and-suspenders: never let a headless WebView wedged state
+            # burn the full job timeout. The runtime also has an
+            # event-loop-independent watchdog, but this caps the wall time.
+            timeout 180s xvfb-run -a ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
           else
             ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
           fi
@@ -61,7 +64,7 @@ jobs:
             export LIBGL_ALWAYS_SOFTWARE=1
             export GALLIUM_DRIVER=llvmpipe
             export WEBKIT_DISABLE_DMABUF_RENDERER=1
-            xvfb-run -a ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
+            timeout 180s xvfb-run -a ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
           else
             ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
           fi
