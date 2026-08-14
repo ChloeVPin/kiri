@@ -22,9 +22,9 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerformanceFrequency};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
-    GetWindowLongPtrW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowLongPtrW, ShowWindow,
-    TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, MSG, SW_SHOW, WM_CLOSE,
-    WM_DESTROY, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    GetWindowLongPtrW, PeekMessageW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowLongPtrW,
+    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, MSG,
+    PM_REMOVE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
 use kiri_core::error::Error as KiriError;
@@ -161,11 +161,8 @@ unsafe extern "system" fn wnd_proc(
 ) -> LRESULT {
     match msg {
         WM_CLOSE => {
-            // Release the runtime pointer; the WebView2 controller is closed
-            // during teardown after the message loop ends.
-            unsafe {
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            }
+            // The runtime stays alive until teardown after the message loop
+            // ends; destroying the window posts WM_QUIT via WM_DESTROY.
             let _ = DestroyWindow(hwnd);
             LRESULT(0)
         }
@@ -481,7 +478,10 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         let _ =
             unsafe { SetTimer(Some(hwnd), WATCHDOG_TIMER_ID, runtime.options.watchdog_ms, None) };
     }
-    SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(runtime) as isize);
+    // The runtime pointer is owned by this function; it must not be read
+    // back from the window after WM_CLOSE destroyed it.
+    let runtime_ptr = Box::into_raw(runtime);
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, runtime_ptr as isize);
 
     // ---- navigate to the local application origin ----
     let url = format!("https://{VIRTUAL_HOST_NAME}/{FRONTEND_PAGE}");
@@ -504,13 +504,22 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     }
 
     // ---- teardown (docs/03 shutdown sequence) ----
-    let exit_code = if let Some(rt) = unsafe { get_runtime(hwnd) } { rt.exit_code } else { 0 };
-    let rt = unsafe { Box::from_raw(GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut HostRuntime) };
+    let exit_code = unsafe { (*runtime_ptr).exit_code };
+    let rt = unsafe { Box::from_raw(runtime_ptr) };
     let _ = rt.webview.remove_WebMessageReceived(rt.webview_token);
     let _ = rt.webview.remove_NavigationCompleted(rt.navigation_token);
     let _ = rt.controller.Close();
     let markers_out = rt.markers;
     let _ = rt.env; // explicit drop before CoUninitialize
+                    // Destroy the hosting window; in smoke mode the loop exits on WM_QUIT
+                    // from the smoke timer, never via WM_CLOSE, so the window must be torn
+                    // down here. WM_DESTROY posts WM_QUIT.
+    let _ = DestroyWindow(hwnd);
+    // Drain posted messages (WM_QUIT, WebView2 controller-close completion)
+    // so an in-process next cycle starts with a clean queue; a stale WM_QUIT
+    // makes the next wait_with_pump return TaskCanceled.
+    let mut drained = MSG::default();
+    while unsafe { PeekMessageW(&mut drained, None, 0, 0, PM_REMOVE).as_bool() } {}
 
     if exit_code != 0 {
         return Err(format!("host exited with code {exit_code}"));
