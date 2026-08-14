@@ -25,8 +25,8 @@ use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use kiri_core::caller::CallerRegistry;
-use kiri_core::capabilities::CapabilityBits;
 use kiri_core::dispatch::Router;
+use kiri_core::security::{is_app_origin, is_navigation_allowed};
 use kiri_core::trace::NoopTraceSink;
 use kiri_core::wire::{WireRequest, WireResponse};
 
@@ -149,8 +149,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     // capability so control commands can run from the trusted frontend.
     let mut registry = CallerRegistry::new();
     let caller = registry.register();
-    let mut caller_caps = CapabilityBits::empty();
-    caller_caps.set(kiri_core::dispatch::capability_bit::PING);
+    let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let router = Router::new();
 
     let smoke = options.smoke;
@@ -171,6 +170,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     .unwrap()
             }
         })
+        .with_navigation_handler(|url| is_navigation_allowed(&url))
         .with_url("kiri://localhost/index.html")
         .with_initialization_script(BRIDGE_SCRIPT)
         .with_on_page_load_handler({
@@ -186,6 +186,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let router = router.clone();
             let webview_slot = webview_slot.clone();
             move |msg| {
+                // Origin check: wry builds the IPC Request from the calling
+                // frame's document URL (uri), with no Origin header. We judge
+                // the request URI instead. Only messages whose document URL is
+                // the application origin are handled; a remote page or subframe
+                // is rejected as defense in depth, mirroring the Windows
+                // is_app_origin_url gate in handle_web_message.
+                let doc_url = msg.uri().to_string();
+                if !is_app_origin(&doc_url) {
+                    return;
+                }
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(msg.body()) else {
                     return;
                 };

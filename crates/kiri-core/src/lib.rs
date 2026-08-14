@@ -15,6 +15,7 @@ pub mod header;
 pub mod latency;
 pub mod limits;
 pub mod resources;
+pub mod security;
 pub mod trace;
 pub mod validate;
 pub mod wire;
@@ -27,6 +28,10 @@ pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
 pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
 pub use resources::{ResourceId, ResourceTable};
+pub use security::{
+    is_app_origin, is_navigation_allowed, trusted_frontend_capabilities, CROSS_APP_ORIGIN,
+    WINDOWS_APP_ORIGIN,
+};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use wire::{WireRequest, WireResponse};
 

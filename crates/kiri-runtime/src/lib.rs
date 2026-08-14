@@ -210,6 +210,18 @@ mod control_plane_tests {
     }
 
     #[test]
+    fn bridge_rejects_non_app_origin_message() {
+        // The cross backend gates every IPC message on the calling document
+        // URL (T004): only the application origin may drive the control plane.
+        // A message whose document URL is a remote origin must never reach
+        // dispatch, so it cannot be turned into a pong.
+        assert!(!kiri_core::security::is_app_origin("https://evil.example.com/page"));
+        assert!(!kiri_core::security::is_app_origin("null"));
+        // The local application document URL is the only trusted origin.
+        assert!(kiri_core::security::is_app_origin("kiri://localhost/index.html"));
+    }
+
+    #[test]
     fn bridge_malformed_message_rejected() {
         let mut request = kiri_core::dispatch::ping_request(3, json!(null));
         request.magic = *b"BAD!";
