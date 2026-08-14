@@ -7,12 +7,13 @@
 //! to fire.
 //!
 //! Bindings: `webview2-com` 0.39.1 (Windows-first verification date
-//! 2026-08-13) + `windows` 0.62. The bindings crate vendors
-//! WebView2Loader.dll; `build.rs` copies it next to the produced binary.
+//! 2026-08-13) + `windows` 0.62. On MSVC, webview2-com-sys links the
+//! WebView2LoaderStatic archive, so no WebView2Loader.dll copy is needed
+//! (see docs/DECISIONS.md D-002).
 
 #![cfg(target_os = "windows")]
 
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 use windows::core::{Interface, PCWSTR};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
@@ -90,6 +91,29 @@ pub(crate) fn qpc_now_ns() -> u64 {
     let freq = freq.max(1) as u128;
     let counter = counter.max(0) as u128;
     (counter * 1_000_000_000 / freq) as u64
+}
+
+/// Resolve a (possibly relative) directory to a lexical absolute path without
+/// touching the filesystem. WebView2's `SetVirtualHostNameToFolderMapping`
+/// requires an absolute folder path; `std::fs::canonicalize` would be fine
+/// too but returns `\\?\`-prefixed paths on Windows.
+fn absolute_lexical(path: &Path) -> PathBuf {
+    let joined = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().map(|cwd| cwd.join(path)).unwrap_or_else(|_| path.to_path_buf())
+    };
+    let mut out = PathBuf::new();
+    for component in joined.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Per-run state stored behind the window's GWLP_USERDATA. Single-threaded by
@@ -359,6 +383,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         .map_err(|e| format!("cast to ICoreWebView2_3: {e}"))?;
     let host_name = windows::core::HSTRING::from(VIRTUAL_HOST_NAME);
     let frontend_dir = options.frontend_dir.as_ref().ok_or("frontend_dir is required")?;
+    let frontend_dir = absolute_lexical(frontend_dir);
     if !frontend_dir.is_dir() {
         return Err(format!("frontend directory does not exist: {}", frontend_dir.display()));
     }
