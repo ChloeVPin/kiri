@@ -249,7 +249,13 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         ..Default::default()
     };
     if RegisterClassW(&window_class) == 0 {
-        return Err("RegisterClassW failed".into());
+        let last_error = windows::Win32::Foundation::GetLastError();
+        // The class survives for the lifetime of the process; in-process
+        // cycles (kiri-host-stress) hit ERROR_CLASS_ALREADY_EXISTS, which is
+        // not an error for us.
+        if last_error != windows::Win32::Foundation::ERROR_CLASS_ALREADY_EXISTS {
+            return Err(format!("RegisterClassW failed: {last_error:?}"));
+        }
     }
 
     let title = windows::core::HSTRING::from(options.title.as_str());
@@ -408,10 +414,12 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // ---- event handlers ----
     let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
         let Some(args) = args else {
+            eprintln!("[kiri] NavigationCompleted: handler fired without args");
             return Ok(());
         };
         let mut ok = windows::core::BOOL::default();
         if args.IsSuccess(&mut ok).is_err() || !ok.as_bool() {
+            eprintln!("[kiri] NavigationCompleted: navigation failed");
             return Ok(());
         }
         // Only the application-origin navigation counts as webview_ready;
@@ -431,6 +439,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         if is_app {
             if let Some(rt) = unsafe { get_runtime(hwnd) } {
                 rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+            } else {
+                eprintln!("[kiri] NavigationCompleted: runtime missing");
             }
         }
         Ok(())
@@ -545,6 +555,13 @@ fn handle_web_message(
         let phase = value.get("phase").and_then(|p| p.as_str());
         match phase {
             Some("dom") => {
+                // The page parsed, so its navigation completed; if the
+                // NavigationCompleted event was delivered late (observed on
+                // WebView2 150/151: delivery can lag the frame message past
+                // the smoke exit), recover the marker here.
+                if !rt.markers.has(Marker::WebViewReady) {
+                    rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+                }
                 rt.markers.record(Marker::DomReady, qpc_now_ns());
                 rt.markers.record(Marker::AppReady, qpc_now_ns());
             }
