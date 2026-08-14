@@ -64,17 +64,41 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 - **Evidence**: Level A - marker schema in `docs/research/markers-schema.md`
   (written from corpus `docs/12-benchmarks.md`).
 
-## D-006: Windows-first; other platforms cross-checked only
+## D-006: cross-platform host; direct Win32 + WebView2 backend on Windows,
+wry/tao backend on macOS and Linux
+
+- **Status**: decided (T001), superseded by D-009 (see note)
+- **Context**: the original corpus rule was Windows-first: make the Windows
+  path work first and only cross-check other platforms. That constraint was
+  removed; the host now runs natively on every desktop platform.
+- **Decision**: `kiri-runtime` is a platform-neutral facade. On Windows it
+  uses the direct Win32 + WebView2 host (`host_windows.rs`); on macOS and
+  Linux it uses a wry/tao host (`host_cross.rs`). Both record the same nine
+  startup markers on a monotonic clock and obey the shared smoke/exit
+  contract, so the benchmark compares like for like. The backend is selected
+  by `cfg(target_os = "windows")` at the crate boundary; a `--backend`
+  selector is reserved but not yet wired.
+- **Evidence**: Level A - `rust-toolchain.toml`, CI workflows, crate
+  `Cargo.toml` (`cfg` gating), `lib.rs` facade, native macOS smoke + stress
+  runs (exit 0 with all nine markers; 0 stress failures).
+
+## D-009: wry/tao cross backend serves the frontend over a custom
+`kiri://localhost` protocol
 
 - **Status**: decided (T001)
-- **Context**: corpus rule: make the Windows path work first, do not expand
-  to macOS/Linux to avoid a hard Windows problem.
-- **Decision**: `kiri-runtime-windows` compiles only on Windows; on
-  macOS/Linux CI cross-checks it against `x86_64-pc-windows-msvc` instead of
-  compiling it natively. Baselines are cross-platform and are compiled on all
-  three OSes.
-- **Evidence**: Level A - `rust-toolchain.toml`, CI workflows, crate `Cargo.toml`
-  (`cfg(target_os = "windows")`).
+- **Context**: the cross backend needs a stable application origin on
+  macOS/Linux so the shared blank frontend loads and posts markers the same
+  way it does against the Windows virtual host mapping.
+- **Decision**: serve `index.html` from `HostOptions.frontend_dir` over a
+  custom `kiri` protocol at `kiri://localhost/index.html`, inject the same
+  bridge script at document start, and capture `dom`/`frame` ready messages
+  via `with_ipc_handler`. The event loop does not return on macOS, so the
+  startup result is written and `std::process::exit` is called inside the
+  loop. `kiri-host-stress` therefore spawns a fresh `kiri-host` subprocess
+  per cycle for true launch-close isolation across all platforms.
+- **Evidence**: Level A - wry 0.56.1 / tao 0.36.0 APIs (`with_custom_protocol`,
+  `with_ipc_handler`, `EventLoop::run -> !`), native macOS smoke + stress
+  runs.
 
 ## Open / deferred
 

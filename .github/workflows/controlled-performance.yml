@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p kiri-runtime-windows --bin kiri-host
+      - run: cargo build --release -p kiri-runtime --bin kiri-host
       - run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
       - run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
       - name: Startup benchmark (direct host)

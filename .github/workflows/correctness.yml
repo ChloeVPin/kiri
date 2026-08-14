@@ -14,21 +14,31 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo fmt --all -- --check
-      # The Windows runtime (kiri-runtime-windows) only compiles on Windows.
-      # On macOS/Linux we cross-check it against the windows-msvc target;
-      # clippy/test runs only over the platform-neutral workspace members.
+      # The direct Win32 + WebView2 backend only compiles on Windows. On
+      # macOS/Linux we cross-check it against the windows-msvc target and
+      # also build + exercise the native wry/tao backend.
       - if: runner.os != 'Windows'
         run: rustup target add x86_64-pc-windows-msvc
       - if: runner.os != 'Windows'
-        run: cargo check --target x86_64-pc-windows-msvc -p kiri-runtime-windows --all-targets
+        run: cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
+      - if: runner.os != 'Windows'
+        run: cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets -- -D warnings
       - if: runner.os != 'Windows'
         run: cargo test -p kiri-core
       - if: runner.os != 'Windows'
-        run: cargo clippy -p kiri-core --all-targets -- -D warnings
+        run: cargo build -p kiri-runtime --bins
+      - if: runner.os != 'Windows'
+        name: Native smoke run (wry/tao backend)
+        run: |
+          ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
+          python -c "import json; d=json.load(open('/tmp/kiri-startup.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('startup markers OK:', sorted(names))"
+      - if: runner.os != 'Windows'
+        name: Native stress run (wry/tao backend)
+        run: ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
       - if: runner.os == 'Windows'
         run: cargo test --workspace
       - if: runner.os == 'Windows'
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p kiri-runtime --all-targets -- -D warnings
 
   # Both baselines are standalone projects on purpose; make sure they still
   # compile on every OS (Tauri/wry need their platform libs on Linux).

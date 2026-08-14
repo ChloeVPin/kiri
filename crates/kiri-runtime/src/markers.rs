@@ -102,6 +102,11 @@ impl StartupMarkers {
         self.markers.contains_key(&marker)
     }
 
+    /// Produce an owned snapshot of the recorded markers.
+    pub fn clone_markers(&self) -> StartupMarkers {
+        StartupMarkers { t0_ns: self.t0_ns, markers: self.markers.clone() }
+    }
+
     pub fn delta_ns(&self, from: Marker, to: Marker) -> Option<u64> {
         let a = self.markers.get(&from)?;
         let b = self.markers.get(&to)?;

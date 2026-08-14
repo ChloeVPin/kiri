@@ -6,10 +6,13 @@ this summary.
 
 ## Project
 
-Kiri is a Windows-first native desktop app runtime. A direct Win32 plus
-WebView2 host is compared against Tauri and Wry/Tao baselines on a shared
-startup-marker schema and a control-plane protocol defined in the corpus
+Kiri is a cross-platform native desktop app runtime. A direct Win32 plus
+WebView2 host on Windows and a wry/tao host on macOS and Linux are compared
+against Tauri and Wry/Tao baselines on a shared startup-marker schema and a
+control-plane protocol defined in the corpus
 (`kiri-agent-execution-corpus/`, gitignored, see `docs/research/README.md`).
+The host runs natively on every desktop platform; the direct backend is
+Windows-only, the wry/tao backend covers macOS and Linux.
 
 The direct platform ownership is a hypothesis to be tested, not a goal. If a
 baseline matches or beats the direct host on the measured contract, record
@@ -31,15 +34,21 @@ that result and prefer the simpler path.
 ```sh
 cargo test --workspace                                  # kiri-core: 45 tests
 cargo fmt --all -- --check
-cargo check --target x86_64-pc-windows-msvc -p kiri-runtime-windows --all-targets
-cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime-windows --all-targets -- -D warnings
+cargo build -p kiri-runtime --bins                      # native host (macOS/Linux)
+./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
+./target/debug/kiri-host-stress --frontend examples/blank --cycles 3
+cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
+cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets -- -D warnings
+cargo clippy -p kiri-runtime --all-targets -- -D warnings
 cargo check --manifest-path baselines/wry-tao/Cargo.toml
 cargo check --manifest-path baselines/tauri/Cargo.toml
 ```
 
-Do not run `cargo clippy --workspace --all-targets` on macOS: the Windows
-runtime binaries have no `main` off Windows, so it fails with E0601 by
-design. CI handles this with per-OS steps.
+The host runs natively on macOS/Linux via the wry/tao backend, so its clippy
+and smoke/stress runs are part of the local gate. Do not run
+`cargo clippy --workspace --all-targets`: the Windows direct backend has no
+`main` off Windows, so it fails with E0601 by design; it is checked with the
+per-target commands above. CI handles Windows-native runs with per-OS steps.
 
 Baselines have their own lockfiles and must stay standalone: they never
 depend on `kiri-core`.
@@ -66,16 +75,20 @@ depend on `kiri-core`.
 
 ## Current state and next work
 
-Status: T001 in progress. All local gates green; the host has never executed
-on Windows. The queue lives in the corpus at `agent/task_queue.json` (T001
-through T010) and is mirrored in `README.md`. Handoff notes are written to
-`kiri-agent-execution-corpus/agent/HANDOFF.md` at session end.
+Status: T001 in progress. All local gates green on macOS (native wry/tao
+backend) and on the Windows cross-compile. The wry/tao backend runs here and
+passes smoke + stress; the direct Win32 + WebView2 backend has never
+executed on real Windows. The queue lives in the corpus at
+`agent/task_queue.json` (T001 through T010) and is mirrored in `README.md`.
+Handoff notes are written to `kiri-agent-execution-corpus/agent/HANDOFF.md`
+at session end.
 
 Next unblocked step after this repo is pushed: verify the
 `windows-host-smoke` workflow on `windows-latest`, confirm WebView2 runtime
-availability (Q-001 in `docs/OPEN_QUESTIONS.md`), then close T001 and T002
-acceptance from the resulting logs. If the runner lacks WebView2, add an
-install step.
+availability (Q-001 in `docs/OPEN_QUESTIONS.md`), then close the direct
+backend's T001/T002 acceptance from the resulting logs. The cross-platform
+backend already satisfies T001/T002 on macOS/Linux. If the runner lacks
+WebView2, add an install step.
 
 ## Conventions
 

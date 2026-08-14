@@ -2,7 +2,7 @@
 
 Unresolved items, with the evidence needed to close them.
 
-## Q-001: WebView2 runtime on `windows-latest` GitHub runners
+## Q-001: WebView2 runtime on `windows-latest` GitHub runners (Windows direct backend only)
 
 Does a `windows-latest` runner have the WebView2 Evergreen runtime installed?
 If not, the smoke CI job must install it (e.g. via the
@@ -11,7 +11,7 @@ If not, the smoke CI job must install it (e.g. via the
 - Needed evidence: Level A - first run of `.github/workflows/windows-host-smoke.yml`.
 - Fallback: add an install step gated on a `WebView2 Runtime` check.
 
-## Q-002: real Windows behavior of the direct host
+## Q-002: real Windows behavior of the direct Win32 + WebView2 backend
 
 The host is `cargo check`-clean against `x86_64-pc-windows-msvc` but has
 never executed on Windows. Open items:
@@ -36,12 +36,14 @@ not directly comparable across the three targets for phases after
   `window.ipc` mechanism; (c) accept and record in the perf report.
 - Needed evidence: Level A - measured run on the self-hosted runner.
 
-## Q-004: `--frontend` path form on Windows
+## Q-004: `--frontend` path form and resolution
 
-The smoke CI passes `examples/blank` (forward slashes). Windows accepts this
-relative form from the runner's working directory; verify with the first
-smoke run and document the canonical form (`PathScope::canonicalize` on
-Windows will produce `C:\...` paths).
+The cross backend reads `index.html` from `HostOptions.frontend_dir` at
+runtime and serves it over `kiri://localhost`; this is proven working on
+macOS (native smoke + stress runs pass). On Windows the direct backend maps
+the same `--frontend` directory via `SetVirtualHostNameToFolderMapping`;
+verify with the first `windows-latest` smoke run and document the canonical
+form (`PathScope::canonicalize` on Windows will produce `C:\...` paths).
 
 ## Q-005: backpressure policy for the webview → host channel
 

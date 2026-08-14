@@ -1,8 +1,9 @@
 # Kiri
 
-Windows-first native desktop app runtime: a direct Win32 plus WebView2 host,
-a platform-neutral control-plane core, and Tauri/Wry baselines measured on a
-shared startup-marker schema.
+Cross-platform native desktop app runtime: a direct Win32 plus WebView2 host
+on Windows, a wry/tao host on macOS and Linux, a platform-neutral
+control-plane core, and Tauri/Wry baselines measured on a shared
+startup-marker schema.
 
 Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
 control protocol beats general-purpose wrappers (Tauri, Wry) on startup time,
@@ -12,14 +13,17 @@ Wry or Tao is as fast and simpler, record that result and switch.
 
 ## Status
 
-T001 in progress. Locally green on every gate that can run without Windows:
+T001 in progress. Green on every local gate, on every desktop platform that
+can run here (macOS dev machine) plus the Windows cross-compile:
 
 - 45 kiri-core tests pass (`cargo test --workspace`)
-- direct host cross-checks clean on `x86_64-pc-windows-msvc`
+- direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
   (`cargo check` and `cargo clippy -D warnings`, zero warnings)
+- wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
+  all nine markers and exits 0; `kiri-host-stress` passes multi-cycle
 - Wry/Tao and Tauri baselines compile clean
-- the host skeleton has never executed on real Windows; that validation is
-  the gate for closing T001/T002 acceptance, gated on the
+- the Windows direct host has never executed on real Windows; that run is the
+  remaining acceptance gate for the direct host, covered by the
   `windows-host-smoke` CI workflow
 
 ## Architecture
@@ -30,9 +34,13 @@ Three layers, one shared marker schema:
 crates/kiri-core               platform-neutral logical protocol, security
                                authority, resource table, tracing. Pure Rust,
                                zero platform deps, 45 tests
-crates/kiri-runtime-windows    direct Win32 window + ICoreWebView2 host.
-                               Windows-only. Bins: kiri-host (smoke runner),
-                               kiri-host-stress (launch-close loop)
+crates/kiri-runtime            the native host. Platform-neutral facade
+                               (`lib.rs`) dispatches to a direct Win32 +
+                               WebView2 backend on Windows
+                               (`host_windows.rs`) and a wry/tao backend on
+                               macOS/Linux (`host_cross.rs`). Bins: kiri-host
+                               (smoke runner), kiri-host-stress (launch-close
+                               loop)
 baselines/wry-tao              standalone comparator: tao 0.36 + wry 0.56,
                                custom protocol wry://localhost
 baselines/tauri                standalone comparator: tauri 2.11,
@@ -62,8 +70,9 @@ deliberately independent of wry, which pins an older API generation.
 baselines/                    standalone comparators, own lockfiles
 benchmark/                    harness.py, test-vectors.json, README
 crates/kiri-core/             10 modules, 45 tests
-crates/kiri-runtime-windows/  host.rs, startup.rs, markers.rs, main,
-                              kiri-host-stress
+crates/kiri-runtime/         lib.rs (facade), host_windows.rs (WebView2),
+                              host_cross.rs (wry/tao), markers.rs, output.rs,
+                              bin/kiri-host, bin/kiri-host-stress
 docs/                         DECISIONS.md, OPEN_QUESTIONS.md,
                               research/markers-schema.md
 examples/blank/               shared frontend
@@ -75,14 +84,18 @@ authoritative source of specs, docs, and the machine-readable task queue
 
 ## Build and verify
 
-The machine runs macOS; the Windows runtime cannot execute locally, so the
-local gate is the cross-target compile:
+The dev machine runs macOS (aarch64); the Windows direct host cannot execute
+locally, so it is validated by the cross-target compile. The wry/tao backend
+runs natively here and is exercised by the smoke and stress runs. Local gates:
 
 ```sh
 cargo test --workspace                       # 45 tests
 cargo fmt --all -- --check
-cargo check --target x86_64-pc-windows-msvc -p kiri-runtime-windows --all-targets
-cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime-windows --all-targets -- -D warnings
+cargo build -p kiri-runtime --bins           # native host (macOS/Linux)
+./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
+./target/debug/kiri-host-stress --frontend examples/blank --cycles 3
+cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
+cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets -- -D warnings
 cargo check --manifest-path baselines/wry-tao/Cargo.toml
 cargo check --manifest-path baselines/tauri/Cargo.toml
 ```
@@ -90,9 +103,17 @@ cargo check --manifest-path baselines/tauri/Cargo.toml
 On Windows, the same workspace checks run natively plus the smoke contract:
 
 ```sh
-cargo build --release -p kiri-runtime-windows --bin kiri-host
+cargo build --release -p kiri-runtime --bin kiri-host
 ./target/release/kiri-host.exe --smoke --frontend examples/blank --markers-out artifacts/startup.json
 ./target/release/kiri-host-stress.exe --cycles 100 --frontend examples/blank
+```
+
+On macOS/Linux the host runs natively with the wry/tao backend:
+
+```sh
+cargo build -p kiri-runtime --bin kiri-host
+./target/debug/kiri-host --smoke --frontend examples/blank --markers-out artifacts/startup.json
+./target/debug/kiri-host-stress --cycles 100 --frontend examples/blank
 ```
 
 Baselines follow the same smoke contract (exit 0 + one JSON document on
@@ -133,7 +154,7 @@ mirrored in this repo's docs):
 
 - `docs/DECISIONS.md`: architectural decisions with evidence levels
   (webview2-com 0.39.1, no DLL copy on MSVC, standalone baselines, virtual
-  host mapping, marker schema, Windows-first)
+  host mapping, marker schema, cross-platform backends)
 - `docs/OPEN_QUESTIONS.md`: unresolved items and the evidence needed to close
   them (WebView2 runtime on CI runners, first real Windows run, Tauri IPC
   marker comparability, backpressure policy)
@@ -149,8 +170,10 @@ commands. `docs/HANDOFF` style handoffs are written into the corpus
 
 ## Rules of the project
 
-- Windows path works first. Do not expand to macOS/Linux to avoid a hard
-  Windows problem.
+- The host runs natively on every desktop platform (Windows via the direct
+  Win32 + WebView2 backend, macOS and Linux via the wry/tao backend). Keep
+  platform transport behind narrow interfaces; do not let one engine's
+  quirks leak into the shared control protocol.
 - Never optimize away capability checks, origin checks, bounds checks,
   ownership checks, or backpressure to produce a better benchmark.
 - Never convert a hypothesis into a fact because an implementation seems

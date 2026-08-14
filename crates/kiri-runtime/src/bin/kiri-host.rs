@@ -1,15 +1,14 @@
-//! `kiri-host`: the native host binary for the Windows-first MVP (WP1).
+//! `kiri-host`: the native host binary.
 //!
-//! Serves a frontend directory at `https://app.local/`, runs the WebView2
-//! startup sequence, and emits the startup result JSON. In smoke mode
-//! (`--smoke`) it exits by itself after the first animation frame plus
+//! Serves the shared blank frontend and runs the startup sequence, emitting
+//! the startup result JSON. The backend is selected automatically (direct
+//! Win32 + WebView2 on Windows, wry/tao elsewhere). In smoke mode (`--smoke`)
+//! it exits by itself after the first animation frame plus
 //! `--exit-after-ready-ms`, gated by a watchdog so CI cannot hang.
-
-#![cfg(target_os = "windows")]
 
 use std::path::PathBuf;
 
-use kiri_runtime_windows::host_options_from_args;
+use kiri_runtime::host_options_from_args;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -66,7 +65,7 @@ fn main() {
             }
             "--help" | "-h" => {
                 println!(
-                    "kiri-host: Windows-first native host (WP1)\n\
+                    "kiri-host: native host (cross-platform)\n\
                      usage: kiri-host --frontend DIR [--markers-out PATH] [--smoke]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
                      \x20  [--exit-after-ready-ms N] [--watchdog-ms N]"
@@ -88,6 +87,7 @@ fn main() {
 
     let options = host_options_from_args(
         frontend_dir,
+        markers_out,
         title,
         width,
         height,
@@ -95,6 +95,6 @@ fn main() {
         exit_after_ready_ms,
         watchdog_ms,
     );
-    let code = kiri_runtime_windows::run_session(&options, markers_out.as_ref());
+    let code = kiri_runtime::run_session(&options);
     std::process::exit(code);
 }

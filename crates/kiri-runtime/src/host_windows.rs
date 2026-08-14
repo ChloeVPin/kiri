@@ -31,38 +31,18 @@ use kiri_core::error::Error as KiriError;
 use kiri_core::wire::WireResponse;
 
 use crate::markers::{Marker, StartupMarkers};
-
-/// Options for one host session, supplied by the launcher (WP1).
-#[derive(Debug, Clone)]
-pub struct HostOptions {
-    /// Directory served at `https://app.local/` via WebView2 virtual host
-    /// mapping. The frontend (`index.html`) lives here.
-    pub frontend_dir: Option<PathBuf>,
-    pub title: String,
-    pub width: u32,
-    pub height: u32,
-    /// Smoke mode: exit shortly after the first animation frame.
-    pub smoke: bool,
-    /// Grace period after the first animation frame before posting quit
-    /// (smoke mode only).
-    pub exit_after_ready_ms: u32,
-    /// Hard timeout for reaching ready state (smoke/stress runs; CI cannot
-    /// hang). 0 disables the watchdog.
-    pub watchdog_ms: u32,
-}
-
-impl Default for HostOptions {
-    fn default() -> Self {
-        Self {
-            frontend_dir: None,
-            title: "Kiri host".into(),
-            width: 1024,
-            height: 768,
-            smoke: false,
-            exit_after_ready_ms: 250,
-            watchdog_ms: 30_000,
-        }
+use crate::HostOptions;
+/// Convert a null-terminated wide string to `String` (copy, does not free).
+fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
+    if ptr.is_null() {
+        return String::new();
     }
+    let mut len = 0usize;
+    while unsafe { *ptr.0.add(len) } != 0 {
+        len += 1;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(ptr.0, len) };
+    String::from_utf16_lossy(slice)
 }
 
 /// The Windows native host: window, WebView2 lifecycle, and message loop.
@@ -207,14 +187,21 @@ impl WindowsHost {
     ///
     /// In `smoke` mode the host exits by itself shortly after the first
     /// animation frame marker; otherwise it runs until the window closes.
-    pub fn run(options: &HostOptions) -> Result<StartupMarkers, String> {
+    pub fn run(options: &HostOptions) -> Result<StartupMarkers, i32> {
         unsafe {
-            CoInitializeEx(None, COINIT_APARTMENTTHREADED)
-                .ok()
-                .map_err(|e| format!("CoInitializeEx: {e}"))?;
+            CoInitializeEx(None, COINIT_APARTMENTTHREADED).ok().map_err(|e| {
+                eprintln!("[kiri] CoInitializeEx: {e}");
+                1
+            })?;
             let result = run_host_inner(options);
             CoUninitialize();
-            result
+            match result {
+                Ok(markers) => Ok(markers),
+                Err(err) => {
+                    eprintln!("[kiri] host error: {err}");
+                    Err(1)
+                }
+            }
         }
     }
 }
@@ -311,7 +298,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             GetAvailableCoreWebView2BrowserVersionString(PCWSTR::null(), &mut version)
         };
         if hr.is_ok() && !version.is_null() {
-            let text = crate::pwstr_to_string(version);
+            let text = pwstr_to_string(version);
             unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(version.0 as _)) };
             Some(text)
         } else {
@@ -428,7 +415,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 if unsafe { s.Source(&mut source) }.is_err() {
                     return false;
                 }
-                let source_copy = crate::pwstr_to_string(source);
+                let source_copy = pwstr_to_string(source);
                 unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(source.0 as _)) }
                 is_app_origin_url(&source_copy)
             },
@@ -517,7 +504,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let _ = rt.webview.remove_NavigationCompleted(rt.navigation_token);
     let _ = rt.controller.Close();
     let markers_out = rt.markers;
-    let _ = rt.env; // explicit drop before CoUninitialize
+    let _ = rt.env; // explicit drop before CoUninitialize (called by run)
                     // Destroy the hosting window; in smoke mode the loop exits on WM_QUIT
                     // from the smoke timer, never via WM_CLOSE, so the window must be torn
                     // down here. WM_DESTROY posts WM_QUIT.
@@ -547,7 +534,7 @@ fn handle_web_message(
     if unsafe { args.Source(&mut source) }.is_err() {
         return;
     }
-    let source_copy = crate::pwstr_to_string(source);
+    let source_copy = pwstr_to_string(source);
     unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(source.0 as _)) };
     if !is_app_origin_url(&source_copy) {
         return;
@@ -557,7 +544,7 @@ fn handle_web_message(
     if unsafe { args.WebMessageAsJson(&mut message) }.is_err() {
         return;
     }
-    let json = crate::pwstr_to_string(message);
+    let json = pwstr_to_string(message);
     unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(message.0 as _)) };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) else {
         return;
@@ -598,17 +585,4 @@ fn handle_web_message(
     let request_id = value.get("requestId").and_then(|r| r.as_u64());
     let command = value.get("command").and_then(|c| c.as_str());
     rt.reply_protocol_error(request_id, command);
-}
-
-/// Write the startup result JSON (WP1 acceptance: startup result JSON).
-pub(crate) fn write_startup_result(markers: &StartupMarkers, path: Option<&PathBuf>) {
-    let json = serde_json::to_string_pretty(&markers.result()).expect("startup result serializes");
-    match path {
-        Some(path) => {
-            if let Err(e) = std::fs::write(path, json) {
-                eprintln!("[kiri] failed to write startup result to {}: {e}", path.display());
-            }
-        }
-        None => println!("{json}"),
-    }
 }

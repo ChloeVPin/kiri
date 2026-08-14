@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p kiri-runtime-windows --bin kiri-host
+      - run: cargo build --release -p kiri-runtime --bin kiri-host
       - name: Smoke run
         shell: pwsh
         run: |
@@ -47,7 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p kiri-runtime-windows --bin kiri-host-stress
+      - run: cargo build --release -p kiri-runtime --bin kiri-host-stress
       - name: Stress loop (100 launch-close cycles)
         shell: pwsh
         run: |

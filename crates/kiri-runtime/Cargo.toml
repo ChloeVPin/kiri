@@ -1,13 +1,13 @@
 [package]
-name = "kiri-runtime-windows"
+name = "kiri-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Direct Win32 + WebView2 host for Kiri (Windows)"
+description = "Native host for Kiri: direct Win32 + WebView2 on Windows, wry/tao on macOS/Linux"
 
 [[bin]]
 name = "kiri-host"
-path = "src/main.rs"
+path = "src/bin/kiri-host.rs"
 
 [[bin]]
 name = "kiri-host-stress"
@@ -28,6 +28,10 @@ windows = { version = "0.62", features = [
   "Win32_System_Performance",
   "Win32_UI_WindowsAndMessaging",
 ] }
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+tao = "0.36"
+wry = "0.56.1"
 
 [dev-dependencies]
 serde_json.workspace = true
