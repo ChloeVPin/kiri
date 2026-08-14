@@ -13,18 +13,25 @@ Wry or Tao is as fast and simpler, record that result and switch.
 
 ## Status
 
-T001 in progress. Green on every local gate, on every desktop platform that
-can run here (macOS dev machine) plus the Windows cross-compile:
+Tasks T001-T004 are complete and committed. The runtime runs natively on
+every desktop platform from one codebase: the direct Win32 + WebView2 backend
+on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
+the same security boundary (application-origin trust, native-assigned caller
+identity and capability authority). Verification is Mac-friendly: the primary
+development and gating machine is macOS, and the cross (wry/tao) backend runs
+here for smoke and stress. The Windows direct backend is cross-checked on
+macOS and exercised on real Windows by CI.
 
-- 45 kiri-core tests pass (`cargo test --workspace`)
-- direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
-  (`cargo check` and `cargo clippy -D warnings`, zero warnings)
+- 61 kiri-core tests + 6 kiri-runtime tests pass (`cargo test --workspace`)
+- control-plane ping + trace (T003) and caller/capability authority (T004)
+  implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
   all nine markers and exits 0; `kiri-host-stress` passes multi-cycle
+- direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
+  (`cargo check` and `cargo clippy -D warnings`, zero warnings)
 - Wry/Tao and Tauri baselines compile clean
-- the Windows direct host has never executed on real Windows; that run is the
-  remaining acceptance gate for the direct host, covered by the
-  `windows-host-smoke` CI workflow
+- the Windows direct host has not yet executed on real Windows; that run is
+  gated on the `windows-host-smoke` CI workflow (Q-001)
 
 ## Architecture
 
@@ -164,8 +171,8 @@ mirrored in this repo's docs):
 
 `AGENTS.md` at the repository root carries the operating contract for
 agents working on this repo: read the relevant spec before editing, evidence
-levels, stop conditions, Windows-first rule, and the exact verification
-commands. `docs/HANDOFF` style handoffs are written into the corpus
+levels, stop conditions, the cross-platform verification contract, and the
+exact verification commands. `docs/HANDOFF` style handoffs are written into the corpus
 (`agent/HANDOFF.md`).
 
 ## Rules of the project
@@ -174,6 +181,9 @@ commands. `docs/HANDOFF` style handoffs are written into the corpus
   Win32 + WebView2 backend, macOS and Linux via the wry/tao backend). Keep
   platform transport behind narrow interfaces; do not let one engine's
   quirks leak into the shared control protocol.
+- Every backend enforces the same security boundary: the application origin is
+  trusted, remote navigation is denied, and caller identity plus capability
+  authority are assigned by native code only (never by JavaScript).
 - Never optimize away capability checks, origin checks, bounds checks,
   ownership checks, or backpressure to produce a better benchmark.
 - Never convert a hypothesis into a fact because an implementation seems

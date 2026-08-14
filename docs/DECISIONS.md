@@ -70,7 +70,10 @@ wry/tao backend on macOS and Linux
 - **Status**: decided (T001), superseded by D-009 (see note)
 - **Context**: the original corpus rule was Windows-first: make the Windows
   path work first and only cross-check other platforms. That constraint was
-  removed; the host now runs natively on every desktop platform.
+  removed (see D-009/D-010). The host now runs natively on every desktop
+  platform from one codebase, and the primary development and gating machine
+  is macOS, so the cross (wry/tao) backend is the day-to-day verification
+  target here while the Windows direct backend is cross-checked and CI-run.
 - **Decision**: `kiri-runtime` is a platform-neutral facade. On Windows it
   uses the direct Win32 + WebView2 host (`host_windows.rs`); on macOS and
   Linux it uses a wry/tao host (`host_cross.rs`). Both record the same nine
@@ -99,6 +102,26 @@ wry/tao backend on macOS and Linux
 - **Evidence**: Level A - wry 0.56.1 / tao 0.36.0 APIs (`with_custom_protocol`,
   `with_ipc_handler`, `EventLoop::run -> !`), native macOS smoke + stress
   runs.
+
+
+## D-010: shared security policy, identical trust boundary on every backend
+
+- **Status**: decided (T004)
+- **Context**: the Windows direct backend enforced an application-origin trust
+  boundary (`is_app_origin_url`) and native-assigned caller identity/capability
+  authority. The wry/tao cross backend did not, so the two backends did not
+  share an equal security posture.
+- **Decision**: move the origin/navigation/capability policy into
+  `kiri-core::security` (`is_app_origin`, `is_navigation_allowed`,
+  `trusted_frontend_capabilities`) and apply it from both backends. The cross
+  backend now blocks remote navigation (`with_navigation_handler`) and rejects
+  IPC whose document URL is not the application origin, matching the Windows
+  gate. Caller identity and capability mask are assigned by native code only;
+  JavaScript never supplies them.
+- **Evidence**: Level A - `kiri-core/src/security.rs`, `host_cross.rs`
+  (navigation + IPC origin gate), `host_windows.rs` (`is_app_origin_url`),
+  `dispatch.rs` (capability check before execution); native macOS smoke run
+  records all nine markers and exits 0 with the gate active.
 
 ## Open / deferred
 

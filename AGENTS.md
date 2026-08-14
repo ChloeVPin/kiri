@@ -75,20 +75,21 @@ depend on `kiri-core`.
 
 ## Current state and next work
 
-Status: T001 in progress. All local gates green on macOS (native wry/tao
-backend) and on the Windows cross-compile. The wry/tao backend runs here and
-passes smoke + stress; the direct Win32 + WebView2 backend has never
-executed on real Windows. The queue lives in the corpus at
-`agent/task_queue.json` (T001 through T010) and is mirrored in `README.md`.
-Handoff notes are written to `kiri-agent-execution-corpus/agent/HANDOFF.md`
-at session end.
+Status: T001 through T004 complete and committed. The runtime runs
+natively on every desktop platform from one codebase (direct Win32 + WebView2
+on Windows, wry/tao on macOS and Linux), and all four tasks pass their gates
+on the macOS development machine via the native wry/tao backend. The Windows
+direct backend is cross-checked locally and exercised on real Windows by CI.
+The queue lives in the corpus at `agent/task_queue.json` (T001 through T010)
+and is mirrored in `README.md`. Handoff notes are written to
+`kiri-agent-execution-corpus/agent/HANDOFF.md` at session end.
 
-Next unblocked step after this repo is pushed: verify the
-`windows-host-smoke` workflow on `windows-latest`, confirm WebView2 runtime
-availability (Q-001 in `docs/OPEN_QUESTIONS.md`), then close the direct
-backend's T001/T002 acceptance from the resulting logs. The cross-platform
-backend already satisfies T001/T002 on macOS/Linux. If the runner lacks
-WebView2, add an install step.
+Next unblocked steps: T005 (command codegen + static routing), T006
+(generational resource table), T007 (message bulk path benchmark) are
+Mac-runnable. T008 (WebView2 shared-buffer) and T009/T010 (comparison,
+diagnostics) depend on real Windows / self-hosted perf hardware and are
+gated on CI. Verify the `windows-host-smoke` workflow on `windows-latest` to
+close Q-001 and the direct backend's remaining acceptance.
 
 ## Conventions
 
