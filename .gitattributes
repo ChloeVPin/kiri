@@ -1,0 +1,9 @@
+# Force LF line endings in the repo so byte-stable determinism gates
+# (for example gen/commands.ts vs emit_typescript) are not broken by the
+# Windows git checkout CRLF conversion (core.autocrlf). See T011.
+* text=auto eol=lf
+
+# Generated artifacts compared byte-for-byte by tests must stay LF.
+*.ts text eol=lf
+*.json text eol=lf
+gen/ text eol=lf
