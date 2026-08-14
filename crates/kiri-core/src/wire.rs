@@ -10,9 +10,57 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::header::{ControlFlags, MAGIC, PROTOCOL_VERSION};
 
+/// `magic` is the 4-byte tag `KRI1`. On the JSON physical transport it is
+/// carried as the 4-character string `"KRI1"` (what `window.chrome.webview
+/// .postMessage` and the wry IPC handler actually emit), not as a numeric
+/// array. These adapters keep the internal `[u8; 4]` representation while
+/// mapping to and from that string form, so a bridge message round-trips.
+mod magic_serde {
+    use serde::de::{Error as _, SeqAccess, Visitor};
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    pub fn serialize<S: Serializer>(magic: &[u8; 4], s: S) -> Result<S::Ok, S::Error> {
+        let as_str = std::str::from_utf8(magic).unwrap_or("\0\0\0\0");
+        s.serialize_str(as_str)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<[u8; 4], D::Error> {
+        struct MagicVisitor;
+        impl<'de> Visitor<'de> for MagicVisitor {
+            type Value = [u8; 4];
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("a 4-byte magic as a 4-character string or a 4-element number array")
+            }
+
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                if v.len() != 4 {
+                    return Err(E::custom(format!("magic must be 4 bytes, got {}", v.len())));
+                }
+                let mut out = [0u8; 4];
+                out.copy_from_slice(v.as_bytes());
+                Ok(out)
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+                let mut out = [0u8; 4];
+                for slot in out.iter_mut() {
+                    *slot = seq
+                        .next_element::<u8>()?
+                        .ok_or_else(|| A::Error::custom("magic array shorter than 4 bytes"))?;
+                }
+                Ok(out)
+            }
+        }
+        d.deserialize_any(MagicVisitor)
+    }
+}
+
 /// Request as carried by the physical transport.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WireRequest {
+    #[serde(with = "magic_serde")]
     pub magic: [u8; 4],
     pub version: u16,
     pub flags: u16,
@@ -42,6 +90,7 @@ impl WireRequest {
 /// Response as carried by the physical transport.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WireResponse {
+    #[serde(with = "magic_serde")]
     pub magic: [u8; 4],
     pub version: u16,
     pub flags: u16,

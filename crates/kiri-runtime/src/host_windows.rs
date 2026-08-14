@@ -27,8 +27,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PM_REMOVE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
+use kiri_core::caller::{CallerId, CallerRegistry};
+use kiri_core::capabilities::CapabilityBits;
+use kiri_core::dispatch::Router;
 use kiri_core::error::Error as KiriError;
-use kiri_core::wire::WireResponse;
+use kiri_core::trace::NoopTraceSink;
+use kiri_core::wire::{WireRequest, WireResponse};
 
 use crate::markers::{Marker, StartupMarkers};
 use crate::HostOptions;
@@ -43,6 +47,16 @@ fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
     }
     let slice = unsafe { std::slice::from_raw_parts(ptr.0, len) };
     String::from_utf16_lossy(slice)
+}
+/// Run a script in the WebView and ignore its result. `webview2-com`
+/// `ExecuteScript` needs a wide-string script and a completion handler.
+fn exec_script(webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2, js: &str) {
+    let wide: Vec<u16> = js.encode_utf16().collect();
+    let handler = webview2_com::ExecuteScriptCompletedHandler::create(Box::new(
+        |_result: windows::core::Result<()>, _output: String| Ok(()),
+    ));
+    let _ =
+        unsafe { webview.ExecuteScript(windows::core::PCWSTR::from_raw(wide.as_ptr()), &handler) };
 }
 
 /// The Windows native host: window, WebView2 lifecycle, and message loop.
@@ -108,6 +122,9 @@ fn absolute_lexical(path: &Path) -> PathBuf {
 pub(crate) struct HostRuntime {
     pub options: HostOptions,
     pub markers: StartupMarkers,
+    pub caller: CallerId,
+    pub caller_caps: CapabilityBits,
+    pub router: Router,
     pub env: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     pub controller: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller,
     pub webview: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
@@ -220,6 +237,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let mut markers = StartupMarkers::new();
     markers.record(Marker::ProcessSpawnRequested, qpc_now_ns());
     markers.record(Marker::NativeEntry, qpc_now_ns());
+
+    // Control-plane router for the native bridge (T003). Caller identity is
+    // assigned by the native runtime, never by JavaScript; grant the ping
+    // capability so control commands run from the trusted frontend.
+    let mut registry = CallerRegistry::new();
+    let caller = registry.register();
+    let mut caller_caps = CapabilityBits::empty();
+    caller_caps.set(kiri_core::dispatch::capability_bit::PING);
+    let router = Router::new();
 
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
@@ -347,7 +373,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         (function () {
           if (window.location.origin !== 'https://app.local') { return; }
           window.kiri = {
-            post: function (o) { window.chrome.webview.postMessage(o); }
+            post: function (o) { window.chrome.webview.postMessage(o); },
+            send: function (req) { window.chrome.webview.postMessage({ type: 'cmd', request: req }); }
           };
           window.addEventListener('DOMContentLoaded', function () {
             window.kiri.post({ type: 'ready', phase: 'dom' });
@@ -456,6 +483,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let runtime = Box::new(HostRuntime {
         options: options.clone(),
         markers,
+        caller,
+        caller_caps,
+        router,
         env,
         controller,
         webview,
@@ -553,6 +583,32 @@ fn handle_web_message(
     let Some(rt) = (unsafe { get_runtime(hwnd) }) else {
         return;
     };
+
+    // Control-plane command: dispatch through kiri-core and post the
+    // wire response back to the page (T003).
+    if let Some(req_val) = value.get("request") {
+        match serde_json::from_value::<WireRequest>(req_val.clone()) {
+            Ok(request) => {
+                let mut sink = NoopTraceSink;
+                let response = rt.router.dispatch(rt.caller, &rt.caller_caps, &request, &mut sink);
+                let js = format!(
+                    "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
+                    serde_json::to_string(&response).unwrap_or_default()
+                );
+                exec_script(&rt.webview, &js);
+            }
+            Err(_) => {
+                let err =
+                    WireResponse::err(0, KiriError::protocol_error("malformed command request"));
+                let js = format!(
+                    "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
+                    serde_json::to_string(&err).unwrap_or_default()
+                );
+                exec_script(&rt.webview, &js);
+            }
+        }
+        return;
+    }
 
     if value.get("type").and_then(|t| t.as_str()) == Some("ready") {
         let phase = value.get("phase").and_then(|p| p.as_str());

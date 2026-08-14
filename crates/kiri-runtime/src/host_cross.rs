@@ -24,6 +24,12 @@ use tao::window::WindowBuilder;
 use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
+use kiri_core::caller::CallerRegistry;
+use kiri_core::capabilities::CapabilityBits;
+use kiri_core::dispatch::Router;
+use kiri_core::trace::NoopTraceSink;
+use kiri_core::wire::{WireRequest, WireResponse};
+
 use crate::markers::{Marker, StartupMarkers};
 use crate::output::write_startup_result;
 use crate::HostOptions;
@@ -46,9 +52,26 @@ fn frontend_index_bytes(options: &HostOptions) -> std::borrow::Cow<'static, [u8]
     const FALLBACK: &str = include_str!("../../../examples/blank/index.html");
     std::borrow::Cow::Borrowed(FALLBACK.as_bytes())
 }
+/// Post a control-plane response back to the page via the shared webview
+/// slot. Best-effort: if the webview is not ready yet, the message is dropped
+/// (the page can re-issue). Responses carry the request id for correlation.
+fn post_response(slot: &Rc<RefCell<Option<wry::WebView>>>, response: &WireResponse) {
+    if let Some(webview) = slot.borrow().as_ref() {
+        let js = format!(
+            "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
+            serde_json::to_string(response).unwrap_or_default()
+        );
+        let _ = webview.evaluate_script(&js);
+    }
+}
 
 /// Bridge script injected at document start. It only fires on the
 /// application origin and uses whichever native bridge the host exposes.
+///
+/// It posts the startup `ready` markers and also installs `window.kiri.send`,
+/// which the frontend uses to issue control-plane commands. The host answers
+/// each `cmd` message with a `cmd_response` message carrying the same request
+/// id so the page can correlate responses (T003).
 const BRIDGE_SCRIPT: &str = r#"
     (function () {
       if (window.kiri) { return; }
@@ -68,6 +91,9 @@ const BRIDGE_SCRIPT: &str = r#"
       requestAnimationFrame(function () {
         post({ type: 'ready', phase: 'frame' });
       });
+      window.kiri = {
+        send: function (req) { post({ type: 'cmd', request: req }); }
+      };
     })();
 "#;
 
@@ -118,11 +144,23 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
 
     record(&markers, Marker::WebViewCreationRequested);
 
+    // Control-plane router for the native bridge (T003). The caller identity
+    // is assigned by the native runtime, never by JavaScript; grant the ping
+    // capability so control commands can run from the trusted frontend.
+    let mut registry = CallerRegistry::new();
+    let caller = registry.register();
+    let mut caller_caps = CapabilityBits::empty();
+    caller_caps.set(kiri_core::dispatch::capability_bit::PING);
+    let router = Router::new();
+
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
     let watchdog_ms = options.watchdog_ms as u128;
 
+    // Shared slot so the IPC handler can post responses back to the webview
+    // once it exists (the handler is created on the builder before build()).
+    let webview_slot: Rc<RefCell<Option<wry::WebView>>> = Rc::new(RefCell::new(None));
     let webview = WebViewBuilder::new()
         .with_custom_protocol("kiri".into(), {
             let options = options.clone();
@@ -145,10 +183,28 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         })
         .with_ipc_handler({
             let markers = markers.clone();
+            let router = router.clone();
+            let webview_slot = webview_slot.clone();
             move |msg| {
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(msg.body()) else {
                     return;
                 };
+                // Control-plane command: dispatch through kiri-core and post
+                // the wire response back to the page (T003).
+                if let Some(req_val) = value.get("request") {
+                    let Ok(request) = serde_json::from_value::<WireRequest>(req_val.clone()) else {
+                        let err = WireResponse::err(
+                            0,
+                            kiri_core::error::Error::protocol_error("malformed command request"),
+                        );
+                        post_response(&webview_slot, &err);
+                        return;
+                    };
+                    let mut sink = NoopTraceSink;
+                    let response = router.dispatch(caller, &caller_caps, &request, &mut sink);
+                    post_response(&webview_slot, &response);
+                    return;
+                }
                 match value.get("phase").and_then(|p| p.as_str()) {
                     Some("dom") => {
                         // Recover webview_ready if page-load lagged (parity
@@ -171,23 +227,24 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             eprintln!("[kiri] webview build failed: {e}");
             1
         })?;
+    *webview_slot.borrow_mut() = Some(webview);
     record(&markers, Marker::BridgeReady);
 
     let t0 = Instant::now();
     let mut smoke_armed = false;
     let mut frame_at: Option<Instant> = None;
 
-    // `webview` is moved into the event-loop closure so it stays alive for the
-    // lifetime of the session (it owns the native view and IPC handlers).
+    // The webview lives in `webview_slot` (owned by this closure) so it stays
+    // alive for the lifetime of the session; the IPC handler posts responses
+    // through the same slot.
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             *control_flow = ControlFlow::Exit;
         } else {
-            // Keep the webview alive for the whole loop by holding a reference
-            // each iteration; it owns the native view and IPC handlers.
-            let _ = &webview;
+            // Keep the webview alive for the whole loop (owned by webview_slot).
+            let _ = webview_slot.borrow();
             let _ = event;
         }
 

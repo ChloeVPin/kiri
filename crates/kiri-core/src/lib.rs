@@ -9,8 +9,10 @@
 
 pub mod caller;
 pub mod capabilities;
+pub mod dispatch;
 pub mod error;
 pub mod header;
+pub mod latency;
 pub mod limits;
 pub mod resources;
 pub mod trace;
@@ -19,8 +21,10 @@ pub mod wire;
 
 pub use caller::{CallerId, CallerRegistry};
 pub use capabilities::{CapabilityBits, CapabilityId, PathScope, Scope};
+pub use dispatch::{is_pong, ping_request, Router};
 pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
+pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
 pub use resources::{ResourceId, ResourceTable};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};

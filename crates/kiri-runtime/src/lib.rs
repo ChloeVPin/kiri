@@ -153,7 +153,6 @@ pub fn run_session(options: &HostOptions) -> i32 {
         Err(code) => code,
     }
 }
-
 /// The markers a smoke run must have recorded before the watchdog fires.
 pub fn require_smoke_markers(markers: &StartupMarkers) -> Result<(), String> {
     for required in
@@ -164,4 +163,61 @@ pub fn require_smoke_markers(markers: &StartupMarkers) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod control_plane_tests {
+    use kiri_core::caller::CallerRegistry;
+    use kiri_core::capabilities::CapabilityBits;
+    use kiri_core::dispatch::{is_pong, Router};
+    use kiri_core::trace::NoopTraceSink;
+    use kiri_core::wire::WireRequest;
+    use serde_json::json;
+
+    /// Mirrors exactly how the bridge handler (`cmd` message) parses and
+    /// dispatches a control request, so the wiring logic is covered without a
+    /// live WebView (T003 end-to-end path). The request is built the same way
+    /// the real bridge does: a properly framed `WireRequest` wrapped in a
+    /// `{ "type": "cmd", "request": ... }` envelope.
+    fn dispatch_from_bridge_message(request: WireRequest) -> kiri_core::wire::WireResponse {
+        let msg = json!({ "type": "cmd", "request": request });
+        let req_val = msg.get("request").unwrap();
+        let request: WireRequest =
+            serde_json::from_value(req_val.clone()).expect("bridge request must deserialize");
+        let mut registry = CallerRegistry::new();
+        let caller = registry.register();
+        let mut caps = CapabilityBits::empty();
+        caps.set(kiri_core::dispatch::capability_bit::PING);
+        let router = Router::new();
+        let mut sink = NoopTraceSink;
+        router.dispatch(caller, &caps, &request, &mut sink)
+    }
+
+    #[test]
+    fn bridge_ping_message_roundtrips_to_pong() {
+        let request = kiri_core::dispatch::ping_request(11, json!({ "x": 1 }));
+        let resp = dispatch_from_bridge_message(request);
+        assert!(is_pong(&resp, 11));
+    }
+
+    #[test]
+    fn bridge_unknown_command_rejected() {
+        let mut request = kiri_core::dispatch::ping_request(2, json!(null));
+        request.command_id = 9999;
+        let resp = dispatch_from_bridge_message(request);
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, kiri_core::error::ErrorCode::ProtocolError);
+    }
+
+    #[test]
+    fn bridge_malformed_message_rejected() {
+        let mut request = kiri_core::dispatch::ping_request(3, json!(null));
+        request.magic = *b"BAD!";
+        let resp = dispatch_from_bridge_message(request);
+        // Bad magic is rejected by the validation pipeline, so it is never a
+        // successful pong.
+        assert!(!is_pong(&resp, 3));
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.unwrap().code, kiri_core::error::ErrorCode::ProtocolError);
+    }
 }
