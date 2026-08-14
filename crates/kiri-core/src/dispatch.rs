@@ -219,6 +219,71 @@ pub fn is_pong(response: &WireResponse, request_id: u64) -> bool {
         && matches!(&response.payload, Some(Value::Object(map)) if map.get("pong") == Some(&Value::Bool(true)))
 }
 
+/// A static, data-driven router built from the command catalog
+/// (`crate::commands::COMMANDS`). Unlike [`Router`], which builds a `HashMap`
+/// at runtime, `StaticRouter` resolves a command ID directly from the const
+/// catalog, so routing order is deterministic and auditable (T005). It
+/// reuses the same validation + trace pipeline as [`Router`].
+pub struct StaticRouter {
+    limits: Limits,
+}
+
+impl Default for StaticRouter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl StaticRouter {
+    pub fn new() -> Self {
+        StaticRouter { limits: Limits::default() }
+    }
+
+    pub fn with_limits(mut self, limits: Limits) -> Self {
+        self.limits = limits;
+        self
+    }
+
+    /// True when the catalog knows the command id.
+    pub fn is_known(&self, id: u32) -> bool {
+        crate::commands::command_name(id).is_some()
+    }
+
+    /// Dispatch a parsed request using the catalog-defined handler and the
+    /// capability required by the command id. The actual execution handler is
+    /// the built-in ping for now; T005's codegen path replaces this with
+    /// per-command glue, but the routing decision stays catalog-driven.
+    pub fn dispatch(
+        &self,
+        caller: CallerId,
+        caller_capabilities: &CapabilityBits,
+        request: &WireRequest,
+        sink: &mut dyn TraceSink,
+    ) -> WireResponse {
+        // The catalog is authoritative for routing. If the request carries an
+        // id the catalog does not know, reject it before any handler runs
+        // (T005 acceptance: unknown IDs rejected). The capability requirement
+        // is resolved by `Router::dispatch` through the catalog so the caller
+        // is authorized against the real required bit, never self-granted.
+        if crate::commands::command_name(request.command_id).is_none() {
+            let e = Error::protocol_error(format!("unknown command id {}", request.command_id));
+            return WireResponse::err(request.request_id, e);
+        }
+        // Delegate to the shared pipeline. The caller's granted capabilities
+        // are passed through unchanged: the runtime assigns them natively and
+        // JavaScript can never widen them. The catalog `required` cap is the
+        // authorization requirement checked against the caller by
+        // `validate_request` (specs/SECURITY.md step 3) -- it is NOT granted
+        // to the caller here.
+        Router::new().with_limits(self.limits.clone()).dispatch(
+            caller,
+            caller_capabilities,
+            request,
+            sink,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

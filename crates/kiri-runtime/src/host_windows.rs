@@ -6,10 +6,9 @@
 //! `wait_for_async_operation`'s pump) must be running for creation callbacks
 //! to fire.
 //!
-//! Bindings: `webview2-com` 0.39.1 (Windows-first verification date
-//! 2026-08-13) + `windows` 0.62. On MSVC, webview2-com-sys links the
-//! WebView2LoaderStatic archive, so no WebView2Loader.dll copy is needed
-//! (see docs/DECISIONS.md D-002).
+//! Bindings: `webview2-com` 0.39.1 (verified 2026-08-13) + `windows` 0.62. On
+//! MSVC, webview2-com-sys links the WebView2LoaderStatic archive, so no
+//! WebView2Loader.dll copy is needed (see docs/DECISIONS.md D-002).
 
 #![cfg(target_os = "windows")]
 

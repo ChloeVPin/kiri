@@ -61,8 +61,10 @@ depend on `kiri-core`.
 - Never remove capability checks, origin checks, bounds checks, ownership
   checks, or backpressure to improve a benchmark number.
 - Do not add comments unless asked. Follow existing style (`rustfmt`).
-- Windows-only code lives in `crates/kiri-runtime-windows` and is gated with
-  `cfg(target_os = "windows")` at the crate boundary.
+- Windows-only code lives in `crates/kiri-runtime/src/host_windows.rs`
+  (`#![cfg(target_os = "windows")]` at the module boundary) and is selected by the
+  `kiri-runtime` facade through `cfg(target_os = "windows")`; the wry/tao backend in
+  `host_cross.rs` covers every other platform.
 - Evidence levels: A = vendor docs/source/standard or measured local result,
   B = maintained implementation source, C = issue tracker/forum, D =
   inference. Architecture decisions affecting security or performance

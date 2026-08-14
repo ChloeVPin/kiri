@@ -21,6 +21,11 @@ impl CapabilityBits {
         CapabilityBits { words: [0; 4] }
     }
 
+    /// True when no capability bit is set.
+    pub fn is_empty(&self) -> bool {
+        self.words.iter().all(|w| *w == 0)
+    }
+
     pub const fn from_words(words: [u64; 4]) -> Self {
         CapabilityBits { words }
     }
