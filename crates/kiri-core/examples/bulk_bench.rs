@@ -20,31 +20,24 @@ use kiri_core::dispatch::{capability_bit, ping_request, Router};
 use kiri_core::trace::NoopTraceSink;
 use serde_json::Value;
 
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 fn peak_rss_bytes() -> u64 {
-    // ru_maxrss on macOS is in bytes.
+    // ru_maxrss is in bytes on macOS and kilobytes on Linux; normalize to
+    // bytes. getrusage is POSIX; this is compiled only on unix targets.
+    let factor = if cfg!(target_os = "linux") { 1024 } else { 1 };
     unsafe {
         let mut usage: libc::rusage = std::mem::zeroed();
         libc::getrusage(libc::RUSAGE_SELF, &mut usage);
-        usage.ru_maxrss as u64
+        (usage.ru_maxrss as u64) * factor
     }
 }
 
-#[cfg(target_os = "linux")]
-fn peak_rss_bytes() -> u64 {
-    // ru_maxrss on Linux is in kilobytes.
-    unsafe {
-        let mut usage: libc::rusage = std::mem::zeroed();
-        libc::getrusage(libc::RUSAGE_SELF, &mut usage);
-        (usage.ru_maxrss as u64) * 1024
-    }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(unix))]
 fn peak_rss_bytes() -> u64 {
     0
 }
 
+#[cfg(unix)]
 fn cpu_time_ns() -> u64 {
     unsafe {
         let mut usage: libc::rusage = std::mem::zeroed();
@@ -53,6 +46,11 @@ fn cpu_time_ns() -> u64 {
         let usec = usage.ru_utime.tv_usec as u64 + usage.ru_stime.tv_usec as u64;
         sec * 1_000_000_000 + usec * 1_000
     }
+}
+
+#[cfg(not(unix))]
+fn cpu_time_ns() -> u64 {
+    0
 }
 
 struct Run {
