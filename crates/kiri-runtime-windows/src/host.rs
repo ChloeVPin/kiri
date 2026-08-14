@@ -217,8 +217,7 @@ impl WindowsHost {
 
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        CreateCoreWebView2EnvironmentWithOptions, ICoreWebView2NavigationCompletedEventArgs,
-        COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+        CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
@@ -398,17 +397,18 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
 
     // ---- event handlers ----
     let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |_sender, args| {
-        let success = args
-            .as_ref()
-            .and_then(|a: &ICoreWebView2NavigationCompletedEventArgs| {
-                let mut ok = windows::core::BOOL::default();
-                a.IsSuccess(&mut ok).ok()?;
-                Some(ok.as_bool())
-            })
-            .unwrap_or(false);
-        if success {
+        let Some(args) = args else {
+            eprintln!("[kiri] NavigationCompleted: no args");
+            return Ok(());
+        };
+        let mut ok = windows::core::BOOL::default();
+        let hr = args.IsSuccess(&mut ok);
+        eprintln!("[kiri] NavigationCompleted: hr={hr:?} is_success={}", ok.as_bool());
+        if hr.is_ok() && ok.as_bool() {
             if let Some(rt) = unsafe { get_runtime(hwnd) } {
                 rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+            } else {
+                eprintln!("[kiri] NavigationCompleted: runtime missing");
             }
         }
         Ok(())
