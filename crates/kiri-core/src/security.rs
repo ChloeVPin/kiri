@@ -66,6 +66,7 @@ pub fn is_navigation_allowed(target: &str) -> bool {
 pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     let mut caps = crate::capabilities::CapabilityBits::empty();
     caps.set(crate::dispatch::capability_bit::PING);
+    caps.set(crate::dispatch::capability_bit::DIAGNOSTICS);
     caps
 }
 

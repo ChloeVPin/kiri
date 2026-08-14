@@ -26,12 +26,16 @@ use crate::wire::{WireRequest, WireResponse};
 pub mod command_id {
     /// Echo/pong command used for liveness and latency probing.
     pub const PING: u32 = 1;
+    /// Diagnostics snapshot command (T010 developer panel).
+    pub const DIAGNOSTICS: u32 = 2;
 }
 
 /// Capability bits used by built-in control commands.
 pub mod capability_bit {
     /// Authorizes the `ping` liveness probe. Bit 0.
     pub const PING: u32 = 0;
+    /// Authorizes reading the runtime diagnostics snapshot. Bit 1.
+    pub const DIAGNOSTICS: u32 = 1;
 }
 
 /// A command handler. Receives the authoritative caller, the request id, and
@@ -67,6 +71,28 @@ impl Router {
         let mut router = Router { commands: HashMap::new(), limits: Limits::default() };
         router.register_ping();
         router
+    }
+
+    /// Attach a shared diagnostics sink and register the `kiri.diag` command.
+    /// The command returns the privacy-safe snapshot; it requires the
+    /// `DIAGNOSTICS` capability, enforced by the validation pipeline.
+    pub fn with_diagnostics(mut self, diagnostics: crate::diagnostics::Diagnostics) -> Self {
+        let diag = diagnostics.clone();
+        let mut required = CapabilityBits::empty();
+        required.set(capability_bit::DIAGNOSTICS);
+        self.register(
+            command_id::DIAGNOSTICS,
+            required,
+            Arc::new(move |_caller, _request_id, _payload| {
+                let snap = diag.snapshot(
+                    env!("CARGO_PKG_VERSION"),
+                    if cfg!(target_os = "windows") { "windows" } else { "cross" },
+                );
+                serde_json::to_value(&snap)
+                    .map_err(|e| Error::internal_error(format!("diagnostics snapshot encode: {e}")))
+            }),
+        );
+        self
     }
 
     /// Override the default limits (used by tests and tuning).

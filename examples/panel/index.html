@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiri diagnostics</title>
+  <style>
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+            --ok:#3fb950; --err:#f85149; --bar:#1f6feb; --bar2:#388bfd; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg);
+           font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { display:flex; gap:24px; align-items:center; padding:12px 16px;
+             border-bottom:1px solid #21262d; flex-wrap:wrap; }
+    header h1 { font-size:14px; margin:0; font-weight:600; }
+    .meta { color:var(--muted); }
+    .meta b { color:var(--fg); font-weight:600; }
+    main { padding:16px; display:grid; gap:20px; }
+    section h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em;
+                 color:var(--muted); margin:0 0 8px; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #21262d; vertical-align:top; }
+    th { color:var(--muted); font-weight:600; }
+    .ok { color:var(--ok); } .err { color:var(--err); }
+    .cmd { color:var(--accent); }
+    .waterfall { display:flex; flex-direction:column; gap:3px; min-width:160px; }
+    .stage { display:flex; align-items:center; gap:6px; }
+    .stage .name { width:64px; color:var(--muted); }
+    .stage .track { position:relative; height:10px; flex:1; background:#161b22; border-radius:3px; }
+    .stage .fill { position:absolute; top:0; left:0; height:10px; background:var(--bar); border-radius:3px; }
+    .stage .ms { width:64px; text-align:right; color:var(--muted); }
+    .empty { color:var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Kiri diagnostics</h1>
+    <span class="meta">backend <b id="backend">—</b></span>
+    <span class="meta">runtime <b id="runtime">—</b></span>
+    <span class="meta">open resources <b id="open">—</b></span>
+    <span class="meta">schema <b id="schema">—</b></span>
+  </header>
+  <main>
+    <section>
+      <h2>Recent requests</h2>
+      <table id="requests">
+        <thead><tr><th>req</th><th>command</th><th>result</th><th>total</th>
+          <th>payload</th><th>response</th><th>stages</th></tr></thead>
+        <tbody><tr><td colspan="7" class="empty">no requests yet…</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    // The host's bridge script only installs window.kiri.send; we own the
+    // response callback. The panel and the host share one bridge, so traffic
+    // from both ping (this panel) and the host's own markers coexists.
+    window.kiri = window.kiri || {};
+    var reqId = 0;
+
+    function buildRequest(commandId, payload) {
+      var p = payload || {};
+      var pj = JSON.stringify(p);
+      return {
+        magic: "KRI1",
+        version: 1,
+        flags: 1,
+        command_id: commandId,
+        request_id: ++reqId,
+        payload_len: pj.length,
+        codec: 1,
+        payload: p
+      };
+    }
+
+    function send(commandId, payload) {
+      if (window.kiri.send) window.kiri.send(buildRequest(commandId, payload));
+    }
+
+    window.kiri.onResponse = function (resp) {
+      if (resp && resp.payload && resp.payload.schema_version !== undefined) {
+        render(resp.payload);
+      }
+    };
+
+    function render(snap) {
+      document.getElementById("backend").textContent = snap.backend || "—";
+      document.getElementById("runtime").textContent = snap.runtime_version || "—";
+      document.getElementById("open").textContent = String(snap.open_resources);
+      document.getElementById("schema").textContent = String(snap.schema_version);
+
+      var tbody = document.querySelector("#requests tbody");
+      var rows = snap.recent_requests || [];
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty">no requests yet…</td></tr>';
+        return;
+      }
+      var maxMs = rows.reduce(function (m, r) {
+        var s = (r.stages || []).reduce(function (a, x) { return a + (x.ms || 0); }, 0);
+        return Math.max(m, s, r.total_ms || 0);
+      }, 0.0001);
+
+      tbody.innerHTML = rows.slice().reverse().map(function (r) {
+        var cls = r.result === "ok" ? "ok" : "err";
+        var stages = (r.stages || []).map(function (st) {
+          var w = Math.max(1, ((st.ms || 0) / maxMs) * 100);
+          return '<div class="stage"><span class="name">' + escapeHtml(st.stage) +
+            '</span><span class="track"><span class="fill" style="width:' + w +
+            '%"></span></span><span class="ms">' + (st.ms || 0).toFixed(2) + 'ms</span></div>';
+        }).join("");
+        var cmd = r.command_name ? '<span class="cmd">' + escapeHtml(r.command_name) + "</span>" : ("#" + r.command_id);
+        return "<tr><td>" + r.request_id + "</td><td>" + cmd + "</td><td class=\"" + cls + "\">" +
+          escapeHtml(r.result) + "</td><td>" + (r.total_ms || 0).toFixed(2) + "ms</td><td>" +
+          (r.payload_bytes || 0) + "B</td><td>" + (r.response_bytes || 0) + "B</td><td><div class=\"waterfall\">" +
+          stages + "</div></td></tr>";
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+      });
+    }
+
+    // Pull the snapshot immediately, then keep it fresh with periodic pings
+    // so the recent-requests list is populated end to end.
+    send(2); // kiri.diag
+    setInterval(function () {
+      send(1, { t: Date.now() }); // kiri.ping
+      send(2);                     // refresh snapshot
+    }, 1000);
+  </script>
+</body>
+</html>

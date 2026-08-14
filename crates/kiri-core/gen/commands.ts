@@ -3,13 +3,16 @@
 export interface KiriCommands {
   /** kiri_ping (id=1, capability="ping", execution="pure") */
   kiri_ping(arg: unknown): Promise<unknown>;
+  /** kiri_diag (id=2, capability="diag", execution="pure") */
+  kiri_diag(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
     case "kiri.ping": return 1;
+    case "kiri.diag": return 2;
     default: return undefined;
   }
 }

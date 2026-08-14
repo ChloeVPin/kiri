@@ -46,6 +46,7 @@ impl CommandSpec {
 fn capability_bit_for(name: &str) -> u32 {
     match name {
         "ping" => crate::dispatch::capability_bit::PING,
+        "diag" => crate::dispatch::capability_bit::DIAGNOSTICS,
         _ => 0,
     }
 }
@@ -54,8 +55,10 @@ fn capability_bit_for(name: &str) -> u32 {
 ///
 /// Inserting a new command appends an entry with the next free numeric ID;
 /// never renumber an existing entry.
-pub const COMMANDS: &[CommandSpec] =
-    &[CommandSpec { name: "kiri.ping", id: 1, capability: "ping", execution: "pure", arity: 1 }];
+pub const COMMANDS: &[CommandSpec] = &[
+    CommandSpec { name: "kiri.ping", id: 1, capability: "ping", execution: "pure", arity: 1 },
+    CommandSpec { name: "kiri.diag", id: 2, capability: "diag", execution: "pure", arity: 0 },
+];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).
 pub fn resolve_command(name: &str) -> Option<u32> {
@@ -148,6 +151,8 @@ mod tests {
     fn resolve_roundtrips() {
         assert_eq!(resolve_command("kiri.ping"), Some(1));
         assert_eq!(command_name(1), Some("kiri.ping"));
+        assert_eq!(resolve_command("kiri.diag"), Some(2));
+        assert_eq!(command_name(2), Some("kiri.diag"));
         assert_eq!(resolve_command("nope"), None);
         assert_eq!(command_name(999), None);
     }

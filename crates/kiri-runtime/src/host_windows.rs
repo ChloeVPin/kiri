@@ -28,9 +28,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use kiri_core::caller::{CallerId, CallerRegistry};
 use kiri_core::capabilities::CapabilityBits;
+use kiri_core::diagnostics::Diagnostics;
 use kiri_core::dispatch::Router;
 use kiri_core::error::Error as KiriError;
-use kiri_core::trace::NoopTraceSink;
+use kiri_core::resources::ResourceTable;
 use kiri_core::wire::{WireRequest, WireResponse};
 
 use crate::markers::{Marker, StartupMarkers};
@@ -124,6 +125,8 @@ pub(crate) struct HostRuntime {
     pub caller: CallerId,
     pub caller_caps: CapabilityBits,
     pub router: Router,
+    pub diagnostics: Diagnostics,
+    pub resources: ResourceTable<()>,
     pub env: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     pub controller: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller,
     pub webview: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
@@ -244,7 +247,16 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let caller = registry.register();
     let mut caller_caps = CapabilityBits::empty();
     caller_caps.set(kiri_core::dispatch::capability_bit::PING);
-    let router = Router::new();
+    caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
+    let diagnostics = Diagnostics::new();
+    let router = Router::new().with_diagnostics(diagnostics.clone());
+
+    // Honest open-resource count: register one session resource for the
+    // native caller so the diagnostics panel reports a non-zero count.
+    let mut resources = ResourceTable::<()>::new();
+    if resources.insert(caller, (), 4096).is_ok() {
+        diagnostics.set_open_resources(resources.len() as u32);
+    }
 
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
@@ -485,6 +497,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         caller,
         caller_caps,
         router,
+        diagnostics,
+        resources,
         env,
         controller,
         webview,
@@ -588,8 +602,9 @@ fn handle_web_message(
     if let Some(req_val) = value.get("request") {
         match serde_json::from_value::<WireRequest>(req_val.clone()) {
             Ok(request) => {
-                let mut sink = NoopTraceSink;
+                let mut sink = rt.diagnostics.clone();
                 let response = rt.router.dispatch(rt.caller, &rt.caller_caps, &request, &mut sink);
+                rt.diagnostics.set_open_resources(rt.resources.len() as u32);
                 let js = format!(
                     "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
                     serde_json::to_string(&response).unwrap_or_default()

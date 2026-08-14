@@ -13,7 +13,7 @@ Wry or Tao is as fast and simpler, record that result and switch.
 
 ## Status
 
-Tasks T001-T004 are complete and committed. The runtime runs natively on
+Tasks T001-T010 are complete and committed. The runtime runs natively on
 every desktop platform from one codebase: the direct Win32 + WebView2 backend
 on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
@@ -22,13 +22,16 @@ development and gating machine is macOS, and the cross (wry/tao) backend runs
 here for smoke and stress. The Windows direct backend is cross-checked on
 macOS and exercised on real Windows by CI.
 
-- 61 kiri-core tests + 6 kiri-runtime tests pass (`cargo test --workspace`)
+- 76 tests pass (`cargo test --workspace`: 70 kiri-core + 6 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
   all nine markers and exits 0; `kiri-host-stress` passes multi-cycle
 - direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
   (`cargo check` and `cargo clippy -D warnings`, zero warnings)
+- developer diagnostics panel (T010) ships: a `kiri.diag` command returns a
+  privacy-safe runtime snapshot (backend, runtime version, open-resource count,
+  recent-request latency waterfall); the `examples/panel` frontend renders it
 - Wry/Tao and Tauri baselines compile clean
 - the Windows direct host has not yet executed on real Windows; that run is
   gated on the `windows-host-smoke` CI workflow (Q-001)
@@ -76,13 +79,16 @@ deliberately independent of wry, which pins an older API generation.
                               controlled-performance (self-hosted runner)
 baselines/                    standalone comparators, own lockfiles
 benchmark/                    harness.py, test-vectors.json, README
-crates/kiri-core/             10 modules, 45 tests
+crates/kiri-core/             11 modules, 70 tests
 crates/kiri-runtime/         lib.rs (facade), host_windows.rs (WebView2),
                               host_cross.rs (wry/tao), markers.rs, output.rs,
                               bin/kiri-host, bin/kiri-host-stress
+examples/panel/               developer diagnostics frontend (T010)
 docs/                         DECISIONS.md, OPEN_QUESTIONS.md,
-                              research/markers-schema.md
-examples/blank/               shared frontend
+                              research/markers-schema.md,
+                              13-diagnostics-observability.md
+examples/blank/               shared frontend (T001-T004)
+examples/panel/                developer diagnostics frontend (T010)
 ```
 
 The execution corpus (`kiri-agent-execution-corpus/`, gitignored) is the
@@ -146,16 +152,12 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
 Task queue is maintained in the corpus (`agent/task_queue.json`, status
 mirrored in this repo's docs):
 
-- T001 bootstrap and baselines (in progress)
-- T002 direct host lifecycle (window, local origin, markers, stress loop)
-- T003 control-plane ping and request tracing
-- T004 native caller identity and capability authority
-- T005 deterministic command codegen and static routing
-- T006 generational resource table and file resource
-- T007 ordinary-message bulk path benchmark
-- T008 WebView2 read-only shared-buffer path
-- T009 direct host versus Wry/Tao versus Tauri comparison
-- T010 minimal diagnostics panel
+- T001-T007 done (bootstrap, lifecycle, control-plane, authority, codegen,
+  resource table, bulk benchmark)
+- T008 WebView2 read-only shared-buffer path (blocked: needs real Windows)
+- T009 direct host versus Wry/Tao versus Tauri comparison (blocked: needs T008 +
+  self-hosted perf hardware)
+- T010 minimal diagnostics panel (done, macOS-runnable)
 
 ## Documentation
 

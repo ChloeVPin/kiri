@@ -10,6 +10,7 @@
 pub mod caller;
 pub mod capabilities;
 pub mod commands;
+pub mod diagnostics;
 pub mod dispatch;
 pub mod error;
 pub mod header;

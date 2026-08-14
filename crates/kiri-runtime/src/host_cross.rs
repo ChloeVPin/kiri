@@ -25,9 +25,10 @@ use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use kiri_core::caller::CallerRegistry;
+use kiri_core::diagnostics::Diagnostics;
 use kiri_core::dispatch::Router;
+use kiri_core::resources::ResourceTable;
 use kiri_core::security::{is_app_origin, is_navigation_allowed};
-use kiri_core::trace::NoopTraceSink;
 use kiri_core::wire::{WireRequest, WireResponse};
 
 use crate::markers::{Marker, StartupMarkers};
@@ -150,7 +151,15 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let mut registry = CallerRegistry::new();
     let caller = registry.register();
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
-    let router = Router::new();
+    let diagnostics = Diagnostics::new();
+    let router = Router::new().with_diagnostics(diagnostics.clone());
+
+    // Honest open-resource count: register one session resource for the
+    // native caller so the diagnostics panel reports a non-zero count.
+    let resources = Rc::new(RefCell::new(ResourceTable::<()>::new()));
+    if resources.borrow_mut().insert(caller, (), 4096).is_ok() {
+        diagnostics.set_open_resources(resources.borrow().len() as u32);
+    }
 
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -185,6 +194,8 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let markers = markers.clone();
             let router = router.clone();
             let webview_slot = webview_slot.clone();
+            let diagnostics = diagnostics.clone();
+            let resources = resources.clone();
             move |msg| {
                 // Origin check: wry builds the IPC Request from the calling
                 // frame's document URL (uri), with no Origin header. We judge
@@ -210,8 +221,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         post_response(&webview_slot, &err);
                         return;
                     };
-                    let mut sink = NoopTraceSink;
+                    let mut sink = diagnostics.clone();
                     let response = router.dispatch(caller, &caller_caps, &request, &mut sink);
+                    // Reflect any resource churn so the panel stays honest.
+                    diagnostics.set_open_resources(resources.borrow().len() as u32);
                     post_response(&webview_slot, &response);
                     return;
                 }
