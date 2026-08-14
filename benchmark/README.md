@@ -34,3 +34,38 @@ All three targets expose the same smoke contract:
 
 `test-vectors.json` holds the fixed seed/expectation data used by the
 harness's self-check mode.
+## T007 ordinary-message bulk-path benchmark
+
+`crates/kiri-core/examples/bulk_bench.rs` measures the kiri-core JSON control
+path (`WireRequest` serialize -> `Router::dispatch` -> `WireResponse`
+deserialize) at the bulk payload sizes from `test-vectors.json`
+(`bulk_payload_bytes`: 1 MB / 16 MB / 100 MB). It records, per iteration:
+
+- wall clock (ms)
+- CPU time (process user + sys via `getrusage`, ms)
+- peak RSS (bytes, `ru_maxrss`)
+- throughput (MiB/s)
+
+It is fully Mac/Linux-runnable: it exercises kiri-core only, with no WebView,
+so it can run on the macOS development machine. The emitted artifact retains
+the full raw sample arrays plus a per-size summary and environment metadata.
+
+Run it (release build; the corpus fairness rule requires a fixed
+release/debug posture):
+
+```bash
+benchmark/run_bulk.sh                 # runs=20, release, artifacts/bulk-ordinary.json
+```
+
+Or directly:
+
+```bash
+cargo build --release --example bulk_bench -p kiri-core
+KIRI_BULK_RUNS=20 KIRI_BULK_OUT=artifacts/bulk-ordinary.json \
+  ./target/release/examples/bulk_bench
+```
+
+This is the "ordinary message" path. The WebView2 read-only shared-buffer
+fast path (T008) and the macOS/Linux custom-scheme streaming experiment are
+separate, later work; the bulk ordinary-message numbers here are the baseline
+the shared-buffer path must beat to justify its added complexity.
