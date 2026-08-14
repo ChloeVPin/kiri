@@ -72,6 +72,13 @@ pub struct WindowsHost;
 /// mapping; gives the page a proper https origin instead of `file://`).
 pub(crate) const VIRTUAL_HOST_NAME: &str = "app.local";
 pub(crate) const FRONTEND_PAGE: &str = "index.html";
+pub(crate) const APP_ORIGIN: &str = "https://app.local";
+
+/// True for URLs served from the application origin (used to reject markers
+/// from `about:blank` or any other origin).
+fn is_app_origin_url(url: &str) -> bool {
+    url == APP_ORIGIN || url.starts_with(&format!("{APP_ORIGIN}/"))
+}
 
 /// Timer IDs for the smoke-exit and watchdog paths.
 const SMOKE_TIMER_ID: usize = 1;
@@ -344,8 +351,11 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     controller.SetIsVisible(true).map_err(|e| format!("SetIsVisible: {e}"))?;
 
     // ---- bridge script (bridge-ready marker) ----
+    // The bridge runs on every document including the initial `about:blank`
+    // page; it must only emit markers from the application origin.
     let bridge_script = r#"
         (function () {
+          if (window.location.origin !== 'https://app.local') { return; }
           window.kiri = {
             post: function (o) { window.chrome.webview.postMessage(o); }
           };
@@ -396,19 +406,31 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         .map_err(|e| format!("SetVirtualHostNameToFolderMapping: {e}"))?;
 
     // ---- event handlers ----
-    let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |_sender, args| {
+    let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
         let Some(args) = args else {
-            eprintln!("[kiri] NavigationCompleted: no args");
             return Ok(());
         };
         let mut ok = windows::core::BOOL::default();
-        let hr = args.IsSuccess(&mut ok);
-        eprintln!("[kiri] NavigationCompleted: hr={hr:?} is_success={}", ok.as_bool());
-        if hr.is_ok() && ok.as_bool() {
+        if args.IsSuccess(&mut ok).is_err() || !ok.as_bool() {
+            return Ok(());
+        }
+        // Only the application-origin navigation counts as webview_ready;
+        // the initial about:blank navigation completes before any navigate
+        // and must not arm the startup contract.
+        let is_app = sender.is_some_and(
+            |s: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2| {
+                let mut source = windows::core::PWSTR(std::ptr::null_mut());
+                if unsafe { s.Source(&mut source) }.is_err() {
+                    return false;
+                }
+                let source_copy = crate::pwstr_to_string(source);
+                unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(source.0 as _)) }
+                is_app_origin_url(&source_copy)
+            },
+        );
+        if is_app {
             if let Some(rt) = unsafe { get_runtime(hwnd) } {
                 rt.markers.record(Marker::WebViewReady, qpc_now_ns());
-            } else {
-                eprintln!("[kiri] NavigationCompleted: runtime missing");
             }
         }
         Ok(())
@@ -492,11 +514,25 @@ fn handle_web_message(
     args: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2WebMessageReceivedEventArgs,
     hwnd: HWND,
 ) {
+    // Origin check: only messages from the application origin are handled.
+    // The bridge script runs on about:blank too; its messages must be
+    // rejected here as defense in depth.
+    let mut source = windows::core::PWSTR(std::ptr::null_mut());
+    if unsafe { args.Source(&mut source) }.is_err() {
+        return;
+    }
+    let source_copy = crate::pwstr_to_string(source);
+    unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(source.0 as _)) };
+    if !is_app_origin_url(&source_copy) {
+        return;
+    }
+
     let mut message = windows::core::PWSTR(std::ptr::null_mut());
     if unsafe { args.WebMessageAsJson(&mut message) }.is_err() {
         return;
     }
     let json = crate::pwstr_to_string(message);
+    unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(message.0 as _)) };
     let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) else {
         return;
     };
