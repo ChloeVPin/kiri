@@ -5,6 +5,14 @@ edition.workspace = true
 rust-version.workspace = true
 description = "Direct Win32 + WebView2 host for Kiri (Windows)"
 
+[[bin]]
+name = "kiri-host"
+path = "src/main.rs"
+
+[[bin]]
+name = "kiri-host-stress"
+path = "src/bin/kiri-host-stress.rs"
+
 [dependencies]
 kiri-core = { path = "../kiri-core" }
 serde.workspace = true
