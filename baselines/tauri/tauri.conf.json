@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "tauri-baseline",
+  "version": "0.1.0",
+  "identifier": "dev.kiri.baseline.tauri",
+  "build": {
+    "frontendDist": "../../examples/blank",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devUrl": null
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

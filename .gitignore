@@ -1,0 +1,12 @@
+/target
+/target/
+**/target/
+/artifacts
+**/*.log
+.DS_Store
+baselines/tauri/gen/
+
+# The corpus is the authoritative external knowledge base, not repo content.
+# It is linked from docs/research/README.md. Import a snapshot with
+# tools/sync-corpus.sh when a release snapshot is needed.
+/kiri-agent-execution-corpus

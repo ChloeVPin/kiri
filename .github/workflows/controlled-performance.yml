@@ -1,0 +1,32 @@
+name: controlled-performance
+on:
+  workflow_dispatch:
+
+jobs:
+  windows-perf:
+    runs-on: [self-hosted, windows, x64, kiri-perf]
+    concurrency:
+      group: kiri-windows-perf
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p kiri-runtime-windows --bin kiri-host
+      - run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
+      - run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
+      - name: Startup benchmark (direct host)
+        shell: pwsh
+        run: |
+          python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples/blank
+      - name: Startup benchmark (Wry/Tao baseline)
+        shell: pwsh
+        run: |
+          python benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
+      - name: Startup benchmark (Tauri baseline)
+        shell: pwsh
+        run: |
+          python benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-perf-results
+          path: artifacts/

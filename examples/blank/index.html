@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiri blank frontend</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee;
+           margin: 0; display: flex; align-items: center; justify-content: center;
+           height: 100vh; }
+    main { text-align: center; }
+    #frame { color: #4ade80; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Kiri</h1>
+    <p id="frame">waiting for animation frame…</p>
+  </main>
+  <script>
+    // Bridge adapter: posts ready-phase markers over whatever native bridge
+    // this host provides. The direct Kiri host injects its own bridge script
+    // (window.kiri) at document start, which takes precedence.
+    (function () {
+      if (window.kiri) { return; }
+      function post(o) {
+        var s = JSON.stringify(o);
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+          window.chrome.webview.postMessage(s);
+        } else if (window.ipc && window.ipc.postMessage) {
+          window.ipc.postMessage(s);
+        } else if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+          window.__TAURI_INTERNALS__.invoke('kiri_marker', { json: s });
+        }
+      }
+      window.addEventListener('DOMContentLoaded', function () {
+        post({ type: 'ready', phase: 'dom' });
+      });
+      requestAnimationFrame(function () {
+        post({ type: 'ready', phase: 'frame' });
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[package]
+name = "kiri-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Kiri logical control protocol: errors, capabilities, resources, limits, tracing, validation"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
