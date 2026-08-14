@@ -6,12 +6,12 @@ do not commit its contents).
 
 ## Markers schema
 
-`markers-schema.md` — the startup marker contract shared by the direct host
+`markers-schema.md` - the startup marker contract shared by the direct host
 and both baselines (derived from corpus `docs/12-benchmarks.md`).
 
 ## Sources
 
-`SOURCES.md` — the corpus source catalog is the starting point; re-open
+`SOURCES.md` - the corpus source catalog is the starting point; re-open
 primary sources whenever an API version matters.
 
 - webview2-com 0.39.1 / webview2-com-sys 0.39.1 / webview2-com-macros 0.8.1

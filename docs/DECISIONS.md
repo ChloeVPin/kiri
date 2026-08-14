@@ -10,7 +10,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   windows 0.61.
 - **Decision**: use `webview2-com` 0.39.1 with `windows`/`windows-core` 0.62.
   The direct host is intentionally independent of wry.
-- **Evidence**: Level A — webview2-com 0.39.1 published sources on docs.rs
+- **Evidence**: Level A - webview2-com 0.39.1 published sources on docs.rs
   (build dated 28 June 2026) and crates.io registry; windows-rs 0.62.2 source
   in the local registry.
 
@@ -22,7 +22,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 - **Decision**: dropped. webview2-com-sys 0.39.1's `link_webview2` macro links
   `WebView2LoaderStatic` (`kind = static`) on MSVC targets, so no DLL is
   needed. Revisit only if a non-MSVC Windows toolchain is ever required.
-- **Evidence**: Level A — `webview2-com-sys-0.39.1` source in the local
+- **Evidence**: Level A - `webview2-com-sys-0.39.1` source in the local
   registry (`link_webview2` macro, `kind = "static"` for MSVC).
 
 ## D-003: baselines are standalone projects, not workspace members
@@ -34,7 +34,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   packages with their own lockfiles, excluded from the workspace
   (`default-members = ["crates/kiri-core"]` keeps local builds fast). They
   must NOT depend on kiri-core.
-- **Evidence**: Level A — workspace `Cargo.toml`, baseline manifests.
+- **Evidence**: Level A - workspace `Cargo.toml`, baseline manifests.
 
 ## D-004: virtual host mapping (https://app.local) instead of a custom scheme
 
@@ -46,7 +46,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   `COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW`, serving
   `https://app.local/index.html`. Constants: `VIRTUAL_HOST_NAME = "app.local"`,
   `FRONTEND_PAGE = "index.html"`.
-- **Evidence**: Level A — webview2-com 0.39.1 `ICoreWebView2_3` bindings;
+- **Evidence**: Level A - webview2-com 0.39.1 `ICoreWebView2_3` bindings;
   Windows 11 WebView2 SDK docs.
 
 ## D-005: startup markers via the runtime's own QPC clock, shared schema
@@ -61,7 +61,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   per-marker `since_first_ns`. The direct host uses QPC (`QueryPerformanceCounter`);
   baselines use `Instant` since boot of their process. Smoke runs exit 0
   only after `first_animation_frame`, exit 2 on watchdog.
-- **Evidence**: Level A — marker schema in `docs/research/markers-schema.md`
+- **Evidence**: Level A - marker schema in `docs/research/markers-schema.md`
   (written from corpus `docs/12-benchmarks.md`).
 
 ## D-006: Windows-first; other platforms cross-checked only
@@ -73,12 +73,12 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   macOS/Linux CI cross-checks it against `x86_64-pc-windows-msvc` instead of
   compiling it natively. Baselines are cross-platform and are compiled on all
   three OSes.
-- **Evidence**: Level A — `rust-toolchain.toml`, CI workflows, crate `Cargo.toml`
+- **Evidence**: Level A - `rust-toolchain.toml`, CI workflows, crate `Cargo.toml`
   (`cfg(target_os = "windows")`).
 
 ## Open / deferred
 
-- D-007 (open): WebView2 runtime availability on `windows-latest` runners —
+- D-007 (open): WebView2 runtime availability on `windows-latest` runners -
   assume present, verify on first smoke run.
-- D-008 (open): backpressure policy for the IPC bridge (T006) — recorded in
+- D-008 (open): backpressure policy for the IPC bridge (T006) - recorded in
   `OPEN_QUESTIONS.md`.
