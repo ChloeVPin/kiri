@@ -211,6 +211,41 @@ clean. (A)
 ---
 
 
+
+## 5b. G-3 packaging scaffold (fail-closed, cert-free signed manifest; native signing opt-in)
+
+- [x] `tools/packaging/package.sh` added: builds the release host binary, runs the
+      same headless gate set as the audit loop (`cargo fmt --check`, `cargo clippy
+      -p kiri-runtime --all-targets -- -D warnings`, `cargo test --workspace`), then
+      assembles the current-OS distributable. **Distribution signing is OPT-IN and
+      FAILS CLOSED**: macOS codesign/notarize run only when `KIRI_APPLE_SIGN_IDENTITY`
+      (and the notary vars) are set; Windows signtool runs only when `KIRI_WINDOWS_PFX`
+      + `KIRI_WINDOWS_PFX_PASSWORD` are set. With no creds the script refuses to emit a
+      "signed" artifact (prints the refusal, leaves an unsigned `.app` for local testing),
+      exits non-zero on the signing step, and STILL emits the cert-free `artifacts/RELEASES.json`.
+      Verified locally on this macOS host: with no cert env set it printed the
+      fail-closed refusal, emitted `artifacts/RELEASES.json`, and never launched a WebView
+      (no `kiri-host` process). (A, local macOS evidence)
+- [x] `crates/kiri-core/examples/emit_release_manifest.rs` added: the producer side of
+      G-3's signed-update chain. Needs NO Apple/Microsoft cert -- it signs each platform's
+      installer URL + SHA-256 with Kiri's pinned Ed25519 release key (seed `[7u8;32]`),
+      matching what the shipping runtime verifies (`UpdateManifest::verify_asset_for`).
+      It self-verifies the emitted manifest against the re-derived pinned public key so a
+      key mismatch fails loudly instead of shipping a manifest the runtime would reject.
+      Compiles (`cargo build -p kiri-core --examples`), runs (`RELEASES.json` written,
+      `verified=ok`), and is covered by the existing `updater` round-trip tests. (A)
+- [x] `tools/packaging/Info.plist` + `tools/packaging/entitlements.plist` added: minimal
+      hardened macOS app-bundle metadata + sandbox-hardened-runtime entitlements consumed
+      by `package.sh` on the signing path. (B, implementation source)
+- STATUS: G-3's *signed-update verifier + producer* is complete and Mac-headless-proven;
+      the *native distribution signing* (codesign + notarize on macOS, signtool on Windows)
+      remains genuinely cert-blocked. The scaffold makes that block explicit and non-fatal:
+      the pipeline can run end-to-end without secrets and produce a verifiable release
+      manifest, which closes the build+emit loop without lowering any security check.
+      Native signing/notarization is the only remaining G-3 sub-item and is gated on
+      obtaining the Apple Developer + Windows code-sign certificates.
+
+
 ## 6b. Ranked "exceed Tauri" next targets (Mac-headless-runnable)
 
 These close remaining Tauri gaps while staying verifiable on the macOS dev host
