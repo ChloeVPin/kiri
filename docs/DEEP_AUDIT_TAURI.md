@@ -139,7 +139,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (238 tests: 211 kiri-core + 2 integration + 25 kiri-runtime). All of §6b's 17
+      --workspace` green (252 tests: 217 kiri-core + 2 integration + 33 kiri-runtime). All of §6b's 17
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
@@ -167,6 +167,46 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
   in core `WindowState`. Exceeds Tauri's `window` module on the security axis. Frontend
   bindings in examples/blank/kiri.js. Headless unit tests (StubWindow) cover routing +
   authorization + state transitions; both backends compile clean (clippy -D warnings).
+
+---
+
+## 5a. Production wiring correction (cli / fs-watch / ws / menu)
+
+The four transport-backed surfaces `kiri.cli.*` (66), `kiri.fs.watch/unwatch`
+(67/68), `kiri.ws.*` (69-71), and `kiri.menu.*` (72/73) were previously claimed
+DONE, and their handlers were unit-tested through a TEST-ONLY `full_router()` that
+included them. But the REAL production hosts (`host_cross.rs` / `host_windows.rs`)
+only built that test router; the live `run_inner` chain never called
+`with_cli/with_fs_watch/with_ws/with_menu`. So on both real platforms those command
+ids returned `ProtocolError` (unknown command) despite the audit saying they
+shipped. The enforcement test passed only because it used the separate test router,
+masking the gap.
+
+CORRECTED (this change, uncommitted): the production router construction is now
+extracted into `build_host_router(window, clipboard_ctrl, diagnostics, resources,
+options)` and `run_inner` calls it. That function wires all four surfaces via the
+same `with_*` builders the test used, so the commands are registered on the real
+host router. The `FsWatch`/`Ws`/`Menu` services are constructed with new
+production `Disabled*` backends (`DisabledFsWatch` / `DisabledWs` / `DisabledMenu`
+in `kiri-core`), because no live native watcher/socket/menu runner is wired into
+this build. The commands stay registered and capability-gated; when invoked without
+a live backend they return a new explicit `service_unavailable` error
+(`ErrorCode::ServiceUnavailable`) instead of an unknown-command failure. This is
+honest: the security/capability surface is real and present everywhere; only the
+transport is stubbed until a platform backend is wired.
+
+A regression test (`host_router_regression_tests`) now builds the EXACT production
+router (no test-only router) and asserts `Router::is_known(id)` for every catalog
+command in `kiri_core::commands::COMMANDS` (the single source of truth), plus a
+targeted check that ids 66-73 are registered. If any `with_*` surface is dropped
+from `build_host_router` again, this test fails loudly instead of silently
+returning `ProtocolError`. CLAIM UPDATE: cli/fs-watch/ws/menu are now correctly
+wired into the production host router on all three OSes (transport still stubbed
+where no live backend exists). Evidence: `cargo test -p kiri-runtime
+host_router_regression_tests` (2 passing); `cargo clippy -p kiri-runtime
+--all-targets -D warnings` (macOS) and `cargo clippy --target
+x86_64-pc-windows-msvc -p kiri-runtime --all-targets -D warnings` (Windows) both
+clean. (A)
 
 ---
 

@@ -1137,7 +1137,10 @@ impl StaticRouter {
         let name = match crate::commands::command_name(request.command_id) {
             Some(n) => n,
             None => {
-                return Err(Error::protocol_error(format!("unknown command id {}", request.command_id)));
+                return Err(Error::protocol_error(format!(
+                    "unknown command id {}",
+                    request.command_id
+                )));
             }
         };
         let required = capability_bit::for_command(request.command_id);
@@ -1459,10 +1462,7 @@ mod tests {
         let req = WireRequest::new(9999, 1, 1, json!(null));
         let res = sr.authorize(&caps, &req);
         assert!(res.is_err(), "unknown id must be rejected");
-        assert_eq!(
-            res.unwrap_err().code,
-            crate::error::ErrorCode::ProtocolError
-        );
+        assert_eq!(res.unwrap_err().code, crate::error::ErrorCode::ProtocolError);
         // is_known agrees.
         assert!(!sr.is_known(9999));
     }
@@ -1474,10 +1474,7 @@ mod tests {
         let req = WireRequest::new(command_id::PING, 1, 1, json!(null));
         let res = sr.authorize(&caps, &req);
         assert!(res.is_err());
-        assert_eq!(
-            res.unwrap_err().code,
-            crate::error::ErrorCode::Unauthorized
-        );
+        assert_eq!(res.unwrap_err().code, crate::error::ErrorCode::Unauthorized);
         // name + required bit are resolved purely from the catalog.
         assert_eq!(sr.command_name(command_id::PING), Some("kiri.ping"));
         assert_eq!(sr.required_capability(command_id::PING), capability_bit::PING);

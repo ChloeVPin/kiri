@@ -80,6 +80,21 @@ pub trait MenuRunner: Send + Sync {
     fn invoke(&self, id: &str, action: &str) -> Result<()>;
 }
 
+/// Production backend used when no live native menu runner is wired into this
+/// build. The command stays registered and capability-gated; the transport
+/// simply reports that it is not available, so the frontend gets an explicit
+/// error instead of an unregistered (unknown-command) failure.
+pub struct DisabledMenu;
+
+impl MenuRunner for DisabledMenu {
+    fn set_menu(&self, _items: &[MenuItem]) -> Result<()> {
+        Err(Error::service_unavailable("kiri.menu.set backend not wired in this build"))
+    }
+    fn invoke(&self, _id: &str, _action: &str) -> Result<()> {
+        Err(Error::service_unavailable("kiri.menu.invoke backend not wired in this build"))
+    }
+}
+
 /// Capability-scoped menu service bounded to an allowlist plus limits.
 #[derive(Clone)]
 pub struct MenuService {

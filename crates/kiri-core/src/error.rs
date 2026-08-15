@@ -23,6 +23,11 @@ pub enum ErrorCode {
     Cancelled,
     CommandError,
     InternalError,
+    /// Requested a transport-backed service (fs watch, websocket, native
+    /// menu) that is built without a live platform backend. The command is
+    /// registered and capability-gated, but its transport is not wired in
+    /// this build, so the call fails explicitly rather than silently.
+    ServiceUnavailable,
 }
 
 impl ErrorCode {
@@ -42,6 +47,7 @@ impl ErrorCode {
             ErrorCode::Cancelled => "cancelled",
             ErrorCode::CommandError => "command_error",
             ErrorCode::InternalError => "internal_error",
+            ErrorCode::ServiceUnavailable => "service_unavailable",
         }
     }
 }
@@ -119,6 +125,9 @@ impl Error {
     }
     pub fn internal_error(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InternalError, message)
+    }
+    pub fn service_unavailable(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::ServiceUnavailable, message)
     }
 }
 

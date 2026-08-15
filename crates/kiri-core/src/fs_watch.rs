@@ -94,6 +94,24 @@ pub trait FsWatchBackend: Send + Sync {
     fn drain(&self, watch_id: u64) -> Vec<WatchEvent>;
 }
 
+/// Production backend used when no live watcher is wired into this build.
+/// The command stays registered and capability-gated; the transport simply
+/// reports that it is not available, so the frontend gets an explicit error
+/// instead of an unregistered (unknown-command) failure.
+pub struct DisabledFsWatch;
+
+impl FsWatchBackend for DisabledFsWatch {
+    fn watch(&self, _target: &WatchTarget) -> Result<u64> {
+        Err(Error::service_unavailable("kiri.fs.watch backend not wired in this build"))
+    }
+    fn unwatch(&self, _watch_id: u64) -> Result<()> {
+        Err(Error::service_unavailable("kiri.fs.unwatch backend not wired in this build"))
+    }
+    fn drain(&self, _watch_id: u64) -> Vec<WatchEvent> {
+        Vec::new()
+    }
+}
+
 /// Capability-scoped fs-watch service bounded to a path allowlist plus limits.
 #[derive(Clone)]
 pub struct FsWatchService {

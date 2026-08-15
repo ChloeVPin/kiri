@@ -501,8 +501,23 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
                 .expect("valid package version"),
             kiri_core::limits::Limits::default(),
+        ))
+        .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
+        .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
+            std::sync::Arc::new(kiri_core::fs_watch::DisabledFsWatch),
+            kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
+        ))
+        .with_ws(kiri_core::websocket::WsService::new(
+            std::sync::Arc::new(kiri_core::websocket::DisabledWs),
+            kiri_core::websocket::WsAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
+        ))
+        .with_menu(kiri_core::app_menu::MenuService::new(
+            std::sync::Arc::new(kiri_core::app_menu::DisabledMenu),
+            kiri_core::app_menu::MenuAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
         ));
-
     // ---- WebView2 environment (W1: WebView2 shell) ----
     markers.record(Marker::WebViewCreationRequested, qpc_now_ns());
     let env = {

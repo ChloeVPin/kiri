@@ -28,9 +28,7 @@ use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use kiri_core::caller::CallerRegistry;
-use kiri_core::capabilities::PathScope;
 use kiri_core::diagnostics::Diagnostics;
-use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
 use kiri_core::security::{is_app_origin, is_navigation_allowed};
 use kiri_core::wire::{WireRequest, WireResponse};
@@ -181,51 +179,29 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
     ]
 }
 
-fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
-    let markers = Rc::new(RefCell::new(StartupMarkers::new()));
-    record(&markers, Marker::ProcessSpawnRequested);
-    record(&markers, Marker::NativeEntry);
-
-    let event_loop = EventLoop::new();
-    let window = std::sync::Arc::new(
-        WindowBuilder::new()
-            .with_title(options.title.clone())
-            .with_inner_size(tao::dpi::LogicalSize::new(
-                options.width as f64,
-                options.height as f64,
-            ))
-            .build(&event_loop)
-            .map_err(|e| {
-                eprintln!("[kiri] window creation failed: {e}");
-                1
-            })?,
-    );
-    record(&markers, Marker::PlatformInit);
-
-    record(&markers, Marker::WebViewCreationRequested);
-
-    // Control-plane router for the native bridge (T003). The caller identity
-    // is assigned by the native runtime, never by JavaScript; grant the ping
-    // capability so control commands can run from the trusted frontend.
-    let mut registry = CallerRegistry::new();
-    let caller = registry.register();
-    let caller_caps = kiri_core::security::trusted_frontend_capabilities();
-    let diagnostics = Diagnostics::new();
-    let events = EventBus::new();
-    // Shared generational resource table owned by the host. The resources plugin
-    // binds this exact instance via the ABI context, so kiri.open/kiri.close
-    // mutate it and keep the diagnostics open-resource count honest and dynamic.
-    let resources: Arc<Mutex<ResourceTable<()>>> = Arc::new(Mutex::new(ResourceTable::<()>::new()));
-
+/// Build the production control-plane router shared by the live host and
+/// the registration regression test. Takes the window and clipboard
+/// controllers so the test can pass headless no-op stubs without opening a
+/// WebView. Returns the fully-wired router: every catalog command id must
+/// resolve on this exact construction.
+pub(crate) fn build_host_router(
+    window: std::sync::Arc<dyn kiri_core::window::WindowController>,
+    clipboard_ctrl: std::sync::Arc<dyn kiri_core::clipboard::ClipboardController>,
+    diagnostics: &Diagnostics,
+    resources: &std::sync::Arc<Mutex<kiri_core::resources::ResourceTable<()>>>,
+    options: &HostOptions,
+) -> kiri_core::dispatch::Router {
+    let events = kiri_core::platform::EventBus::new();
+    let caller = CallerRegistry::new().register();
     // Host-owned fs scope: a bounded sandbox under the temp dir. The host is
     // the only authority that can widen it; the frontend cannot.
-    let mut fs_scope = PathScope::new(std::env::temp_dir().join("kiri-fs"));
+    let mut fs_scope =
+        kiri_core::capabilities::PathScope::new(std::env::temp_dir().join("kiri-fs"));
     fs_scope.read = true;
     fs_scope.write = true;
-
-    let router = crate::plugins::PluginHost::build_router_with_plugins(
-        &diagnostics,
-        &resources,
+    crate::plugins::PluginHost::build_router_with_plugins(
+        diagnostics,
+        resources,
         caller,
         &crate::plugins::PluginManifest::empty(),
         &crate::plugins::PluginRegistry::empty(),
@@ -237,13 +213,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
     )
     // G-5: kiri.window.* surface backed by the real native window.
-    .with_window(
-        Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
-        Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))),
-    )
+    .with_window(window, Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))))
     // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
     .with_clipboard(
-        Arc::new(crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init")),
+        clipboard_ctrl,
         Arc::new(Mutex::new(kiri_core::clipboard::ClipboardState::new())),
     )
     // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
@@ -394,7 +367,72 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
             .expect("valid package version"),
         kiri_core::limits::Limits::default(),
-    ));
+    ))
+    .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
+    .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
+        Arc::new(kiri_core::fs_watch::DisabledFsWatch),
+        kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+        kiri_core::limits::Limits::default(),
+    ))
+    .with_ws(kiri_core::websocket::WsService::new(
+        Arc::new(kiri_core::websocket::DisabledWs),
+        kiri_core::websocket::WsAllowlist::new(vec![]),
+        kiri_core::limits::Limits::default(),
+    ))
+    .with_menu(kiri_core::app_menu::MenuService::new(
+        Arc::new(kiri_core::app_menu::DisabledMenu),
+        kiri_core::app_menu::MenuAllowlist::new(vec![]),
+        kiri_core::limits::Limits::default(),
+    ))
+}
+
+fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
+    let markers = Rc::new(RefCell::new(StartupMarkers::new()));
+    record(&markers, Marker::ProcessSpawnRequested);
+    record(&markers, Marker::NativeEntry);
+
+    let event_loop = EventLoop::new();
+    let window = std::sync::Arc::new(
+        WindowBuilder::new()
+            .with_title(options.title.clone())
+            .with_inner_size(tao::dpi::LogicalSize::new(
+                options.width as f64,
+                options.height as f64,
+            ))
+            .build(&event_loop)
+            .map_err(|e| {
+                eprintln!("[kiri] window creation failed: {e}");
+                1
+            })?,
+    );
+    record(&markers, Marker::PlatformInit);
+
+    record(&markers, Marker::WebViewCreationRequested);
+
+    // Control-plane router for the native bridge (T003). The caller identity
+    // is assigned by the native runtime, never by JavaScript; grant the ping
+    // capability so control commands can run from the trusted frontend.
+    let mut registry = CallerRegistry::new();
+    let caller = registry.register();
+    let caller_caps = kiri_core::security::trusted_frontend_capabilities();
+    // Control-plane router for the native bridge (T003). Delegated to
+    // build_host_router so the registration regression test exercises the
+    // exact production construction; the host-owned fs scope, event bus, and
+    // resource table all live inside that function.
+    let window_ctrl: std::sync::Arc<dyn kiri_core::window::WindowController> =
+        std::sync::Arc::new(crate::window_ctl::TaoWindowController::new(window.clone()));
+    let clipboard_ctrl: std::sync::Arc<dyn kiri_core::clipboard::ClipboardController> =
+        std::sync::Arc::new(
+            crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init"),
+        );
+    // Shared diagnostics + generational resource table owned by the host. The
+    // resources plugin binds this exact instance via the ABI context, so
+    // kiri.open/kiri.close mutate it and keep the diagnostics open-resource
+    // count honest and dynamic. Handed to build_host_router and the IPC handler.
+    let diagnostics = Diagnostics::new();
+    let resources: std::sync::Arc<Mutex<ResourceTable<()>>> =
+        std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new()));
+    let router = build_host_router(window_ctrl, clipboard_ctrl, &diagnostics, &resources, &options);
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
@@ -719,4 +757,92 @@ fn notification_templates() -> Vec<kiri_core::notification::NotificationTemplate
             args: 1,
         },
     ]
+}
+
+#[cfg(test)]
+mod host_router_regression_tests {
+    use super::build_host_router;
+    use crate::HostOptions;
+    use kiri_core::clipboard::{ClipboardController, ClipboardState};
+    use kiri_core::diagnostics::Diagnostics;
+    use kiri_core::resources::ResourceTable;
+    use kiri_core::window::{WindowController, WindowState};
+    use std::sync::{Arc, Mutex};
+
+    // Headless no-op controllers so the production router can be built in a
+    // test without opening a window or touching the OS clipboard.
+    struct StubWindow;
+    impl WindowController for StubWindow {
+        fn set_title(&self, _s: &mut WindowState, _t: &str) {}
+        fn show(&self, _s: &mut WindowState) {}
+        fn hide(&self, _s: &mut WindowState) {}
+        fn minimize(&self, _s: &mut WindowState) {}
+        fn maximize(&self, _s: &mut WindowState) {}
+        fn restore(&self, _s: &mut WindowState) {}
+        fn close(&self, _s: &mut WindowState) {}
+        fn focus(&self, _s: &mut WindowState) {}
+    }
+
+    struct StubClipboard;
+    impl ClipboardController for StubClipboard {
+        fn read(&self, _state: &mut ClipboardState) -> kiri_core::error::Result<String> {
+            Ok(String::new())
+        }
+        fn write(&self, _state: &mut ClipboardState, _text: &str) {
+            // no-op in headless tests
+        }
+    }
+
+    #[test]
+    fn production_router_registers_every_catalog_command() {
+        let window_ctrl: Arc<dyn WindowController> = Arc::new(StubWindow);
+        let clipboard_ctrl: Arc<dyn ClipboardController> = Arc::new(StubClipboard);
+        let router = build_host_router(
+            window_ctrl,
+            clipboard_ctrl,
+            &Diagnostics::new(),
+            &std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new())),
+            &HostOptions::default(),
+        );
+
+        // Iterate the single source of truth for the command catalog. Every
+        // catalog id must resolve on the production router construction; if a
+        // surface is dropped from build_host_router this fails loudly instead
+        // of silently returning ProtocolError for an "unknown command".
+        let mut missing = Vec::new();
+        for cmd in kiri_core::commands::COMMANDS.iter() {
+            if !router.is_known(cmd.id) {
+                missing.push((cmd.id, cmd.name));
+            }
+        }
+        assert!(missing.is_empty(), "production router is missing catalog commands: {:?}", missing);
+    }
+
+    #[test]
+    fn production_router_registers_cli_fs_watch_ws_menu() {
+        let window_ctrl: Arc<dyn WindowController> = Arc::new(StubWindow);
+        let clipboard_ctrl: Arc<dyn ClipboardController> = Arc::new(StubClipboard);
+        let router = build_host_router(
+            window_ctrl,
+            clipboard_ctrl,
+            &Diagnostics::new(),
+            &std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new())),
+            &HostOptions::default(),
+        );
+
+        // The four surfaces that were previously only wired in the test-only
+        // router (commands 66-73) must now be present on the real host router.
+        for id in [
+            kiri_core::dispatch::command_id::CLI_ARGS,
+            kiri_core::dispatch::command_id::FS_WATCH,
+            kiri_core::dispatch::command_id::FS_UNWATCH,
+            kiri_core::dispatch::command_id::WS_CONNECT,
+            kiri_core::dispatch::command_id::WS_SEND,
+            kiri_core::dispatch::command_id::WS_CLOSE,
+            kiri_core::dispatch::command_id::MENU_SET,
+            kiri_core::dispatch::command_id::MENU_INVOKE,
+        ] {
+            assert!(router.is_known(id), "command id {} must be registered", id);
+        }
+    }
 }

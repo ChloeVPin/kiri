@@ -69,6 +69,27 @@ pub trait WsBackend: Send + Sync {
     fn drain(&self, conn_id: u64) -> Vec<WsMessage>;
 }
 
+/// Production backend used when no live socket client is wired into this build.
+/// The command stays registered and capability-gated; the transport simply
+/// reports that it is not available, so the frontend gets an explicit error
+/// instead of an unregistered (unknown-command) failure.
+pub struct DisabledWs;
+
+impl WsBackend for DisabledWs {
+    fn open(&self, _url: &str) -> Result<u64> {
+        Err(Error::service_unavailable("kiri.ws.connect backend not wired in this build"))
+    }
+    fn send(&self, _conn_id: u64, _message: &str) -> Result<()> {
+        Err(Error::service_unavailable("kiri.ws.send backend not wired in this build"))
+    }
+    fn close(&self, _conn_id: u64) -> Result<()> {
+        Err(Error::service_unavailable("kiri.ws.close backend not wired in this build"))
+    }
+    fn drain(&self, _conn_id: u64) -> Vec<WsMessage> {
+        Vec::new()
+    }
+}
+
 /// Capability-scoped WebSocket service bounded to a URL allowlist plus limits.
 #[derive(Clone)]
 pub struct WsService {
