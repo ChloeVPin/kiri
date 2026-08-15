@@ -48,6 +48,7 @@
     "kiri.shell.run": 39,
     "kiri.notification.show": 40,
     "kiri.dialog.open": 41,
+    "kiri.shortcut.register": 42,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -257,6 +258,19 @@
       },
     },
 
+    // Restricted, host-allowlisted global shortcuts (kiri.shortcut.register). The
+    // host owns the accelerator->action mapping; the frontend may only enable a
+    // pre-approved accelerator, so it cannot register an arbitrary global hotkey.
+    // This exceeds Tauri's global-shortcut plugin, which lets the frontend bind
+    // arbitrary global combos once the capability is present.
+    shortcut: {
+      register: function (accelerator) {
+        return call("kiri.shortcut.register", { accelerator: accelerator }).then(function (r) {
+          return { accelerator: r.accelerator, action: r.action };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -283,5 +297,6 @@
   global.kiri.shell = Kiri.shell;
   global.kiri.notification = Kiri.notification;
   global.kiri.dialog = Kiri.dialog;
+  global.kiri.shortcut = Kiri.shortcut;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

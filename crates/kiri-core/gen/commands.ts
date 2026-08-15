@@ -83,9 +83,11 @@ export interface KiriCommands {
   kiri_notification_show(arg: unknown): Promise<unknown>;
   /** kiri_dialog_open (id=41, capability="dialog", execution="io") */
   kiri_dialog_open(arg: unknown): Promise<unknown>;
+  /** kiri_shortcut_register (id=42, capability="shortcut", execution="io") */
+  kiri_shortcut_register(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -130,6 +132,7 @@ export function commandId(name: string): number | undefined {
     case "kiri.shell.run": return 39;
     case "kiri.notification.show": return 40;
     case "kiri.dialog.open": return 41;
+    case "kiri.shortcut.register": return 42;
     default: return undefined;
   }
 }

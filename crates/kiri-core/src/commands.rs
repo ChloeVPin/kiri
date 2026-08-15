@@ -276,6 +276,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "io",
         arity: 1,
     },
+    // --- audit item 8: kiri.shortcut.register (G-4d) restricted, host-allowlisted global
+    // shortcuts (exceeds Tauri global-shortcut plugin on the security axis) ---
+    CommandSpec {
+        name: "kiri.shortcut.register",
+        id: 42,
+        capability: "shortcut",
+        execution: "io",
+        arity: 1,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

@@ -105,6 +105,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // DIALOG capability bit even though it is granted here; the host allowlist is
     // the second gate, so this still exceeds Tauri's unrestricted dialog plugin.
     caps.set(crate::dispatch::capability_bit::DIALOG);
+    // G-4d: the trusted frontend may use the restricted, host-allowlisted global
+    // shortcut surface (kiri.shortcut.register). Authorization still flows through the
+    // SHORTCUT capability bit even though it is granted here; the host allowlist is
+    // the second gate, so this still exceeds Tauri's unrestricted global-shortcut plugin.
+    caps.set(crate::dispatch::capability_bit::SHORTCUT);
     caps
 }
 

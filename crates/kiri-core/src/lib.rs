@@ -26,6 +26,7 @@ pub mod platform;
 pub mod resources;
 pub mod security;
 pub mod shell;
+pub mod shortcut;
 pub mod trace;
 pub mod update;
 pub mod validate;
@@ -54,6 +55,7 @@ pub use security::{
     WINDOWS_APP_ORIGIN,
 };
 pub use shell::{ShellAllowlist, ShellService};
+pub use shortcut::{ShortcutAllowlist, ShortcutBinding, ShortcutService};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
 pub use wire::{WireRequest, WireResponse};

@@ -121,6 +121,12 @@ pub mod command_id {
     /// may only open pre-approved dialog kinds with a host-owned title; it cannot
     /// fabricate free-form native prompts.
     pub const DIALOG_OPEN: u32 = 41;
+    /// Capability-scoped, host-allowlisted global shortcut (kiri.shortcut.register, audit
+    /// item 8). Exceeds Tauri's global-shortcut plugin on the security axis: the frontend
+    /// may only enable a pre-approved accelerator mapped to a host-owned action; it cannot
+    /// register an arbitrary global hotkey, so a malicious frontend cannot hijack desktop
+    /// combos (e.g. Cmd+Q) globally.
+    pub const SHORTCUT_REGISTER: u32 = 42;
 }
 
 /// Capability bits used by built-in control commands.
@@ -177,6 +183,11 @@ pub mod capability_bit {
     /// host-approved dialog kinds with a host-owned title may show, so a malicious
     /// frontend cannot spoof a system dialog.
     pub const DIALOG: u32 = 13;
+    /// Authorizes restricted, host-allowlisted global shortcuts (kiri.shortcut.register).
+    /// Bit 14 (audit item 8). Exceeds Tauri's global-shortcut plugin on the security axis:
+    /// a granted capability still cannot register an arbitrary global hotkey; only a
+    /// host-approved accelerator mapped to a host-owned action may bind.
+    pub const SHORTCUT: u32 = 14;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -226,6 +237,7 @@ pub mod capability_bit {
             crate::dispatch::command_id::SHELL_RUN => SHELL,
             crate::dispatch::command_id::NOTIFY => NOTIFICATION,
             crate::dispatch::command_id::DIALOG_OPEN => DIALOG,
+            crate::dispatch::command_id::SHORTCUT_REGISTER => SHORTCUT,
             _ => PING,
         }
     }
@@ -540,6 +552,17 @@ impl Router {
     /// an arbitrary native prompt; only pre-approved dialog kinds may open.
     pub fn with_dialog(mut self, service: crate::dialog::DialogService) -> Self {
         for (id, required, handler) in crate::dialog::dialog_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.shortcut.* command set (audit item 8). Every shortcut is
+    /// capability-gated (bit SHORTCUT) AND constrained to a host allowlist of exact
+    /// accelerators mapped to host-owned actions, so a granted capability still cannot
+    /// register an arbitrary global hotkey; only pre-approved accelerators may bind.
+    pub fn with_shortcut(mut self, service: crate::shortcut::ShortcutService) -> Self {
+        for (id, required, handler) in crate::shortcut::shortcut_handlers(service) {
             self.register(id, required, handler);
         }
         self

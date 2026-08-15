@@ -264,6 +264,15 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::sync::Arc::new(crate::dialog_ctl::CrossDialogRunner::new()),
                 kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4d: kiri.shortcut.register surface (audit item 8). Capability-gated
+            // (SHORTCUT) and constrained to a host allowlist of exact accelerators mapped
+            // to host-owned actions, so a granted capability still cannot register an
+            // arbitrary global hotkey; only pre-approved accelerators may bind.
+            .with_shortcut(kiri_core::shortcut::ShortcutService::new(
+                std::sync::Arc::new(crate::shortcut_ctl::CrossShortcutRunner::new()),
+                kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
+                kiri_core::limits::Limits::default(),
             ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -460,6 +469,25 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// template and bounded args (file pickers additionally restrict extensions).
 /// Inverts Tauri's dialog plugin trust model: a granted DIALOG capability still
 /// cannot render a free-form native prompt; only pre-approved kinds may show.
+/// Host allowlist for `kiri.shortcut.register` (audit item 8, G-4d). Default-deny:
+/// only the exact accelerators below may bind, each mapped to a host-owned action;
+/// the frontend cannot supply or alter the accelerator or action. Inverts Tauri's
+/// global-shortcut plugin trust model: a granted SHORTCUT capability still cannot
+/// register an arbitrary global hotkey, so a malicious frontend cannot hijack desktop
+/// combos (e.g. Cmd+Q) globally.
+fn shortcut_bindings() -> Vec<kiri_core::shortcut::ShortcutBinding> {
+    vec![
+        kiri_core::shortcut::ShortcutBinding {
+            accelerator: "CmdOrCtrl+S".to_string(),
+            action: "save".to_string(),
+        },
+        kiri_core::shortcut::ShortcutBinding {
+            accelerator: "CmdOrCtrl+K".to_string(),
+            action: "command-palette".to_string(),
+        },
+    ]
+}
+
 fn dialog_templates() -> Vec<kiri_core::dialog::DialogTemplate> {
     vec![
         kiri_core::dialog::DialogTemplate {
