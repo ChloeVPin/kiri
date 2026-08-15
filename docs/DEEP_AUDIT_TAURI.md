@@ -154,6 +154,25 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 - NOTE: no step in this loop launches `kiri-host` or a baseline binary, so the
   screen never flashes. All verification is `cargo test`/`clippy`/`fmt`/`bulk_bench`.
 
+- [x] R-1 and R-2 VERIFIED CURRENT (this session): re-inspected
+      `crates/kiri-runtime/src/assets.rs` (kiri:// handler with content-type + Range
+      to 206 + ETag/304, allowlist in `serve_checked`) and `crates/kiri-runtime/src/
+      plugins.rs` (KiriPluginV1/KiriHostV1 mirroring `plugin_abi.h`, `build_router_with_plugins`
+      wiring the four real built-ins kiri.ping/diag/open/close, host-owned PluginManifest/
+      PluginRegistry load-gated). Both are real, wired into both backends, and headless-tested.
+- [x] Mac-headless-runnable roadmap FULLY CLOSED: every item in §6b (1-18) is done and
+      committed; the production router in `host_cross.rs::build_host_router` wires all 22+
+      surfaces (platform/fs/window/clipboard/path/http/shell/notification/dialog/shortcut/
+      autostart/store/deeplink/opener/window_state/tray/sidecar/event/config/updater + cli/
+      fs_watch/ws/menu). Headless gates currently green: `cargo fmt --all -- --check`,
+      `cargo clippy -p kiri-runtime --all-targets -- -D warnings` (macOS), `cargo clippy
+      --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets -- -D warnings`,
+      `cargo test --workspace` = 252 pass, `bulk_bench` runs. No further Mac-headless-runnable
+      "exceed Tauri" item remains. Remaining work is hardware/cert-blocked (T008 WebView2
+      shared-buffer, T009 Windows perf leg, G-1 mobile, G-2 50+ plugin ecosystem breadth,
+      G-3 native signing certs) and cannot be closed on this macOS dev host without those.
+
+
 - [x] R-5 DONE: scoped `kiri.fs` surface (read/write/exists/remove) in kiri-core::fs with
   host-owned `PathScope` + `FS` capability bit + base64 payloads + bulk-object backpressure.
   `PathScope::allows` hardened: `/var` <-> `/private/var` normalization, `..` escape
