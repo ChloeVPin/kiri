@@ -111,6 +111,11 @@ pub mod command_id {
     /// capability still cannot spawn an unapproved program; the host allowlist
     /// is the second gate.
     pub const SHELL_RUN: u32 = 39;
+    /// Capability-scoped, host-template-allowlisted notification
+    /// (kiri.notification.show, audit item 5). Exceeds Tauri's notification
+    /// plugin on the security axis: the frontend may only trigger pre-approved
+    /// templates with bounded args; it cannot render free-form title/body.
+    pub const NOTIFY: u32 = 40;
 }
 
 /// Capability bits used by built-in control commands.
@@ -154,6 +159,13 @@ pub mod capability_bit {
     /// an unapproved program; the host allowlist is the second gate, so a
     /// compromised or careless frontend cannot run an arbitrary binary.
     pub const SHELL: u32 = 11;
+    /// Authorizes restricted, host-template-allowlisted notifications
+    /// (kiri.notification.show). Bit 12 (audit item 5). Exceeds Tauri's
+    /// notification plugin on the security axis: a granted capability still
+    /// cannot render arbitrary title/body; only host-declared templates with
+    /// bounded args may show, so a malicious frontend cannot spoof a system
+    /// notification.
+    pub const NOTIFICATION: u32 = 12;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -201,6 +213,7 @@ pub mod capability_bit {
             | crate::dispatch::command_id::OS_APP_DIR => PATH,
             crate::dispatch::command_id::HTTP_GET => HTTP,
             crate::dispatch::command_id::SHELL_RUN => SHELL,
+            crate::dispatch::command_id::NOTIFY => NOTIFICATION,
             _ => PING,
         }
     }
@@ -492,6 +505,18 @@ impl Router {
     /// backpressure.
     pub fn with_shell(mut self, service: crate::shell::ShellService) -> Self {
         for (id, required, handler) in crate::shell::shell_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.notification.* command set (audit item 5). Every
+    /// notification is capability-gated (bit NOTIFICATION) AND constrained to a
+    /// host template allowlist supplied by the native host, so a granted
+    /// capability still cannot render arbitrary title/body; only pre-approved
+    /// template ids with bounded args may show.
+    pub fn with_notification(mut self, service: crate::notification::NotificationService) -> Self {
+        for (id, required, handler) in crate::notification::notification_handlers(service) {
             self.register(id, required, handler);
         }
         self

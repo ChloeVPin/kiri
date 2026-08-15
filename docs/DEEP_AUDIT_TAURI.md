@@ -170,9 +170,21 @@ axis (security, latency, or audibility), not just match it.
    security axis (capability authority + host allowlist, the second gate); both
    paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS
    surface in examples/blank/kiri.js (Kiri.shell.run).
-5. **kiri.notification / global-shortcut** — lower priority; implement after the
-   above when a real notification backend exists on macOS (headless tests stub
-   the OS call).
+5. [DONE] kiri.notification.show (restricted, host-template-allowlisted) - Tauri's
+   notification plugin lets the frontend send arbitrary title/body when the
+   capability is granted (a spoofing/phishing surface). Kiri gates
+   kiri.notification.show behind the NOTIFICATION capability bit (12) AND a host
+   template allowlist (default-deny): the frontend references a pre-approved
+   template id and supplies only bounded positional args; the host owns the
+   title/body text and the {i} substitution. A granted capability with no matching
+   template is refused, so JavaScript can never render free-form notification
+   content. Transport is a trait seam (NotificationRunner); the real displayer
+   (osascript/notify-send/BurntToast) lives in the runtime behind
+   CrossNotificationRunner/WinNotificationRunner, tests use StubNotification
+   (allowed-template, unknown-template-deny, too-many-args-deny, capability-denied).
+   Exceeds on the security axis (capability authority + host template allowlist);
+   both paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS
+   surface in examples/blank/kiri.js (Kiri.notification.show).
 
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side

@@ -13,6 +13,7 @@
 pub mod assets;
 pub mod clipboard_ctl;
 pub mod markers;
+pub mod notification_ctl;
 pub mod output;
 pub mod plugins;
 pub mod shell_ctl;

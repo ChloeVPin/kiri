@@ -94,6 +94,12 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // is the second gate, so this still exceeds Tauri's unrestricted shell
     // plugin.
     caps.set(crate::dispatch::capability_bit::SHELL);
+    // G-4b: the trusted frontend may use the restricted, host-template-
+    // allowlisted notification surface (kiri.notification.show). Authorization
+    // still flows through the NOTIFICATION capability bit even though it is
+    // granted here; the host template allowlist is the second gate, so this
+    // still exceeds Tauri's unrestricted notification plugin.
+    caps.set(crate::dispatch::capability_bit::NOTIFICATION);
     caps
 }
 

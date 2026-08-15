@@ -241,6 +241,17 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::sync::Arc::new(crate::shell_ctl::CrossShellRunner::new()),
                 kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4b: kiri.notification.show surface (audit item 5). Capability-gated
+            // (NOTIFICATION) and constrained to a host template allowlist so a
+            // granted capability still cannot render arbitrary title/body; only
+            // pre-approved templates with bounded args may show.
+            .with_notification(kiri_core::notification::NotificationService::new(
+                std::sync::Arc::new(
+                    crate::notification_ctl::cross_notify::CrossNotificationRunner::new(),
+                ),
+                kiri_core::notification::NotificationAllowlist::new(notification_templates()),
+                kiri_core::limits::Limits::default(),
             ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -416,4 +427,26 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
         program: "echo".to_string(),
         args: vec!["kiri-probe".to_string()],
     }]
+}
+
+/// Host template allowlist for `kiri.notification.show` (audit item 5, G-4b).
+/// Default-deny: only the exact template ids below may display, and the frontend
+/// may only supply bounded positional args. The host owns the title/body text,
+/// inverting Tauri's notification plugin trust model (Tauri lets the frontend send
+/// arbitrary title/body once the capability is present).
+fn notification_templates() -> Vec<kiri_core::notification::NotificationTemplate> {
+    vec![
+        kiri_core::notification::NotificationTemplate {
+            id: "download-complete".to_string(),
+            title: "Download finished: {0}".to_string(),
+            body: "Saved to {1}".to_string(),
+            args: 2,
+        },
+        kiri_core::notification::NotificationTemplate {
+            id: "build-failed".to_string(),
+            title: "Build failed".to_string(),
+            body: "{0}".to_string(),
+            args: 1,
+        },
+    ]
 }

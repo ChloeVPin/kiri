@@ -57,6 +57,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "path" => crate::dispatch::capability_bit::PATH,
         "http" => crate::dispatch::capability_bit::HTTP,
         "shell" => crate::dispatch::capability_bit::SHELL,
+        "notification" => crate::dispatch::capability_bit::NOTIFICATION,
         _ => 0,
     }
 }
@@ -258,6 +259,14 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "kiri.http.get", id: 38, capability: "http", execution: "io", arity: 1 },
     // --- audit item 4: kiri.shell.run (G-4) restricted, host-allowlisted ---
     CommandSpec { name: "kiri.shell.run", id: 39, capability: "shell", execution: "io", arity: 1 },
+    // --- audit item 5: kiri.notification.show (G-4b) restricted, host-template-allowlisted ---
+    CommandSpec {
+        name: "kiri.notification.show",
+        id: 40,
+        capability: "notification",
+        execution: "io",
+        arity: 1,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

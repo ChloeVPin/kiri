@@ -46,6 +46,7 @@
     "kiri.os.appDir": 37,
     "kiri.http.get": 38,
     "kiri.shell.run": 39,
+    "kiri.notification.show": 40,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -229,6 +230,19 @@
       },
     },
 
+    // Restricted, host-template-allowlisted notifications (kiri.notification.show).
+    // The host owns the title/body text; the frontend may only trigger a pre-approved
+    // template id with bounded args, so it cannot render free-form notification
+    // content. This exceeds Tauri's notification plugin, which lets the frontend send
+    // arbitrary title/body once the capability is present.
+    notification: {
+      show: function (template, args) {
+        return call("kiri.notification.show", { template: template, args: args || [] }).then(function (r) {
+          return { templateId: r.templateId, title: r.title, body: r.body };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -253,5 +267,6 @@
   global.kiri.os = Kiri.os;
   global.kiri.http = Kiri.http;
   global.kiri.shell = Kiri.shell;
+  global.kiri.notification = Kiri.notification;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);
