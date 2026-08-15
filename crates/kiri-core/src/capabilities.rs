@@ -115,31 +115,42 @@ impl PathScope {
     ///    a candidate with different prefixes. Both are normalized to the
     ///    `/var` form before comparison so in-scope paths are not wrongly
     ///    denied (and out-of-scope paths still fail).
-    /// 2. The target file may not exist yet (create-for-write). The existing
-    ///    parent is canonicalized and the file name re-attached so containment
-    ///    is judged on the directory the file will live in.
+    /// 2. The target file (or an intermediate directory) may not exist yet
+    ///    (create-for-write). We resolve the deepest EXISTING ancestor,
+    ///    canonicalize that (which also resolves symlinks/junctions such as
+    ///    Windows' temp dir consistently for root and candidate), then
+    ///    re-attach the not-yet-created tail. Comparing the raw, un-
+    ///    canonicalized path against a canonicalized root would deny valid
+    ///    writes, which is the bug this closes.
     pub fn allows(&self, value: &str) -> bool {
         let path = std::path::Path::new(value);
         if !path.is_absolute() {
             return false;
         }
-        // Collect candidate absolute paths, best-first.
-        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
-        if let Ok(c) = path.canonicalize() {
-            candidates.push(c);
-        }
-        if let Some(parent) = path.parent() {
-            if let Ok(cp) = parent.canonicalize() {
-                if let Some(name) = path.file_name() {
-                    candidates.push(cp.join(name));
+        // Climb to the deepest existing ancestor so the part we hand to
+        // canonicalize actually exists. The trailing components are re-
+        // attached after, so missing files/dirs never block resolution.
+        let mut current = path.to_path_buf();
+        let mut tail: Vec<std::ffi::OsString> = Vec::new();
+        while !current.exists() {
+            match current.file_name().map(|n| n.to_os_string()) {
+                Some(name) => {
+                    tail.push(name);
+                    match current.parent() {
+                        Some(parent) => current = parent.to_path_buf(),
+                        None => break,
+                    }
                 }
+                None => break,
             }
         }
-        candidates.push(path.to_path_buf());
+        let base = current.canonicalize().unwrap_or(current);
+        let mut resolved = base;
+        for part in tail.into_iter().rev() {
+            resolved = resolved.join(part);
+        }
         let root_norm = normalize_path_key(&self.root);
-        candidates
-            .iter()
-            .any(|c| path_key_contains(&root_norm, &normalize_path_key(c), self.recursive))
+        path_key_contains(&root_norm, &normalize_path_key(&resolved), self.recursive)
     }
 }
 
