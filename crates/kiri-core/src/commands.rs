@@ -60,6 +60,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "notification" => crate::dispatch::capability_bit::NOTIFICATION,
         "dialog" => crate::dispatch::capability_bit::DIALOG,
         "deeplink" => crate::dispatch::capability_bit::DEEPLINK,
+        "opener" => crate::dispatch::capability_bit::OPENER,
         _ => 0,
     }
 }
@@ -312,6 +313,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "kiri.deeplink.register",
         id: 47,
         capability: "deeplink",
+        execution: "io",
+        arity: 1,
+    },
+    // --- audit item 12: kiri.opener.open (G-2c) restricted, host-allowlisted opener
+    // (exceeds Tauri opener plugin on the security axis) ---
+    CommandSpec {
+        name: "kiri.opener.open",
+        id: 48,
+        capability: "opener",
         execution: "io",
         arity: 1,
     },

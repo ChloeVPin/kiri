@@ -409,6 +409,19 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(crate::deeplink_ctl::win_deeplink::WinDeeplinkRunner::new()),
                 kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-2c: kiri.opener.open surface (audit item 12). Capability-gated (OPENER)
+            // and bounded to a host allowlist of exact URL schemes and file extensions, so a
+            // granted capability still cannot launch an arbitrary URL scheme or file. This
+            // exceeds Tauri's opener plugin, which opens arbitrary URLs/files once the
+            // capability is present (a scheme/file-launch surface).
+            .with_opener(kiri_core::opener::OpenerService::new(
+                std::sync::Arc::new(crate::opener_ctl::win_opener::WinOpenerRunner::new()),
+                kiri_core::opener::OpenerAllowlist::new(
+                    opener_url_schemes(),
+                    opener_file_extensions(),
+                ),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -830,6 +843,22 @@ fn store_namespaces() -> Vec<kiri_core::store::StoreNamespace> {
 
 fn deeplink_schemes() -> Vec<kiri_core::deeplink::DeeplinkScheme> {
     vec![kiri_core::deeplink::DeeplinkScheme { scheme: "kiri-app".to_string() }]
+}
+
+fn opener_url_schemes() -> Vec<kiri_core::opener::AllowedUrlScheme> {
+    vec![
+        kiri_core::opener::AllowedUrlScheme { scheme: "https".to_string() },
+        kiri_core::opener::AllowedUrlScheme { scheme: "http".to_string() },
+        kiri_core::opener::AllowedUrlScheme { scheme: "mailto".to_string() },
+    ]
+}
+
+fn opener_file_extensions() -> Vec<kiri_core::opener::AllowedFileExtension> {
+    vec![
+        kiri_core::opener::AllowedFileExtension { extension: "pdf".to_string() },
+        kiri_core::opener::AllowedFileExtension { extension: "txt".to_string() },
+        kiri_core::opener::AllowedFileExtension { extension: "md".to_string() },
+    ]
 }
 
 fn autostart_policy() -> bool {

@@ -125,6 +125,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // DEEPLINK capability bit even though it is granted here; the scheme allowlist is the
     // second gate, so this still exceeds Tauri's unscoped deep-link plugin.
     caps.set(crate::dispatch::capability_bit::DEEPLINK);
+    // G-2c: the trusted frontend may use the restricted, host-allowlisted opener
+    // surface (kiri.opener.open). Authorization still flows through the OPENER
+    // capability bit even though it is granted here; the scheme/extension allowlist is
+    // the second gate, so this still exceeds Tauri's unscoped opener plugin.
+    caps.set(crate::dispatch::capability_bit::OPENER);
     caps
 }
 

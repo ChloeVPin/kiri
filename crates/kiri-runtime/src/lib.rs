@@ -17,6 +17,7 @@ pub mod deeplink_ctl;
 pub mod dialog_ctl;
 pub mod markers;
 pub mod notification_ctl;
+pub mod opener_ctl;
 pub mod output;
 pub mod plugins;
 pub mod shell_ctl;

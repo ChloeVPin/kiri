@@ -54,6 +54,7 @@
     "kiri.store.get": 45,
     "kiri.store.set": 46,
     "kiri.deeplink.register": 47,
+    "kiri.opener.open": 48,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -322,6 +323,17 @@
       },
     },
 
+    // Restricted, host-allowlisted opener (kiri.opener.open). The host owns the
+    // scheme/extension allowlist; the frontend may only open a host-approved URL
+    // scheme or file extension, never an arbitrary target.
+    opener: {
+      open: function (target) {
+        return call("kiri.opener.open", { target: target }).then(function (r) {
+          return { target: r.target };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -352,5 +364,6 @@
   global.kiri.autostart = Kiri.autostart;
   global.kiri.store = Kiri.store;
   global.kiri.deeplink = Kiri.deeplink;
+  global.kiri.opener = Kiri.opener;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

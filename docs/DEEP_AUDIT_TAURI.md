@@ -246,6 +246,23 @@ axis (security, latency, or audibility), not just match it.
     host-owned); no arbitrary scheme squatting.
 
 Cross-cutting differentiators to protect and advertise:
+
+12. [DONE] kiri.opener.open (restricted, host-allowlisted opener) - Tauri's `opener`
+    plugin, when the capability is granted, opens arbitrary URLs and files via the OS
+    default association, so a malicious or careless frontend can launch `file://` paths
+    outside the app sandbox, `ssh://`/`telnet://` handlers, or mailto/exec schemes the
+    user never intended to expose. Kiri gates `kiri.opener.open` behind the OPENER
+    capability bit (18) AND a host allowlist of exact URL schemes plus a fixed set of
+    file extensions; the frontend may only open a host-approved scheme or extension, so
+    it can never launch an arbitrary URL scheme or file. The runner only ever receives a
+    host-owned, allowlisted target. Implemented in kiri-core::opener (capability bit 18,
+    command id 48) with host seams in crates/kiri-runtime/src/opener_ctl.rs
+    (CrossOpenerRunner/WinOpenerRunner, host-owned opener) wired into both backends via
+    `.with_opener(...)`. Both paths cross-checked with cargo clippy --target
+    x86_64-pc-windows-msvc. Headless tests cover allowed-url-open, allowed-file-open,
+    disallowed-scheme-denied, disallowed-extension-denied, and capability-denied-without-bit.
+    Exceeds on the security axis (capability authority + exact-scheme/extension allowlist,
+    host-owned); no arbitrary scheme/file launch.
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw

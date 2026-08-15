@@ -148,6 +148,11 @@ pub mod command_id {
     /// cannot bind an arbitrary scheme; only a host-allowlisted exact scheme may be
     /// registered, inverting Tauri's deep-link plugin (scheme-squatting surface).
     pub const DEEPLINK_REGISTER: u32 = 47;
+    /// Capability-scoped, host-allowlisted opener (kiri.opener.open, audit
+    /// item 12). A granted OPENER capability still cannot open an arbitrary URL scheme
+    /// or file extension; only host-allowlisted exact schemes and extensions may open,
+    /// inverting Tauri's opener plugin (arbitrary URL/file launch surface).
+    pub const OPENER_OPEN: u32 = 48;
 }
 
 /// Capability bits used by built-in control commands.
@@ -223,6 +228,11 @@ pub mod capability_bit {
     /// plugin on the security axis: a granted capability still cannot bind an
     /// arbitrary scheme; only a host-allowlisted exact scheme may be registered.
     pub const DEEPLINK: u32 = 17;
+    /// Authorizes restricted, host-allowlisted opener (kiri.opener.open). Bit 18
+    /// (audit item 12). Exceeds Tauri's opener plugin on the security axis: a granted
+    /// capability still cannot launch an arbitrary URL scheme or file extension; only a
+    /// host-allowlisted exact scheme / extension may open.
+    pub const OPENER: u32 = 18;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -279,6 +289,7 @@ pub mod capability_bit {
                 STORE
             }
             crate::dispatch::command_id::DEEPLINK_REGISTER => DEEPLINK,
+            crate::dispatch::command_id::OPENER_OPEN => OPENER,
             _ => PING,
         }
     }
@@ -637,6 +648,17 @@ impl Router {
     /// arbitrary URI scheme. Inverts Tauri's deep-link plugin trust model.
     pub fn with_deeplink(mut self, service: crate::deeplink::DeeplinkService) -> Self {
         for (id, required, handler) in crate::deeplink::deeplink_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.opener.* command set (audit item 12). Opening is
+    /// capability-gated (bit OPENER) AND bounded to a host allowlist of exact URL
+    /// schemes and file extensions, so a granted capability still cannot launch an
+    /// arbitrary URL scheme or file. Inverts Tauri's opener plugin trust model.
+    pub fn with_opener(mut self, service: crate::opener::OpenerService) -> Self {
+        for (id, required, handler) in crate::opener::opener_handlers(service) {
             self.register(id, required, handler);
         }
         self
