@@ -143,19 +143,36 @@ impl PathScope {
     }
 }
 
-/// Normalize the macOS `/private/var` <-> `/var` symlink equivalence so two
-/// paths that refer to the same location compare equal regardless of which
-/// prefix the OS reported.
+/// Normalize paths so two strings that refer to the same location compare
+/// equal regardless of OS-specific prefix quirks the OS may report:
+///
+/// 1. The macOS `/private/var` <-> `/var` symlink equivalence: a root captured
+///    under `/var` must accept a candidate reported under `/private/var` (and
+///    vice versa).
+/// 2. Windows `std::fs::canonicalize` emits a verbatim `\\?\` prefix (e.g.
+///    `\\?\C:\Users\...`). The scope root is canonicalized so it carries
+///    that prefix, but a candidate that does not yet exist is not canonicalized
+///    and therefore lacks it. Stripping the prefix on both sides keeps the
+///    containment comparison consistent across Windows, where otherwise
+///    in-scope writes to not-yet-created files would be wrongly denied.
 fn normalize_var(p: &std::path::Path) -> std::path::PathBuf {
     let s = p.as_os_str().to_string_lossy();
-    if let Some(rest) = s.strip_prefix("/private/var/") {
-        std::path::PathBuf::from(format!("/var/{rest}"))
+    let s = if let Some(rest) = s.strip_prefix("/private/var/") {
+        format!("/var/{rest}")
     } else if let Some(rest) = s.strip_prefix("/private/") {
         // General /private/* normalization (covers /private/tmp etc.).
-        std::path::PathBuf::from(format!("/{rest}"))
+        format!("/{rest}")
     } else {
-        p.to_path_buf()
-    }
+        s.into_owned()
+    };
+    let s = if let Some(rest) = s.strip_prefix("\\\\?\\UNC\\") {
+        format!("\\{rest}")
+    } else if let Some(rest) = s.strip_prefix("\\\\?\\") {
+        rest.to_string()
+    } else {
+        s
+    };
+    std::path::PathBuf::from(s)
 }
 
 /// Lexically normalize a path by resolving `.` and `..` components without
