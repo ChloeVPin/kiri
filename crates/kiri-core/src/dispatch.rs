@@ -9,7 +9,7 @@
 //! for the mandated stages so the latency benchmark can attribute time.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::Value;
 
@@ -18,6 +18,7 @@ use crate::capabilities::CapabilityBits;
 use crate::error::{Error, Result};
 use crate::header::ControlHeader;
 use crate::limits::Limits;
+use crate::resources::ResourceTable;
 use crate::trace::{Stage, TraceEvent, TraceSink};
 use crate::validate;
 use crate::wire::{WireRequest, WireResponse};
@@ -28,6 +29,10 @@ pub mod command_id {
     pub const PING: u32 = 1;
     /// Diagnostics snapshot command (T010 developer panel).
     pub const DIAGNOSTICS: u32 = 2;
+    /// Open a resource owned by the caller (T011 developer panel honesty).
+    pub const RESOURCES_OPEN: u32 = 3;
+    /// Close a previously opened resource (T011 developer panel honesty).
+    pub const RESOURCES_CLOSE: u32 = 4;
 }
 
 /// Capability bits used by built-in control commands.
@@ -36,6 +41,8 @@ pub mod capability_bit {
     pub const PING: u32 = 0;
     /// Authorizes reading the runtime diagnostics snapshot. Bit 1.
     pub const DIAGNOSTICS: u32 = 1;
+    /// Authorizes opening/closing caller-owned resources. Bit 2.
+    pub const RESOURCES: u32 = 2;
 }
 
 /// A command handler. Receives the authoritative caller, the request id, and
@@ -90,6 +97,59 @@ impl Router {
                 );
                 serde_json::to_value(&snap)
                     .map_err(|e| Error::internal_error(format!("diagnostics snapshot encode: {e}")))
+            }),
+        );
+        self
+    }
+
+    /// Attach a shared generational resource table and register `kiri.open`
+    /// (id 3) / `kiri.close` (id 4). Both require the `RESOURCES` capability.
+    /// `kiri.open` inserts one caller-owned resource and returns its packed
+    /// numeric id; `kiri.close` removes it (owner + generation validated by
+    /// the table). The live open count is written into `diagnostics` after
+    /// every mutation so the developer panel shows an honest, dynamic number
+    /// (T011: replaces the previously hardcoded baseline of 1).
+    pub fn with_resources(
+        mut self,
+        diagnostics: crate::diagnostics::Diagnostics,
+        caller: CallerId,
+    ) -> Self {
+        let table: Arc<Mutex<ResourceTable<()>>> = Arc::new(Mutex::new(ResourceTable::new()));
+        let open_table = table.clone();
+        let open_diag = diagnostics.clone();
+        let open_caller = caller;
+        let mut open_required = CapabilityBits::empty();
+        open_required.set(capability_bit::RESOURCES);
+        self.register(
+            command_id::RESOURCES_OPEN,
+            open_required,
+            Arc::new(move |_c, _rid, _payload| {
+                let mut t = open_table.lock().unwrap();
+                let id = t
+                    .insert(open_caller, (), 4096)
+                    .map_err(|e| Error::limit_exceeded(e.to_string()))?;
+                open_diag.set_open_resources(t.len() as u32);
+                Ok(serde_json::json!({ "resource_id": id.into_raw() }))
+            }),
+        );
+
+        let close_table = table.clone();
+        let close_diag = diagnostics.clone();
+        let close_caller = caller;
+        let mut close_required = CapabilityBits::empty();
+        close_required.set(capability_bit::RESOURCES);
+        self.register(
+            command_id::RESOURCES_CLOSE,
+            close_required,
+            Arc::new(move |_c, _rid, payload| {
+                let raw = payload.get("resource_id").and_then(|v| v.as_u64()).ok_or_else(|| {
+                    Error::protocol_error("kiri.close requires numeric resource_id")
+                })?;
+                let id = crate::resources::ResourceId::from_raw(raw);
+                let mut t = close_table.lock().unwrap();
+                t.remove(close_caller, id)?;
+                close_diag.set_open_resources(t.len() as u32);
+                Ok(serde_json::json!({ "closed": true }))
             }),
         );
         self
@@ -314,7 +374,10 @@ impl StaticRouter {
 mod tests {
     use super::*;
     use crate::caller::CallerId;
+    use crate::caller::CallerRegistry;
     use crate::capabilities::CapabilityBits;
+    use crate::diagnostics::Diagnostics;
+    use crate::error::ErrorCode;
     use crate::latency::LatencyDistribution;
     use crate::trace::RingTraceSink;
     use serde_json::json;
@@ -434,5 +497,79 @@ mod tests {
         let resp = router.dispatch(CallerId(1), &caller_caps(), &req, &mut sink);
         assert!(is_pong(&resp, 3));
         assert_eq!(resp.payload.as_ref().unwrap()["echo"], json!("a-string"));
+    }
+
+    #[test]
+    fn open_close_mutates_live_resource_count() {
+        let mut reg = CallerRegistry::new();
+        let caller = reg.register();
+        let diag = Diagnostics::new();
+        let router =
+            Router::new().with_diagnostics(diag.clone()).with_resources(diag.clone(), caller);
+
+        // No resources open yet.
+        assert_eq!(diag.snapshot("0.1.0", "cross").open_resources, 0);
+
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::RESOURCES);
+        let open_payload = json!({});
+        let open_req = WireRequest {
+            magic: *b"KRI1",
+            version: 1,
+            flags: 1,
+            command_id: command_id::RESOURCES_OPEN,
+            request_id: 1,
+            payload_len: serde_json::to_vec(&open_payload).unwrap().len() as u32,
+            codec: 1,
+            payload: open_payload,
+        };
+        let mut sink = diag.clone();
+        let resp = router.dispatch(caller, &caps, &open_req, &mut sink);
+        assert!(resp.error.is_none(), "open should succeed: {:?}", resp.error);
+        assert_eq!(diag.snapshot("0.1.0", "cross").open_resources, 1);
+
+        let rid =
+            resp.payload.as_ref().unwrap().get("resource_id").and_then(|v| v.as_u64()).unwrap();
+        let close_payload = json!({ "resource_id": rid });
+        let close_req = WireRequest {
+            magic: *b"KRI1",
+            version: 1,
+            flags: 1,
+            command_id: command_id::RESOURCES_CLOSE,
+            request_id: 2,
+            payload_len: serde_json::to_vec(&close_payload).unwrap().len() as u32,
+            codec: 1,
+            payload: close_payload,
+        };
+        let resp2 = router.dispatch(caller, &caps, &close_req, &mut sink);
+        assert!(resp2.error.is_none(), "close should succeed: {:?}", resp2.error);
+        assert_eq!(diag.snapshot("0.1.0", "cross").open_resources, 0);
+    }
+
+    #[test]
+    fn open_rejected_without_resources_capability() {
+        let mut reg = CallerRegistry::new();
+        let caller = reg.register();
+        let diag = Diagnostics::new();
+        let router =
+            Router::new().with_diagnostics(diag.clone()).with_resources(diag.clone(), caller);
+        // Only PING capability: open must be denied by the validate pipeline.
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+        let deny_payload = json!({});
+        let req = WireRequest {
+            magic: *b"KRI1",
+            version: 1,
+            flags: 1,
+            command_id: command_id::RESOURCES_OPEN,
+            request_id: 1,
+            payload_len: serde_json::to_vec(&deny_payload).unwrap().len() as u32,
+            codec: 1,
+            payload: deny_payload,
+        };
+        let mut sink = diag.clone();
+        let resp = router.dispatch(caller, &caps, &req, &mut sink);
+        assert!(resp.error.is_some(), "open without capability must be denied");
+        assert_eq!(resp.error.as_ref().unwrap().code, ErrorCode::Unauthorized);
     }
 }

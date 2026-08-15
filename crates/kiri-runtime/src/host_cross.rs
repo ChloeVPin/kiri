@@ -152,14 +152,13 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let caller = registry.register();
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let diagnostics = Diagnostics::new();
-    let router = Router::new().with_diagnostics(diagnostics.clone());
+    let router = Router::new()
+        .with_diagnostics(diagnostics.clone())
+        // T011: real resource table. kiri.open/kiri.close mutate this table
+        // and keep the diagnostics open-resource count honest and dynamic.
+        .with_resources(diagnostics.clone(), caller);
 
-    // Honest open-resource count: register one session resource for the
-    // native caller so the diagnostics panel reports a non-zero count.
     let resources = Rc::new(RefCell::new(ResourceTable::<()>::new()));
-    if resources.borrow_mut().insert(caller, (), 4096).is_ok() {
-        diagnostics.set_open_resources(resources.borrow().len() as u32);
-    }
 
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();

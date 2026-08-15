@@ -47,6 +47,7 @@ fn capability_bit_for(name: &str) -> u32 {
     match name {
         "ping" => crate::dispatch::capability_bit::PING,
         "diag" => crate::dispatch::capability_bit::DIAGNOSTICS,
+        "resources" => crate::dispatch::capability_bit::RESOURCES,
         _ => 0,
     }
 }
@@ -58,6 +59,8 @@ fn capability_bit_for(name: &str) -> u32 {
 pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "kiri.ping", id: 1, capability: "ping", execution: "pure", arity: 1 },
     CommandSpec { name: "kiri.diag", id: 2, capability: "diag", execution: "pure", arity: 0 },
+    CommandSpec { name: "kiri.open", id: 3, capability: "resources", execution: "pure", arity: 1 },
+    CommandSpec { name: "kiri.close", id: 4, capability: "resources", execution: "pure", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

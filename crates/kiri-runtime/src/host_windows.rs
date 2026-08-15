@@ -248,15 +248,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let mut caller_caps = CapabilityBits::empty();
     caller_caps.set(kiri_core::dispatch::capability_bit::PING);
     caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
+    caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
     let diagnostics = Diagnostics::new();
-    let router = Router::new().with_diagnostics(diagnostics.clone());
+    let router = Router::new()
+        .with_diagnostics(diagnostics.clone())
+        // T011: real resource table. kiri.open/kiri.close mutate this table
+        // and keep the diagnostics open-resource count honest and dynamic.
+        .with_resources(diagnostics.clone(), caller);
 
-    // Honest open-resource count: register one session resource for the
-    // native caller so the diagnostics panel reports a non-zero count.
-    let mut resources = ResourceTable::<()>::new();
-    if resources.insert(caller, (), 4096).is_ok() {
-        diagnostics.set_open_resources(resources.len() as u32);
-    }
+    let resources = ResourceTable::<()>::new();
 
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;

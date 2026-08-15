@@ -5,14 +5,20 @@ export interface KiriCommands {
   kiri_ping(arg: unknown): Promise<unknown>;
   /** kiri_diag (id=2, capability="diag", execution="pure") */
   kiri_diag(arg: unknown): Promise<unknown>;
+  /** kiri_open (id=3, capability="resources", execution="pure") */
+  kiri_open(arg: unknown): Promise<unknown>;
+  /** kiri_close (id=4, capability="resources", execution="pure") */
+  kiri_close(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
     case "kiri.ping": return 1;
     case "kiri.diag": return 2;
+    case "kiri.open": return 3;
+    case "kiri.close": return 4;
     default: return undefined;
   }
 }
