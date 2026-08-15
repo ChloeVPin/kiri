@@ -15,6 +15,7 @@ pub mod clipboard_ctl;
 pub mod markers;
 pub mod output;
 pub mod plugins;
+pub mod shell_ctl;
 pub mod window_ctl;
 
 #[cfg(not(target_os = "windows"))]

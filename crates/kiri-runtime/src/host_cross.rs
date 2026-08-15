@@ -233,6 +233,14 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::sync::Arc::new(kiri_core::http::StdHttpClient),
                 kiri_core::http::HostAllowlist::new(http_allow_hosts()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
+            // and constrained to a host allowlist so a granted capability still
+            // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
+            .with_shell(kiri_core::shell::ShellService::new(
+                std::sync::Arc::new(crate::shell_ctl::CrossShellRunner::new()),
+                kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
+                kiri_core::limits::Limits::default(),
             ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -396,4 +404,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
 /// exceed-Tauri security axis (Tauri's http plugin has no host allowlist).
 fn http_allow_hosts() -> Vec<String> {
     vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
+}
+
+/// Host allowlist for `kiri.shell.run` (audit item 4, G-4). Default-deny:
+/// only the exact program + arg prefix below may spawn. Mirrors Tauri's shell
+/// plugin use but inverts its trust model: Tauri grants arbitrary execution
+/// when the capability is present; Kiri refuses every command that is not an
+/// explicit allowlist entry. The seed entry is a harmless readonly probe.
+fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
+    vec![kiri_core::shell::AllowedCommand {
+        program: "echo".to_string(),
+        args: vec!["kiri-probe".to_string()],
+    }]
 }

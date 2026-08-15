@@ -88,6 +88,12 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // bit even though it is granted here; the host allowlist is the second
     // gate, so this still exceeds Tauri's unrestricted http plugin.
     caps.set(crate::dispatch::capability_bit::HTTP);
+    // G-4: the trusted frontend may use the restricted, host-allowlisted
+    // shell surface (kiri.shell.run). Authorization still flows through the
+    // SHELL capability bit even though it is granted here; the host allowlist
+    // is the second gate, so this still exceeds Tauri's unrestricted shell
+    // plugin.
+    caps.set(crate::dispatch::capability_bit::SHELL);
     caps
 }
 

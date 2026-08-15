@@ -158,9 +158,18 @@ axis (security, latency, or audibility), not just match it.
    a TLS client slots in unchanged. Exceeds on the security axis (capability + allowlist);
    Windows path cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS surface
    in examples/blank/kiri.js (Kiri.http.get).
-4. **kiri.shell / process (restricted)** — the single biggest Tauri escape risk.
-   Kiri: only if an explicit `SHELL` capability + command allowlist is set; never
-   a default. This turns a Tauri weakness into a Kiri strength.
+4. [DONE] kiri.shell.run (restricted, host-allowlisted) - Tauri's shell plugin
+   allows arbitrary command execution when the capability is granted. Kiri gates
+   kiri.shell.run behind the SHELL capability bit (11) AND a host command
+   allowlist (default-deny, program + arg-prefix match), so a granted capability
+   still cannot spawn an unapproved binary; output is bounded by the shared
+   bulk-object ceiling like kiri.fs. Transport is a trait seam (ShellRunner); the
+   real spawner (std::process::Command) lives in the runtime behind CrossShellRunner
+   (macOS/Linux) and WinShellRunner (Windows), tests use StubShell (allowed-run,
+   allowlist-deny, wrong-arg-prefix-deny, capability-denied). Exceeds on the
+   security axis (capability authority + host allowlist, the second gate); both
+   paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS
+   surface in examples/blank/kiri.js (Kiri.shell.run).
 5. **kiri.notification / global-shortcut** — lower priority; implement after the
    above when a real notification backend exists on macOS (headless tests stub
    the OS call).

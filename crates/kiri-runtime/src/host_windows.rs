@@ -339,6 +339,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(kiri_core::http::StdHttpClient),
                 kiri_core::http::HostAllowlist::new(http_allow_hosts()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
+            // and constrained to a host allowlist so a granted capability still
+            // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
+            .with_shell(kiri_core::shell::ShellService::new(
+                std::sync::Arc::new(crate::shell_ctl::WinShellRunner::new()),
+                kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -712,4 +720,14 @@ fn handle_web_message(
 /// exceed-Tauri security axis (Tauri's http plugin has no host allowlist).
 fn http_allow_hosts() -> Vec<String> {
     vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
+}
+
+/// Host allowlist for `kiri.shell.run` (audit item 4, G-4). Default-deny:
+/// only the exact program + arg prefix below may spawn. Inverts Tauri's shell
+/// plugin trust model: arbitrary execution is refused unless explicitly listed.
+fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
+    vec![kiri_core::shell::AllowedCommand {
+        program: "echo".to_string(),
+        args: vec!["kiri-probe".to_string()],
+    }]
 }

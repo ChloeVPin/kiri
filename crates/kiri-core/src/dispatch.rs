@@ -105,6 +105,12 @@ pub mod command_id {
     /// Capability-scoped HTTP GET (kiri.http.get, audit item 3). Allows a
     /// host-allowlisted fetch only; exceeds Tauri's unrestricted http plugin.
     pub const HTTP_GET: u32 = 38;
+    /// Capability-scoped, host-allowlisted command execution
+    /// (kiri.shell.run, audit item 4, G-4 JS surface parity with Tauri's shell
+    /// plugin). Exceeds Tauri's shell plugin on the security axis: a granted
+    /// capability still cannot spawn an unapproved program; the host allowlist
+    /// is the second gate.
+    pub const SHELL_RUN: u32 = 39;
 }
 
 /// Capability bits used by built-in control commands.
@@ -142,6 +148,12 @@ pub mod capability_bit {
     /// security axis: arbitrary fetch is denied unless the host is on the
     /// allowlist).
     pub const HTTP: u32 = 10;
+    /// Authorizes restricted, host-allowlisted command execution
+    /// (kiri.shell.run). Bit 11 (audit item 4, G-4 JS surface). Exceeds Tauri's
+    /// shell plugin on the security axis: a granted capability still cannot spawn
+    /// an unapproved program; the host allowlist is the second gate, so a
+    /// compromised or careless frontend cannot run an arbitrary binary.
+    pub const SHELL: u32 = 11;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -188,6 +200,7 @@ pub mod capability_bit {
             | crate::dispatch::command_id::OS_DOCUMENT_DIR
             | crate::dispatch::command_id::OS_APP_DIR => PATH,
             crate::dispatch::command_id::HTTP_GET => HTTP,
+            crate::dispatch::command_id::SHELL_RUN => SHELL,
             _ => PING,
         }
     }
@@ -466,6 +479,19 @@ impl Router {
     /// the shared bulk-object ceiling, matching kiri.fs backpressure.
     pub fn with_http(mut self, service: crate::http::HttpService) -> Self {
         for (id, required, handler) in crate::http::http_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.shell.* command set (audit item 4, G-4 JS surface
+    /// parity with Tauri's shell plugin). Every spawn is capability-gated (bit
+    /// SHELL) AND constrained to the command allowlist supplied by the native
+    /// host, so a granted capability still cannot spawn an unapproved program.
+    /// Output is bounded by the shared bulk-object ceiling, matching kiri.fs
+    /// backpressure.
+    pub fn with_shell(mut self, service: crate::shell::ShellService) -> Self {
+        for (id, required, handler) in crate::shell::shell_handlers(service) {
             self.register(id, required, handler);
         }
         self

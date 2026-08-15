@@ -45,6 +45,7 @@
     "kiri.os.documentDir": 36,
     "kiri.os.appDir": 37,
     "kiri.http.get": 38,
+    "kiri.shell.run": 39,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -209,6 +210,25 @@
       },
     },
 
+    // Restricted, host-allowlisted command execution (kiri.shell.run). The
+    // host refuses any program/arg-prefix that is not on its explicit allowlist,
+    // so a granted capability still cannot spawn an unapproved binary. This
+    // exceeds Tauri's shell plugin, which allows arbitrary execution once the
+    // capability is present.
+    shell: {
+      run: function (program, args) {
+        return call("kiri.shell.run", { program: program, args: args || [] }).then(function (r) {
+          return {
+            program: r.program,
+            exitCode: r.exitCode,
+            stdout: r.stdout,
+            stderr: r.stderr,
+            bytes: r.bytes,
+          };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -232,5 +252,6 @@
   global.kiri.path = Kiri.path;
   global.kiri.os = Kiri.os;
   global.kiri.http = Kiri.http;
+  global.kiri.shell = Kiri.shell;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

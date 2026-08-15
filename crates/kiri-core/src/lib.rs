@@ -23,6 +23,7 @@ pub mod path;
 pub mod platform;
 pub mod resources;
 pub mod security;
+pub mod shell;
 pub mod trace;
 pub mod update;
 pub mod validate;
@@ -48,6 +49,7 @@ pub use security::{
     is_app_origin, is_navigation_allowed, trusted_frontend_capabilities, CROSS_APP_ORIGIN,
     WINDOWS_APP_ORIGIN,
 };
+pub use shell::{ShellAllowlist, ShellService};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
 pub use wire::{WireRequest, WireResponse};
