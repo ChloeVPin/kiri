@@ -190,7 +190,8 @@ mod control_plane_tests {
         let caller = registry.register();
         let mut caps = CapabilityBits::empty();
         caps.set(kiri_core::dispatch::capability_bit::PING);
-        let router = crate::plugins::PluginHost::build_router_with_plugins();
+        let events = kiri_core::platform::EventBus::new();
+        let router = crate::plugins::PluginHost::build_router_with_plugins().with_platform(events);
         let mut sink = NoopTraceSink;
         router.dispatch(caller, &caps, &request, &mut sink)
     }

@@ -31,6 +31,7 @@ use kiri_core::capabilities::CapabilityBits;
 use kiri_core::diagnostics::Diagnostics;
 use kiri_core::dispatch::Router;
 use kiri_core::error::Error as KiriError;
+use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
 use kiri_core::wire::{WireRequest, WireResponse};
 
@@ -250,11 +251,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
     caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
     let diagnostics = Diagnostics::new();
+    let events = EventBus::new();
     let router = crate::plugins::PluginHost::build_router_with_plugins()
         .with_diagnostics(diagnostics.clone())
         // T011: real resource table. kiri.open/kiri.close mutate this table
         // and keep the diagnostics open-resource count honest and dynamic.
-        .with_resources(diagnostics.clone(), caller);
+        .with_resources(diagnostics.clone(), caller)
+        // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+        .with_platform(events);
 
     let resources = ResourceTable::<()>::new();
 

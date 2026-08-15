@@ -93,10 +93,12 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 ## 5. Immediate workstream (this loop, headless only)
 
 - [x] Repo state verified: T001-T007, T010 done; T008 + T009-Windows blocked on
-      Windows/perf HW; CI exhausted. `cargo test --workspace` green (78 tests).
+      Windows/perf HW; CI exhausted. `cargo test --workspace` green (98 tests).
 - [x] This audit written from code evidence + Tauri public docs.
 - [x] R-1 spike DONE: kiri:// handler in crates/kiri-runtime/src/assets.rs (commit bdb75ef). content-type + Range to 206, 16 unit tests. Headless.
 - [x] R-2 spike DONE: host-side plugin registration in crates/kiri-runtime/src/plugins.rs. PING_PLUGIN ported via KiriPluginV1/KiriHostV1 mirror of plugin_abi.h; build_router_with_plugins() replaces inline Router::new(). Headless.
+- [x] R-3 spike DONE: capability-gated kiri.* JS surface (kiri.platform.os/arch, kiri.app.version, kiri.event.emit/listen) in crates/kiri-core/src/platform.rs + Router::with_platform(). Shipped frontend API in examples/blank/kiri.js served via kiri://. Headless unit tests enforce capabilities + verify payloads.
+- [ ] R-4 next (P1): bundling + autoupdate. Thin cargo-bundle step + signed-update check closes G-3. Requires release signing certs.
 - NOTE: no step in this loop launches `kiri-host` or a baseline binary, so the
   screen never flashes. All verification is `cargo test`/`clippy`/`fmt`/`bulk_bench`.
 

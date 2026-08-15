@@ -355,4 +355,24 @@ mod tests {
         assert!(headers.iter().any(|(k, v)| k == "Content-Range" && v == "bytes 0-3/14"));
         assert!(headers.iter().any(|(k, _)| k == "Accept-Ranges"));
     }
+
+    // R-3: the shipped frontend JS surface (kiri.js) must be served over the
+    // kiri:// protocol with the correct JavaScript mime type and expose the
+    // platform/app/event API. This exercises the real examples/blank asset so
+    // the shipped surface is verified, not a synthetic copy.
+    #[test]
+    fn blank_frontend_serves_kiri_js_with_javascript_mime() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/blank");
+        assert!(root.join("kiri.js").exists(), "examples/blank/kiri.js must exist");
+        let r = serve(&root, "kiri.js", None);
+        match &r {
+            AssetResponse::Full { body, content_type } => {
+                assert_eq!(content_type, "text/javascript; charset=utf-8");
+                let text = String::from_utf8_lossy(body);
+                assert!(text.contains("global.__kiri"), "kiri.js must expose __kiri");
+                assert!(text.contains("platform") && text.contains("event"));
+            }
+            other => panic!("expected Full, got {:?}", other),
+        }
+    }
 }

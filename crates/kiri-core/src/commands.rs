@@ -48,6 +48,9 @@ fn capability_bit_for(name: &str) -> u32 {
         "ping" => crate::dispatch::capability_bit::PING,
         "diag" => crate::dispatch::capability_bit::DIAGNOSTICS,
         "resources" => crate::dispatch::capability_bit::RESOURCES,
+        "platform" => crate::dispatch::capability_bit::PLATFORM,
+        "app" => crate::dispatch::capability_bit::APP,
+        "event" => crate::dispatch::capability_bit::EVENT,
         _ => 0,
     }
 }
@@ -61,6 +64,35 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "kiri.diag", id: 2, capability: "diag", execution: "pure", arity: 0 },
     CommandSpec { name: "kiri.open", id: 3, capability: "resources", execution: "pure", arity: 1 },
     CommandSpec { name: "kiri.close", id: 4, capability: "resources", execution: "pure", arity: 1 },
+    CommandSpec {
+        name: "kiri.platform.os",
+        id: 5,
+        capability: "platform",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.platform.arch",
+        id: 6,
+        capability: "platform",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec { name: "kiri.app.version", id: 7, capability: "app", execution: "pure", arity: 0 },
+    CommandSpec {
+        name: "kiri.event.emit",
+        id: 8,
+        capability: "event",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.event.listen",
+        id: 9,
+        capability: "event",
+        execution: "pure",
+        arity: 1,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

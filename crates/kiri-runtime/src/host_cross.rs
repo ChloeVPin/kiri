@@ -28,6 +28,7 @@ use wry::{PageLoadEvent, WebViewBuilder};
 
 use kiri_core::caller::CallerRegistry;
 use kiri_core::diagnostics::Diagnostics;
+use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
 use kiri_core::security::{is_app_origin, is_navigation_allowed};
 use kiri_core::wire::{WireRequest, WireResponse};
@@ -182,11 +183,14 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let caller = registry.register();
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let diagnostics = Diagnostics::new();
+    let events = EventBus::new();
     let router = crate::plugins::PluginHost::build_router_with_plugins()
         .with_diagnostics(diagnostics.clone())
         // T011: real resource table. kiri.open/kiri.close mutate this table
         // and keep the diagnostics open-resource count honest and dynamic.
-        .with_resources(diagnostics.clone(), caller);
+        .with_resources(diagnostics.clone(), caller)
+        // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+        .with_platform(events);
 
     let resources = Rc::new(RefCell::new(ResourceTable::<()>::new()));
 

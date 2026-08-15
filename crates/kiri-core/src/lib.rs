@@ -16,6 +16,7 @@ pub mod error;
 pub mod header;
 pub mod latency;
 pub mod limits;
+pub mod platform;
 pub mod resources;
 pub mod security;
 pub mod trace;
@@ -27,11 +28,12 @@ pub use capabilities::{CapabilityBits, CapabilityId, PathScope, Scope};
 pub use commands::{
     command_name, emit_typescript, required_capabilities, resolve_command, CommandSpec, COMMANDS,
 };
-pub use dispatch::{is_pong, ping_request, Router, StaticRouter};
+pub use dispatch::{capability_bit, command_id, is_pong, ping_request, Router, StaticRouter};
 pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
 pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
+pub use platform::EventBus;
 pub use resources::{ResourceId, ResourceTable};
 pub use security::{
     is_app_origin, is_navigation_allowed, trusted_frontend_capabilities, CROSS_APP_ORIGIN,

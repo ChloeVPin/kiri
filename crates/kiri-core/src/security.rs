@@ -67,6 +67,12 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     let mut caps = crate::capabilities::CapabilityBits::empty();
     caps.set(crate::dispatch::capability_bit::PING);
     caps.set(crate::dispatch::capability_bit::DIAGNOSTICS);
+    // R-3 JS surface: the trusted frontend may read platform/app facts and use
+    // the event bus. Resource mutation still requires the separate RESOURCES
+    // bit and is not granted here.
+    caps.set(crate::dispatch::capability_bit::PLATFORM);
+    caps.set(crate::dispatch::capability_bit::APP);
+    caps.set(crate::dispatch::capability_bit::EVENT);
     caps
 }
 

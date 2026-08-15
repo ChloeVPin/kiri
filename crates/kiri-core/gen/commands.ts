@@ -9,9 +9,19 @@ export interface KiriCommands {
   kiri_open(arg: unknown): Promise<unknown>;
   /** kiri_close (id=4, capability="resources", execution="pure") */
   kiri_close(arg: unknown): Promise<unknown>;
+  /** kiri_platform_os (id=5, capability="platform", execution="pure") */
+  kiri_platform_os(arg: unknown): Promise<unknown>;
+  /** kiri_platform_arch (id=6, capability="platform", execution="pure") */
+  kiri_platform_arch(arg: unknown): Promise<unknown>;
+  /** kiri_app_version (id=7, capability="app", execution="pure") */
+  kiri_app_version(arg: unknown): Promise<unknown>;
+  /** kiri_event_emit (id=8, capability="event", execution="pure") */
+  kiri_event_emit(arg: unknown): Promise<unknown>;
+  /** kiri_event_listen (id=9, capability="event", execution="pure") */
+  kiri_event_listen(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -19,6 +29,11 @@ export function commandId(name: string): number | undefined {
     case "kiri.diag": return 2;
     case "kiri.open": return 3;
     case "kiri.close": return 4;
+    case "kiri.platform.os": return 5;
+    case "kiri.platform.arch": return 6;
+    case "kiri.app.version": return 7;
+    case "kiri.event.emit": return 8;
+    case "kiri.event.listen": return 9;
     default: return undefined;
   }
 }

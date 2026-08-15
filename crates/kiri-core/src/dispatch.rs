@@ -33,6 +33,16 @@ pub mod command_id {
     pub const RESOURCES_OPEN: u32 = 3;
     /// Close a previously opened resource (T011 developer panel honesty).
     pub const RESOURCES_CLOSE: u32 = 4;
+    /// Report the host platform/OS (R-3 JS surface parity with Tauri).
+    pub const PLATFORM_OS: u32 = 5;
+    /// Report the host CPU architecture (R-3).
+    pub const PLATFORM_ARCH: u32 = 6;
+    /// Report the runtime/app version (R-3).
+    pub const APP_VERSION: u32 = 7;
+    /// Emit a named event to listeners (R-3 event bus).
+    pub const EVENT_EMIT: u32 = 8;
+    /// Register a listener for a named event (R-3 event bus).
+    pub const EVENT_LISTEN: u32 = 9;
 }
 
 /// Capability bits used by built-in control commands.
@@ -43,6 +53,12 @@ pub mod capability_bit {
     pub const DIAGNOSTICS: u32 = 1;
     /// Authorizes opening/closing caller-owned resources. Bit 2.
     pub const RESOURCES: u32 = 2;
+    /// Authorizes reading host platform/OS facts. Bit 3 (R-3).
+    pub const PLATFORM: u32 = 3;
+    /// Authorizes reading the runtime/app version. Bit 4 (R-3).
+    pub const APP: u32 = 4;
+    /// Authorizes emitting/listening to named events. Bit 5 (R-3).
+    pub const EVENT: u32 = 5;
 }
 
 /// A command handler. Receives the authoritative caller, the request id, and
@@ -157,6 +173,76 @@ impl Router {
                 t.remove(close_caller, id)?;
                 close_diag.set_open_resources(t.len() as u32);
                 Ok(serde_json::json!({ "closed": true }))
+            }),
+        );
+        self
+    }
+
+    /// Attach the R-3 JS-surface command set: `kiri.platform.os`,
+    /// `kiri.platform.arch`, `kiri.app.version`, `kiri.event.emit`, and
+    /// `kiri.event.listen`. Each is capability-gated; the handlers read real
+    /// host facts and never touch the filesystem or network. The event bus is
+    /// an in-process broadcast so the trusted frontend and native tooling share
+    /// one channel (parity with Tauri's `event` module, R-3).
+    pub fn with_platform(mut self, events: crate::platform::EventBus) -> Self {
+        let mut os_required = CapabilityBits::empty();
+        os_required.set(capability_bit::PLATFORM);
+        self.register(
+            command_id::PLATFORM_OS,
+            os_required,
+            Arc::new(|_c, _rid, _payload| {
+                Ok(serde_json::json!({ "os": crate::platform::host_os() }))
+            }),
+        );
+
+        let mut arch_required = CapabilityBits::empty();
+        arch_required.set(capability_bit::PLATFORM);
+        self.register(
+            command_id::PLATFORM_ARCH,
+            arch_required,
+            Arc::new(|_c, _rid, _payload| {
+                Ok(serde_json::json!({ "arch": crate::platform::host_arch() }))
+            }),
+        );
+
+        let mut app_required = CapabilityBits::empty();
+        app_required.set(capability_bit::APP);
+        self.register(
+            command_id::APP_VERSION,
+            app_required,
+            Arc::new(|_c, _rid, _payload| {
+                Ok(serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }))
+            }),
+        );
+
+        let emit_bus = events.clone();
+        let mut emit_required = CapabilityBits::empty();
+        emit_required.set(capability_bit::EVENT);
+        self.register(
+            command_id::EVENT_EMIT,
+            emit_required,
+            Arc::new(move |_c, _rid, payload| {
+                let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
+                    Error::protocol_error("kiri.event.emit requires string event")
+                })?;
+                let data = payload.get("payload").cloned().unwrap_or(serde_json::Value::Null);
+                emit_bus.publish(name, data);
+                Ok(serde_json::json!({ "emitted": true }))
+            }),
+        );
+
+        let listen_bus = events.clone();
+        let mut listen_required = CapabilityBits::empty();
+        listen_required.set(capability_bit::EVENT);
+        self.register(
+            command_id::EVENT_LISTEN,
+            listen_required,
+            Arc::new(move |_c, _rid, payload| {
+                let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
+                    Error::protocol_error("kiri.event.listen requires string event")
+                })?;
+                let id = listen_bus.subscribe(name);
+                Ok(serde_json::json!({ "listener_id": id }))
             }),
         );
         self
@@ -578,5 +664,100 @@ mod tests {
         let resp = router.dispatch(caller, &caps, &req, &mut sink);
         assert!(resp.error.is_some(), "open without capability must be denied");
         assert_eq!(resp.error.as_ref().unwrap().code, ErrorCode::Unauthorized);
+    }
+    // --- R-3 JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*) ---
+
+    fn platform_router() -> (Router, crate::platform::EventBus) {
+        let bus = crate::platform::EventBus::new();
+        let router = Router::new().with_platform(bus.clone());
+        (router, bus)
+    }
+
+    fn full_caps() -> CapabilityBits {
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+        caps.set(capability_bit::PLATFORM);
+        caps.set(capability_bit::APP);
+        caps.set(capability_bit::EVENT);
+        caps
+    }
+
+    #[test]
+    fn platform_os_arch_return_real_facts() {
+        let (router, _bus) = platform_router();
+        let mut sink = RingTraceSink::new(16);
+
+        let os_req = WireRequest::new(command_id::PLATFORM_OS, 1, 1, json!(null));
+        let os_resp = router.dispatch(CallerId(1), &full_caps(), &os_req, &mut sink);
+        assert!(os_resp.error.is_none(), "os: {:?}", os_resp.error);
+        let os = os_resp.payload.as_ref().unwrap()["os"].as_str().unwrap();
+        assert!(matches!(os, "macos" | "windows" | "linux" | "unknown"));
+
+        let arch_req = WireRequest::new(command_id::PLATFORM_ARCH, 2, 1, json!(null));
+        let arch_resp = router.dispatch(CallerId(1), &full_caps(), &arch_req, &mut sink);
+        assert!(arch_resp.error.is_none(), "arch: {:?}", arch_resp.error);
+        assert!(arch_resp.payload.as_ref().unwrap()["arch"].is_string());
+    }
+
+    #[test]
+    fn app_version_reports_package_version() {
+        let (router, _bus) = platform_router();
+        let mut sink = RingTraceSink::new(16);
+        let req = WireRequest::new(command_id::APP_VERSION, 1, 1, json!(null));
+        let resp = router.dispatch(CallerId(1), &full_caps(), &req, &mut sink);
+        assert!(resp.error.is_none(), "app.version: {:?}", resp.error);
+        assert_eq!(
+            resp.payload.as_ref().unwrap()["version"].as_str().unwrap(),
+            env!("CARGO_PKG_VERSION")
+        );
+    }
+
+    #[test]
+    fn platform_rejected_without_capability() {
+        let (router, _bus) = platform_router();
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+        let mut sink = RingTraceSink::new(16);
+        let req = WireRequest::new(command_id::PLATFORM_OS, 1, 1, json!(null));
+        let resp = router.dispatch(CallerId(1), &caps, &req, &mut sink);
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.as_ref().unwrap().code, ErrorCode::Unauthorized);
+    }
+
+    #[test]
+    fn event_emit_publishes_to_listener() {
+        let (router, bus) = platform_router();
+        let mut sink = RingTraceSink::new(16);
+        let caps = full_caps();
+
+        let listen_req =
+            WireRequest::new(command_id::EVENT_LISTEN, 1, 1, json!({ "event": "greeting" }));
+        let listen_resp = router.dispatch(CallerId(1), &caps, &listen_req, &mut sink);
+        assert!(listen_resp.error.is_none());
+        let listener_id = listen_resp.payload.as_ref().unwrap()["listener_id"].as_u64().unwrap();
+
+        let emit_req = WireRequest::new(
+            command_id::EVENT_EMIT,
+            2,
+            1,
+            json!({ "event": "greeting", "payload": { "hi": 1 } }),
+        );
+        let emit_resp = router.dispatch(CallerId(1), &caps, &emit_req, &mut sink);
+        assert!(emit_resp.error.is_none());
+        assert_eq!(emit_resp.payload.as_ref().unwrap()["emitted"], json!(true));
+
+        let drained = bus.drain(listener_id);
+        assert_eq!(drained.len(), 1);
+        assert_eq!(drained[0]["hi"], json!(1));
+    }
+
+    #[test]
+    fn event_emit_requires_string_event() {
+        let (router, _bus) = platform_router();
+        let mut sink = RingTraceSink::new(16);
+        let req = WireRequest::new(command_id::EVENT_EMIT, 1, 1, json!({ "payload": { "x": 1 } }));
+        let resp = router.dispatch(CallerId(1), &full_caps(), &req, &mut sink);
+        assert!(resp.error.is_some());
+        assert_eq!(resp.error.as_ref().unwrap().code, ErrorCode::ProtocolError);
     }
 }
