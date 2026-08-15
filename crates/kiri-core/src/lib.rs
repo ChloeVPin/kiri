@@ -13,6 +13,7 @@ pub mod commands;
 pub mod diagnostics;
 pub mod dispatch;
 pub mod error;
+pub mod fs;
 pub mod header;
 pub mod latency;
 pub mod limits;

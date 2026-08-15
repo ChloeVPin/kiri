@@ -109,25 +109,84 @@ impl PathScope {
     /// Canonicalized containment check. `value` must be an absolute path
     /// inside the root (or equal to it). `..` escapes and relative paths are
     /// rejected.
+    ///
+    /// Two macOS-specific hazards are handled so the check stays correct:
+    /// 1. `/var` is a symlink to `/private/var`; the OS may report the root and
+    ///    a candidate with different prefixes. Both are normalized to the
+    ///    `/var` form before comparison so in-scope paths are not wrongly
+    ///    denied (and out-of-scope paths still fail).
+    /// 2. The target file may not exist yet (create-for-write). The existing
+    ///    parent is canonicalized and the file name re-attached so containment
+    ///    is judged on the directory the file will live in.
     pub fn allows(&self, value: &str) -> bool {
         let path = std::path::Path::new(value);
         if !path.is_absolute() {
             return false;
         }
-        let Ok(canonical) = path.canonicalize() else {
-            // The file may not exist yet (e.g. create-for-write); fall back to
-            // a lexical containment check.
-            return self.lexical_contains(path);
-        };
-        self.lexical_contains(&canonical)
-    }
-
-    fn lexical_contains(&self, path: &std::path::Path) -> bool {
-        if self.recursive {
-            path.starts_with(&self.root)
-        } else {
-            path.parent() == Some(self.root.as_path())
+        // Collect candidate absolute paths, best-first.
+        let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+        if let Ok(c) = path.canonicalize() {
+            candidates.push(c);
         }
+        if let Some(parent) = path.parent() {
+            if let Ok(cp) = parent.canonicalize() {
+                if let Some(name) = path.file_name() {
+                    candidates.push(cp.join(name));
+                }
+            }
+        }
+        candidates.push(path.to_path_buf());
+        let root_norm = normalize_var(&self.root);
+        candidates
+            .iter()
+            .any(|c| lexical_contains_norm(&root_norm, &normalize_var(c), self.recursive))
+    }
+}
+
+/// Normalize the macOS `/private/var` <-> `/var` symlink equivalence so two
+/// paths that refer to the same location compare equal regardless of which
+/// prefix the OS reported.
+fn normalize_var(p: &std::path::Path) -> std::path::PathBuf {
+    let s = p.as_os_str().to_string_lossy();
+    if let Some(rest) = s.strip_prefix("/private/var/") {
+        std::path::PathBuf::from(format!("/var/{rest}"))
+    } else if let Some(rest) = s.strip_prefix("/private/") {
+        // General /private/* normalization (covers /private/tmp etc.).
+        std::path::PathBuf::from(format!("/{rest}"))
+    } else {
+        p.to_path_buf()
+    }
+}
+
+/// Lexically normalize a path by resolving `.` and `..` components without
+/// touching the filesystem. This makes `starts_with` containment safe: an
+/// escape like `root/../../etc/passwd` collapses to `root/../etc/passwd`,
+/// which no longer starts with `root`. `root` is already canonical and free
+/// of `..`, so only the candidate needs collapsing.
+fn lexical_normalize(p: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let mut out = std::path::PathBuf::new();
+    for comp in p.components() {
+        match comp {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Drop the last normal segment; keep leading `..` if present.
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// Lexical containment on already `/var`-normalized paths. The candidate is
+/// first collapsed so `..` escapes cannot defeat `starts_with`.
+fn lexical_contains_norm(root: &std::path::Path, path: &std::path::Path, recursive: bool) -> bool {
+    let path = lexical_normalize(path);
+    if recursive {
+        path.starts_with(root)
+    } else {
+        path.parent() == Some(root)
     }
 }
 
@@ -187,6 +246,35 @@ mod tests {
         let root = std::env::temp_dir();
         let scope = PathScope::new(root.clone());
         assert!(!scope.allows("relative/path.txt"));
+    }
+
+    #[test]
+    fn path_scope_normalizes_var_symlink() {
+        // On macOS /var -> /private/var. A root captured under /var must
+        // accept a candidate reported under /private/var (and vice versa).
+        let dir = std::env::temp_dir().join("kiri-scope-var");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = PathScope::new(dir.clone());
+        // Construct a candidate using the /private/var prefix explicitly.
+        let private =
+            std::path::Path::new("/private/var").join(dir.strip_prefix("/var").unwrap_or(&dir));
+        let inside = private.join("file.txt");
+        assert!(scope.allows(inside.to_str().unwrap()));
+        let escaped = private.join("..").join("..").join("etc").join("passwd");
+        assert!(!scope.allows(escaped.to_str().unwrap()));
+    }
+
+    #[test]
+    fn path_scope_allows_not_yet_created_file() {
+        // A write-create targets a file that does not exist yet. Containment
+        // must be judged on the (existing) parent directory.
+        let dir = std::env::temp_dir().join("kiri-scope-new");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = PathScope::new(dir.clone());
+        let missing = dir.join("nested").join("does-not-exist.txt");
+        assert!(scope.allows(missing.to_str().unwrap()));
+        let outside = std::env::temp_dir().join("kiri-scope-other").join("x.txt");
+        assert!(!scope.allows(outside.to_str().unwrap()));
     }
 
     #[test]

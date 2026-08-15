@@ -28,6 +28,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use kiri_core::caller::{CallerId, CallerRegistry};
 use kiri_core::capabilities::CapabilityBits;
+use kiri_core::capabilities::PathScope;
 use kiri_core::diagnostics::Diagnostics;
 use kiri_core::dispatch::Router;
 use kiri_core::error::Error as KiriError;
@@ -257,11 +258,18 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // mutate it and keep the diagnostics open-resource count honest and dynamic.
     let resources: std::sync::Arc<std::sync::Mutex<ResourceTable<()>>> =
         std::sync::Arc::new(std::sync::Mutex::new(ResourceTable::<()>::new()));
+
+    // Host-owned fs scope: a bounded sandbox under the temp dir. The host is
+    // the only authority that can widen it; the frontend cannot.
+    let mut fs_scope = PathScope::new(std::env::temp_dir().join("kiri-fs"));
+    fs_scope.read = true;
+    fs_scope.write = true;
+
     let router =
         crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
             // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-            .with_platform(events);
-
+            .with_platform(events)
+            .with_fs(fs_scope, kiri_core::limits::Limits::default());
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
     let hinstance = windows::Win32::Foundation::HINSTANCE(hmodule.0);

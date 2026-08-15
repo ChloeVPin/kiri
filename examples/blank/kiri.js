@@ -16,6 +16,10 @@
     "kiri.app.version": 7,
     "kiri.event.emit": 8,
     "kiri.event.listen": 9,
+    "kiri.fs.read": 10,
+    "kiri.fs.write": 11,
+    "kiri.fs.exists": 12,
+    "kiri.fs.remove": 13,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -97,6 +101,23 @@
         });
       },
     },
+    fs: {
+      read: function (path) {
+        return call("kiri.fs.read", { path: path }).then(function (r) { return r.base64; });
+      },
+      write: function (path, base64, createNew) {
+        return call("kiri.fs.write", { path: path, base64: base64, create_new: !!createNew }).then(function (r) {
+          return r.written;
+        });
+      },
+      exists: function (path) {
+        return call("kiri.fs.exists", { path: path }).then(function (r) { return r.exists; });
+      },
+      remove: function (path) {
+        return call("kiri.fs.remove", { path: path }).then(function (r) { return r.removed; });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -114,5 +135,6 @@
   global.kiri.platform = Kiri.platform;
   global.kiri.app = Kiri.app;
   global.kiri.event = Kiri.event;
+  global.kiri.fs = Kiri.fs;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

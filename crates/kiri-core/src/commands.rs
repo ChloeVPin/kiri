@@ -51,6 +51,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "platform" => crate::dispatch::capability_bit::PLATFORM,
         "app" => crate::dispatch::capability_bit::APP,
         "event" => crate::dispatch::capability_bit::EVENT,
+        "fs" => crate::dispatch::capability_bit::FS,
         _ => 0,
     }
 }
@@ -93,6 +94,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "pure",
         arity: 1,
     },
+    CommandSpec { name: "kiri.fs.read", id: 10, capability: "fs", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.fs.write", id: 11, capability: "fs", execution: "io", arity: 2 },
+    CommandSpec { name: "kiri.fs.exists", id: 12, capability: "fs", execution: "pure", arity: 1 },
+    CommandSpec { name: "kiri.fs.remove", id: 13, capability: "fs", execution: "io", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

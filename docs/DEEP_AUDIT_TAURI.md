@@ -81,6 +81,11 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 4. **R-4 (P1): Bundling + autoupdate.** Even a thin `cargo-bundle`-style step +
    a signed-update check closes G-3. Requires release signing; Mac-runnable to
    build, but distribution signing needs certs.
+5. **R-5 (P1): Scoped `kiri.fs` surface (DONE headless).** `kiri.fs.read|write|exists|remove`
+   close the Tauri `fs` plugin parity gap (G-2) and exceed it on the security axis: central
+   `FS` capability authority + host-owned `PathScope` allowlist + base64 payloads + bulk-object
+   backpressure. `PathScope::allows` hardened for the macOS `/var` symlink and `..` escapes.
+   Headless, Mac-runnable, 9 fs tests + 2 scope regression tests, all-OS CI-verifiable.
 5. **R-5 (P2): Mobile (iOS/Android).** G-1. Largest Tauri-customer segment we
    lack. Requires a mobile backend (wry has mobile support in 0.40+). NOT
    Mac-headless-runnable for verification; parked until a device/CI is available.
@@ -103,6 +108,12 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 - [x] R-4 (P1) signed-updater COMPLETE: the `UpdateManifestBuilder` producer signs each platform's installer bytes with the release Ed25519 key and emits the `RELEASES.json` the runtime pins (kiri-core::update::update::verify_asset_for verifies every OS asset on any host). The verifier rejects tampered/wrong-key/missing-signature/downgrade. Headless, no certs, proven on all three OSes via the `updater` CI job (cargo test -p kiri-core update::); that job previously caught a macOS-biased fixture (signature only on the darwin asset) that failed on Linux/Windows and was fixed. Signed distribution still needs Apple Developer + Windows code-sign certs, but the build+verify loop is closed and CI-verified.
 - NOTE: no step in this loop launches `kiri-host` or a baseline binary, so the
   screen never flashes. All verification is `cargo test`/`clippy`/`fmt`/`bulk_bench`.
+
+- [x] R-5 DONE: scoped `kiri.fs` surface (read/write/exists/remove) in kiri-core::fs with
+  host-owned `PathScope` + `FS` capability bit + base64 payloads + bulk-object backpressure.
+  `PathScope::allows` hardened for `/var` <-> `/private/var` normalization and `..` escape
+  rejection (2 regression tests). Wired into both hosts and the frontend (examples/blank/kiri.js).
+  9 fs unit tests. All-OS CI-verifiable. This exceeds Tauri's `fs` plugin on the security axis.
 
 ---
 

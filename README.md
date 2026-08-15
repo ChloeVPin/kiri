@@ -26,7 +26,7 @@ on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
 identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). The macOS development machine exercises the native wry/tao backend locally; Windows and Linux are exercised by CI.
 
-- 115 tests pass (`cargo test --workspace`: 90 kiri-core + 25 kiri-runtime)
+- 124 tests pass (`cargo test --workspace`: 99 kiri-core + 25 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records

@@ -43,6 +43,14 @@ pub mod command_id {
     pub const EVENT_EMIT: u32 = 8;
     /// Register a listener for a named event (R-3 event bus).
     pub const EVENT_LISTEN: u32 = 9;
+    /// Read a scoped file (R-5: kiri.fs.read).
+    pub const FS_READ: u32 = 10;
+    /// Write a scoped file (R-5: kiri.fs.write).
+    pub const FS_WRITE: u32 = 11;
+    /// Check a scoped path exists (R-5: kiri.fs.exists).
+    pub const FS_EXISTS: u32 = 12;
+    /// Remove a scoped file (R-5: kiri.fs.remove).
+    pub const FS_REMOVE: u32 = 13;
 }
 
 /// Capability bits used by built-in control commands.
@@ -60,6 +68,9 @@ pub mod capability_bit {
     /// Authorizes emitting/listening to named events. Bit 5 (R-3).
     pub const EVENT: u32 = 5;
 
+    /// Authorizes scoped filesystem access (R-5: kiri.fs.*). Bit 6.
+    pub const FS: u32 = 6;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -76,6 +87,10 @@ pub mod capability_bit {
             crate::dispatch::command_id::EVENT_EMIT | crate::dispatch::command_id::EVENT_LISTEN => {
                 EVENT
             }
+            crate::dispatch::command_id::FS_READ
+            | crate::dispatch::command_id::FS_WRITE
+            | crate::dispatch::command_id::FS_EXISTS
+            | crate::dispatch::command_id::FS_REMOVE => FS,
             _ => PING,
         }
     }
@@ -121,6 +136,11 @@ impl Router {
     /// registration path instead of relying on inline defaults.
     pub fn new_empty() -> Self {
         Router { commands: HashMap::new(), limits: Limits::default() }
+    }
+
+    /// Build an empty router with an explicit limit set (tests + tuning).
+    pub fn new_with_limits(limits: Limits) -> Self {
+        Router { commands: HashMap::new(), limits }
     }
 
     /// Attach a shared diagnostics sink and register the `kiri.diag` command.
@@ -271,6 +291,22 @@ impl Router {
     /// Override the default limits (used by tests and tuning).
     pub fn with_limits(mut self, limits: Limits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Register the four `kiri.fs.*` commands bound to a scoped `FsService`.
+    /// The scope and limits come from the host; JavaScript cannot expand them.
+    pub fn with_fs(self, scope: crate::capabilities::PathScope, limits: Limits) -> Self {
+        self.with_fs_service(crate::fs::FsService::new(scope, limits))
+    }
+
+    /// Register `kiri.fs.*` from an already-constructed `FsService`. Used by
+    /// the plugin path so the same authority applies whether the surface is
+    /// wired inline or through the plugin host.
+    pub fn with_fs_service(mut self, service: crate::fs::FsService) -> Self {
+        for (id, required, handler) in crate::fs::fs_handlers(service) {
+            self.register(id, required, handler);
+        }
         self
     }
 

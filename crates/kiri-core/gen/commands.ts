@@ -19,9 +19,17 @@ export interface KiriCommands {
   kiri_event_emit(arg: unknown): Promise<unknown>;
   /** kiri_event_listen (id=9, capability="event", execution="pure") */
   kiri_event_listen(arg: unknown): Promise<unknown>;
+  /** kiri_fs_read (id=10, capability="fs", execution="io") */
+  kiri_fs_read(arg: unknown): Promise<unknown>;
+  /** kiri_fs_write (id=11, capability="fs", execution="io") */
+  kiri_fs_write(arg: unknown): Promise<unknown>;
+  /** kiri_fs_exists (id=12, capability="fs", execution="pure") */
+  kiri_fs_exists(arg: unknown): Promise<unknown>;
+  /** kiri_fs_remove (id=13, capability="fs", execution="io") */
+  kiri_fs_remove(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -34,6 +42,10 @@ export function commandId(name: string): number | undefined {
     case "kiri.app.version": return 7;
     case "kiri.event.emit": return 8;
     case "kiri.event.listen": return 9;
+    case "kiri.fs.read": return 10;
+    case "kiri.fs.write": return 11;
+    case "kiri.fs.exists": return 12;
+    case "kiri.fs.remove": return 13;
     default: return undefined;
   }
 }

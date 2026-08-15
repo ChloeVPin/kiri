@@ -28,6 +28,7 @@ use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
 use kiri_core::caller::CallerRegistry;
+use kiri_core::capabilities::PathScope;
 use kiri_core::diagnostics::Diagnostics;
 use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
@@ -193,11 +194,18 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     // binds this exact instance via the ABI context, so kiri.open/kiri.close
     // mutate it and keep the diagnostics open-resource count honest and dynamic.
     let resources: Arc<Mutex<ResourceTable<()>>> = Arc::new(Mutex::new(ResourceTable::<()>::new()));
+
+    // Host-owned fs scope: a bounded sandbox under the temp dir. The host is
+    // the only authority that can widen it; the frontend cannot.
+    let mut fs_scope = PathScope::new(std::env::temp_dir().join("kiri-fs"));
+    fs_scope.read = true;
+    fs_scope.write = true;
+
     let router =
         crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
             // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-            .with_platform(events);
-
+            .with_platform(events)
+            .with_fs(fs_scope, kiri_core::limits::Limits::default());
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
