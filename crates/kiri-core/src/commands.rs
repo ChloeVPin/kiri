@@ -301,6 +301,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "pure",
         arity: 0,
     },
+    // --- audit item 10: kiri.store.get/set (G-4f) restricted, host-namespace-allowlisted
+    // store (exceeds Tauri store plugin on the security axis) ---
+    CommandSpec { name: "kiri.store.get", id: 45, capability: "store", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.store.set", id: 46, capability: "store", execution: "io", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

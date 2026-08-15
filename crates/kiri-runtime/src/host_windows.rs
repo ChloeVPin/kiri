@@ -389,6 +389,16 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(crate::autostart_ctl::WinAutostartRunner::new()),
                 kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4f: kiri.store.get/set surface (audit item 10). Capability-gated (STORE)
+            // and bounded to a host allowlist of namespaces, so a granted capability still
+            // cannot read/write outside an approved namespace. This exceeds Tauri's store
+            // plugin, which lets the frontend read/write the whole store once the capability
+            // is present (a cross-feature data-leak surface).
+            .with_store(kiri_core::store::StoreService::new(
+                std::sync::Arc::new(crate::store_ctl::WinStoreBackend::new()),
+                kiri_core::store::StoreAllowlist::new(store_namespaces()),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -800,6 +810,14 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// `enabled`; it cannot choose which executable persists (the runner registers only
 /// the host's own binary). Inverts Tauri's autostart plugin trust model, which lets
 /// the frontend enable launch-at-login freely once the capability is present.
+/// Host allowlist for `kiri.store.*` (audit item 10, G-4f). Default-deny: only the
+/// exact namespaces below may be addressed; the frontend cannot reach other namespaces
+/// (e.g. `auth.session`). Inverts Tauri's store plugin trust model, which lets the
+/// frontend read/write the whole store once the capability is present.
+fn store_namespaces() -> Vec<kiri_core::store::StoreNamespace> {
+    vec![kiri_core::store::StoreNamespace { prefix: "app.prefs".to_string() }]
+}
+
 fn autostart_policy() -> bool {
     false
 }

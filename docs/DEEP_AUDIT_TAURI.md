@@ -216,6 +216,19 @@ axis (security, latency, or audibility), not just match it.
    capability-denied. Exceeds on the security axis (capability authority + default-deny
    host policy + host-owned target); no client choice of binary.
 
+10. [DONE] kiri.store.get/set (restricted, host-namespace-allowlisted) - Tauri's `store`
+    plugin lets the frontend read/write the whole store once the capability is present, a
+    cross-feature data-leak surface (one module can rewrite another's persisted state, e.g.
+    `auth.session`). Kiri gates `kiri.store.*` behind the STORE capability bit (16) AND a
+    host allowlist of namespaces; the frontend may only address an approved namespace, so it
+    cannot escape to another module's data. Values are bulk-capped. Implemented in
+    kiri-core::store (capability bit 16, command ids 45/46) with host seams in
+    crates/kiri-runtime/src/store_ctl.rs (CrossStoreBackend/WinStoreBackend, host-owned store)
+    wired into both backends via `.with_store(...)`. Both paths cross-checked with cargo clippy
+    --target x86_64-pc-windows-msvc. Headless tests cover namespace allow, namespace deny, and
+    capability-denied. Exceeds on the security axis (capability authority + namespace allowlist,
+    server-side); no cross-namespace reach.
+
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).

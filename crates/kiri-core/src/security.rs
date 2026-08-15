@@ -115,6 +115,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // capability bit even though it is granted here; the host policy is the second gate,
     // so this still exceeds Tauri's unrestricted autostart plugin.
     caps.set(crate::dispatch::capability_bit::AUTOSTART);
+    // G-4f: the trusted frontend may use the restricted, host-namespace-allowlisted
+    // store surface (kiri.store.*). Authorization still flows through the STORE
+    // capability bit even though it is granted here; the namespace allowlist is the
+    // second gate, so this still exceeds Tauri's unscoped store plugin.
+    caps.set(crate::dispatch::capability_bit::STORE);
     caps
 }
 

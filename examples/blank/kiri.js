@@ -51,6 +51,8 @@
     "kiri.shortcut.register": 42,
     "kiri.autostart.set": 43,
     "kiri.autostart.get": 44,
+    "kiri.store.get": 45,
+    "kiri.store.set": 46,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -290,6 +292,24 @@
       },
     },
 
+    // Restricted, host-namespace-allowlisted store (kiri.store.get/set). The host owns
+    // the namespace allowlist; the frontend may only address an approved namespace, so
+    // one module cannot reach another's persisted state. This exceeds Tauri's store
+    // plugin, which lets the frontend read/write the whole store once the capability is
+    // present.
+    store: {
+      get: function (namespace, key) {
+        return call("kiri.store.get", { namespace: namespace, key: key }).then(function (r) {
+          return r.value;
+        });
+      },
+      set: function (namespace, key, value) {
+        return call("kiri.store.set", { namespace: namespace, key: key, value: value }).then(function (r) {
+          return r.value;
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -318,5 +338,6 @@
   global.kiri.dialog = Kiri.dialog;
   global.kiri.shortcut = Kiri.shortcut;
   global.kiri.autostart = Kiri.autostart;
+  global.kiri.store = Kiri.store;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

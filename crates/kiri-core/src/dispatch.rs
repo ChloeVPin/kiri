@@ -135,6 +135,14 @@ pub mod command_id {
     /// Query current launch-at-login state (audit item 9). Same host-policy gate as
     /// AUTOSTART_SET; meaningless when the host policy denies autostart.
     pub const AUTOSTART_GET: u32 = 44;
+    /// Capability-scoped, host-namespace-allowlisted store read (kiri.store.get, audit
+    /// item 10). Exceeds Tauri's store plugin on the security axis: the frontend may only
+    /// address keys inside a host-approved namespace, so one module cannot reach another's
+    /// persisted state.
+    pub const STORE_GET: u32 = 45;
+    /// Capability-scoped, host-namespace-allowlisted store write (kiri.store.set, audit
+    /// item 10). Same namespace boundary as STORE_GET; values are bulk-capped.
+    pub const STORE_SET: u32 = 46;
 }
 
 /// Capability bits used by built-in control commands.
@@ -201,6 +209,10 @@ pub mod capability_bit {
     /// a granted capability still cannot persist an arbitrary binary; only the host's
     /// own binary may be toggled, and only when the host policy permits.
     pub const AUTOSTART: u32 = 15;
+    /// Authorizes restricted, host-namespace-allowlisted store access (kiri.store.*).
+    /// Bit 16 (audit item 10). Exceeds Tauri's store plugin on the security axis: a
+    /// granted capability still cannot read/write outside an approved namespace.
+    pub const STORE: u32 = 16;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -253,6 +265,9 @@ pub mod capability_bit {
             crate::dispatch::command_id::SHORTCUT_REGISTER => SHORTCUT,
             crate::dispatch::command_id::AUTOSTART_SET
             | crate::dispatch::command_id::AUTOSTART_GET => AUTOSTART,
+            crate::dispatch::command_id::STORE_GET | crate::dispatch::command_id::STORE_SET => {
+                STORE
+            }
             _ => PING,
         }
     }
@@ -589,6 +604,17 @@ impl Router {
     /// binary, so a granted capability still cannot persist an arbitrary executable.
     pub fn with_autostart(mut self, service: crate::autostart::AutostartService) -> Self {
         for (id, required, handler) in crate::autostart::autostart_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.store.* command set (audit item 10). Store access is
+    /// capability-gated (bit STORE) AND bounded to a host allowlist of namespaces, so a
+    /// granted capability still cannot read/write outside an approved namespace. Values
+    /// are bounded by the shared bulk-object limit.
+    pub fn with_store(mut self, service: crate::store::StoreService) -> Self {
+        for (id, required, handler) in crate::store::store_handlers(service) {
             self.register(id, required, handler);
         }
         self
