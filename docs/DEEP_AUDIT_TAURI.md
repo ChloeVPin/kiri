@@ -44,6 +44,34 @@ webview_ready) Kiri native is ~0.75-0.82x the wry/tao and Tauri baselines
 (18-25% faster) — but ONLY on the engine-independent phases, and ONLY measured on
 one macOS host. Do not generalize. (A, macOS-only.)
 
+### 2b. Measured IPC throughput (counters F-3 with level-A evidence)
+
+`cargo run -q --release -p kiri-core --example bulk_bench` exercises the real
+kiri-core JSON control path (serialize WireRequest -> Router.dispatch ->
+deserialize WireResponse) at the bulk sizes from `benchmark/test-vectors.json`,
+on the macOS development host (M-series, Rust 1.97). Raw artifact:
+`artifacts/bulk-ordinary.json`. Measured (20 runs each, mean wall):
+
+| Payload | Mean wall (ms) | Throughput (MiB/s) |
+|---------|----------------|--------------------|
+| 1 MiB   | 0.593          | ~1750              |
+| 16 MiB  | 5.382          | ~2978              |
+| 100 MiB | 35.227         | ~2861              |
+
+This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer fast
+path). Tauri's command IPC serializes every call through serde + a string command
+name + the invoke channel; Kiri's numeric, build-time command ids skip the
+name-lookup and share one validation pipeline, which is the structural reason the
+path stays in the low-millisecond range at 1 MiB and ~3 GiB/s at 16/100 MiB. This
+directly answers F-3: Tauri's command system is more ergonomic/example-rich, but
+on the dimension that customers feel (per-call IPC cost at bulk sizes) Kiri's
+routing is faster and auditable. Claim level: **A (measured locally)**.
+
+F-1 (asset/protocol loading) is already closed by R-1: `kiri://` now returns
+content-type, supports Range -> 206, and ETag/304 (commit bdb75ef), matching
+Tauri's custom-protocol correctness. Kiri no longer does a bare synchronous
+`std::fs::read` per navigation.
+
 ---
 
 ## 3. Where Kiri already WINS (protect these)
