@@ -66,6 +66,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "sidecar" => crate::dispatch::capability_bit::SIDECAR,
         "config" => crate::dispatch::capability_bit::CONFIG,
         "updater" => crate::dispatch::capability_bit::UPDATER,
+        "cli" => crate::dispatch::capability_bit::CLI,
         _ => 0,
     }
 }
@@ -432,6 +433,9 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "kiri.http.put", id: 63, capability: "http", execution: "io", arity: 1 },
     CommandSpec { name: "kiri.http.patch", id: 64, capability: "http", execution: "io", arity: 1 },
     CommandSpec { name: "kiri.http.delete", id: 65, capability: "http", execution: "io", arity: 1 },
+    // --- G-5: kiri.cli.args (exceeds Tauri process.argv: structured + allowlist
+    // scoped command-line surface) ---
+    CommandSpec { name: "kiri.cli.args", id: 66, capability: "cli", execution: "pure", arity: 0 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

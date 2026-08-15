@@ -24,12 +24,12 @@ source or docs; B = maintained impl; D = inference.
 | G-2 | 50+ official plugins + ecosystem | ABI implemented (R-2), no 3rd-party loader/catalog | Medium |
 | G-3 | Bundler + autoupdater | Signed-update verifier done; no packaging/signing (needs certs) | Medium / blocked on certs |
 | G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on macOS/Linux; Windows parity pending real hardware | Medium |
-| G-5 | JS API breadth (cli, process) | cli absent; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
+| G-5 | JS API breadth (cli, process) | DONE: kiri.cli.args (id 66) structured + allowlist-scoped, exceeds Tauri process.argv; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
 | G-9 | HTTP verbs beyond GET | DONE: kiri.http.post/put/patch/delete with body + method allowlist (exceeds Tauri) | Easy/Medium |
 | G-10 | fs watch | Absent | Medium |
 | G-11 | WebSocket / protocol upgrade | Absent | Medium |
 | G-12 | App menu (not just tray) | Absent; only tray menu | Medium |
-| G-13 | Updater JS binding | Verifier exists, no kiri.updater.check JS command wired | Easy |
+| G-13 | Updater JS binding | DONE: kiri.updater.check (id 61) wired backend + JS binding + tests (audit-18) | Easy |
 | G-7 | Docs, templates, community, brand | Early-stage, tiny | Process |
 
 ## Where Tauri is currently better (do not fake)
@@ -46,8 +46,8 @@ source or docs; B = maintained impl; D = inference.
 
 1. ~~G-9 HTTP verbs~~ DONE: kiri.http.post/put/patch/delete with body + method
    allowlist. Highest ROI, fully headless-testable.
-2. G-13 Updater JS binding - expose existing UpdaterService as kiri.updater.check.
-3. G-5 cli - argv parsing into a typed struct, capability-gated.
+2. ~~G-13 Updater JS binding~~ DONE: kiri.updater.check (id 61) already wired (audit-18).
+3. ~~G-5 cli~~ DONE: kiri.cli.args structured + allowlist-scoped (exceeds Tauri).
 4. G-10 fs watch - host-owned watcher with event allowlist.
 5. G-11 WebSocket - protocol-upgrade path behind capability.
 6. G-12 App menu - host-owned menu model (reuse tray allowlist shape).

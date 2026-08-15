@@ -273,6 +273,7 @@ fn full_router() -> Router {
             kiri_core::update::Version::parse("0.0.0").unwrap(),
             limits.clone(),
         ))
+        .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
 }
 
 #[test]
@@ -281,7 +282,7 @@ fn every_command_denied_without_capabilities() {
     let empty = CapabilityBits::empty();
     let caller = CallerId(1);
 
-    for id in 1u32..=65 {
+    for id in 1u32..=66 {
         let req = WireRequest::new(id, id as u64, 1, json!(null));
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(caller, &empty, &req, &mut sink);

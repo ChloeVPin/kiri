@@ -10,6 +10,7 @@
 pub mod autostart;
 pub mod caller;
 pub mod capabilities;
+pub mod cli;
 pub mod clipboard;
 pub mod commands;
 pub mod config;

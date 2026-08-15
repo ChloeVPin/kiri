@@ -72,6 +72,7 @@
     "kiri.http.put": 63,
     "kiri.http.patch": 64,
     "kiri.http.delete": 65,
+    "kiri.cli.args": 66,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -506,6 +507,8 @@
   global.kiri.clipboard = Kiri.clipboard;
   global.kiri.path = Kiri.path;
   global.kiri.os = Kiri.os;
+  global.kiri.cli = Kiri.cli;
+
   global.kiri.http = Kiri.http;
   global.kiri.shell = Kiri.shell;
   global.kiri.notification = Kiri.notification;
@@ -518,6 +521,22 @@
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
   global.kiri.sidecar = Kiri.sidecar;
+    // Structured, allowlist-scoped command-line surface (kiri.cli.args, G-5).
+    // Exceeds Tauri's process.argv: the host parses argv into positionals +
+    // flags + options and only reveals the host-allowlisted subset.
+    cli: {
+      args: function (full) {
+        return call("kiri.cli.args", { full: !!full }).then(function (r) {
+          return {
+            raw: r.raw,
+            positionals: r.positionals,
+            flags: r.flags,
+            options: r.options,
+          };
+        });
+      },
+    },
+
   global.kiri.updater = Kiri.updater;
   global.kiri.event = Kiri.event;
   global.__kiri = Kiri;

@@ -193,6 +193,11 @@ pub mod command_id {
 
     // --- audit item 18: kiri.updater.check (restricted, host-pinned-key) ---
     pub const UPDATER_CHECK: u32 = 61;
+
+    /// Capability-scoped, allowlist-structured command-line args (kiri.cli.args,
+    /// G-5). Exceeds Tauri's process.argv by parsing argv into a typed view and
+    /// restricting which flags/options the frontend may observe.
+    pub const CLI_ARGS: u32 = 66;
 }
 
 /// Capability bits used by built-in control commands.
@@ -296,6 +301,10 @@ pub mod capability_bit {
     /// substitute a key and accept an attacker-signed release.
     pub const UPDATER: u32 = 23;
 
+    /// Authorizes kiri.cli.* (G-5 JS surface parity with Tauri's process.argv,
+    /// exceeded: structured, allowlist-scoped argv instead of a raw array).
+    pub const CLI: u32 = 24;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -370,6 +379,7 @@ pub mod capability_bit {
                 CONFIG
             }
             crate::dispatch::command_id::UPDATER_CHECK => UPDATER,
+            crate::dispatch::command_id::CLI_ARGS => CLI,
             _ => PING,
         }
     }
@@ -812,6 +822,17 @@ impl Router {
     /// the security axis by construction.
     pub fn with_updater(mut self, service: crate::updater_surface::UpdaterService) -> Self {
         for (id, required, handler) in crate::updater_surface::updater_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.cli.* command set (G-5 JS surface parity with Tauri's
+    /// process.argv, exceeded: structured + allowlist-scoped). Every call is
+    /// capability-gated (bit CLI); the host-supplied allowlist further restricts
+    /// which flags/options the frontend may read.
+    pub fn with_cli(mut self, service: crate::cli::CliService) -> Self {
+        for (id, required, handler) in crate::cli::cli_handlers(service) {
             self.register(id, required, handler);
         }
         self
