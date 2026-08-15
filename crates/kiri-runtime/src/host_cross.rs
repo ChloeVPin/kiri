@@ -227,6 +227,8 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         &diagnostics,
         &resources,
         caller,
+        &crate::plugins::PluginManifest::empty(),
+        &crate::plugins::PluginRegistry::empty(),
     )
     // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
     .with_platform(events.clone())

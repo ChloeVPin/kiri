@@ -208,9 +208,14 @@ mod control_plane_tests {
         let resources = std::sync::Arc::new(std::sync::Mutex::new(
             kiri_core::resources::ResourceTable::<()>::new(),
         ));
-        let router =
-            crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
-                .with_platform(events);
+        let router = crate::plugins::PluginHost::build_router_with_plugins(
+            &diagnostics,
+            &resources,
+            caller,
+            &crate::plugins::PluginManifest::empty(),
+            &crate::plugins::PluginRegistry::empty(),
+        )
+        .with_platform(events);
         let mut sink = NoopTraceSink;
         router.dispatch(caller, &caps, &request, &mut sink)
     }

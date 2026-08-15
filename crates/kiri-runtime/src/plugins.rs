@@ -239,18 +239,24 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Build a router with all built-in plugins loaded (ping, diag, resources).
-    /// Replaces the inline `Router::new()` so every built-in command arrives via
-    /// the plugin registration path (R-2). Stateful plugins (`diag`, `open`,
-    /// `close`) bind the runtime's shared `diagnostics`/`resource_table`/`caller`
-    /// through the ABI context, exactly as an external plugin would.
+    /// Build a router with all built-in plugins loaded (ping, diag, resources)
+    /// and any EXTERNAL plugins named in `manifest` (default-deny: an empty
+    /// manifest loads none). Replaces the inline `Router::new()` so every
+    /// built-in command arrives via the plugin registration path (R-2), and
+    /// third-party plugins arrive only through the host-owned allowlist, which
+    /// exceeds Tauri's trust-any-plugin-on-path model. Stateful plugins
+    /// (`diag`, `open`, `close`) bind the runtime's shared
+    /// `diagnostics`/`resource_table`/`caller` through the ABI context, exactly
+    /// as an external plugin would.
     pub fn build_router_with_plugins(
         diagnostics: &kiri_core::diagnostics::Diagnostics,
         resource_table: &Arc<Mutex<kiri_core::resources::ResourceTable<()>>>,
         caller: kiri_core::caller::CallerId,
+        manifest: &PluginManifest,
+        registry: &PluginRegistry,
     ) -> Router {
         let mut host = PluginHost::new();
-        // Share the runtime's services with the plugins via the ABI context.
+        // diag + resources bind the shared context; ping needs none.
         let ctx = KiriHostContextV1 {
             abi_version: 1,
             struct_size: std::mem::size_of::<KiriHostContextV1>() as u32,
@@ -258,14 +264,41 @@ impl PluginHost {
             resource_table: std::sync::Arc::as_ptr(resource_table),
             caller_id: caller.0,
         };
-        // diag + resources bind the shared context; ping needs none.
         host.register_builtin_with_context(&PING_PLUGIN, std::ptr::null())
             .expect("built-in ping plugin must load");
         host.register_builtin_with_context(&DIAG_PLUGIN, &ctx as *const _)
             .expect("built-in diag plugin must load");
         host.register_builtin_with_context(&RESOURCES_PLUGIN, &ctx as *const _)
             .expect("built-in resources plugin must load");
+        // External plugins: only those named in the host-owned manifest, resolved
+        // through the host-owned registry, and gated by the per-plugin command
+        // allowlist. Unresolved or disallowed entries are skipped (fail-closed).
+        host.load_external_from_manifest(manifest, registry);
         host.router
+    }
+
+    /// Resolve and load every external plugin named in `manifest`. Unknown plugin
+    /// names are dropped (the registry has no descriptor) and unlisted commands
+    /// are dropped by `register_external`'s allowlist gate. Fail-closed: a
+    /// missing descriptor or a denied command never widens the surface.
+    fn load_external_from_manifest(
+        &mut self,
+        manifest: &PluginManifest,
+        registry: &PluginRegistry,
+    ) {
+        self.allowlist = manifest.to_allowlist();
+        for entry in &manifest.entries {
+            match registry.resolve(&entry.name) {
+                Some(descriptor) => {
+                    if let Err(e) = self.register_external(descriptor) {
+                        eprintln!("[kiri-plugin] external load failed for {}: {:?}", entry.name, e);
+                    }
+                }
+                None => {
+                    eprintln!("[kiri-plugin] no descriptor for {} (skipped)", entry.name);
+                }
+            }
+        }
     }
 
     /// Replace the host-owned plugin allowlist (G-2 external-plugin policy).
@@ -336,6 +369,102 @@ impl PluginAllowlist {
     }
     pub fn commands_for(&self, name: &str) -> Option<&std::collections::HashSet<String>> {
         self.plugins.get(name)
+    }
+}
+
+/// A host-owned, default-deny policy for external plugins. Parsed from a
+/// manifest the host supplies at startup (e.g. an embedded `&[u8]` or a file the
+/// host reads). An empty manifest loads ZERO external plugins; the host must
+/// explicitly name each plugin and the exact commands it may expose. This is the
+/// concrete form of `PluginAllowlist` that the runtime consumes at boot, and it
+/// is what exceeds Tauri (which loads any plugin found on the configured path).
+#[derive(Debug, Clone, Default)]
+pub struct PluginManifest {
+    /// Entries are resolved by name against a host-provided descriptor registry.
+    entries: Vec<PluginManifestEntry>,
+}
+
+#[derive(Debug, Clone)]
+struct PluginManifestEntry {
+    name: String,
+    commands: Vec<String>,
+    /// Opaque locator for the host to resolve the descriptor (path, in a real
+    /// loader). Kept as a string so the manifest is serializable and host-owned.
+    /// Reserved for the real dlopen-based loader; not yet read on the headless
+    /// path where descriptors come from the in-process `PluginRegistry`.
+    #[allow(dead_code)]
+    library: String,
+}
+
+impl PluginManifest {
+    pub fn empty() -> Self {
+        PluginManifest { entries: Vec::new() }
+    }
+
+    /// Parse a default-deny manifest from JSON bytes supplied by the host.
+    /// Format: `{ "plugins": [ { "name": str, "commands": [str], "library": str } ] }`.
+    /// Any malformed entry is skipped (fail-closed): a bad manifest never
+    /// broadens the plugin surface.
+    pub fn from_json(bytes: &[u8]) -> Self {
+        let mut manifest = PluginManifest { entries: Vec::new() };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+            return manifest;
+        };
+        let Some(list) = value.get("plugins").and_then(|v| v.as_array()) else {
+            return manifest;
+        };
+        for item in list {
+            let (Some(name), Some(cmds), Some(lib)) = (
+                item.get("name").and_then(|v| v.as_str()),
+                item.get("commands").and_then(|v| v.as_array()),
+                item.get("library").and_then(|v| v.as_str()),
+            ) else {
+                continue;
+            };
+            let commands: Vec<String> =
+                cmds.iter().filter_map(|c| c.as_str().map(|s| s.to_string())).collect();
+            manifest.entries.push(PluginManifestEntry {
+                name: name.to_string(),
+                commands,
+                library: lib.to_string(),
+            });
+        }
+        manifest
+    }
+
+    /// Build the `PluginAllowlist` this manifest implies. Pure projection: every
+    /// manifest entry becomes a per-plugin, command-level allowlist entry.
+    pub fn to_allowlist(&self) -> PluginAllowlist {
+        let mut allow = PluginAllowlist::empty();
+        for e in &self.entries {
+            let cmds: Vec<&str> = e.commands.iter().map(|s| s.as_str()).collect();
+            allow = allow.allow(e.name.clone(), &cmds);
+        }
+        allow
+    }
+}
+
+/// Host-owned registry mapping a plugin name + library locator to its
+/// `KiriPluginV1` descriptor. In a real loader this is where `dlopen`/entry-point
+/// resolution would happen; for the headless, cross-platform path the host
+/// supplies descriptors (built-ins-extended or test fakes). The allowlist gate
+/// applied by `register_external` is identical regardless of how the descriptor
+/// is obtained, so the security property that exceeds Tauri holds.
+pub struct PluginRegistry {
+    descriptors: std::collections::HashMap<String, *const KiriPluginV1>,
+}
+
+impl PluginRegistry {
+    pub fn empty() -> Self {
+        PluginRegistry { descriptors: std::collections::HashMap::new() }
+    }
+    /// Register a descriptor under `name`. The pointer must outlive the loader
+    /// call (in practice: a `static`).
+    pub fn register(&mut self, name: String, descriptor: &'static KiriPluginV1) {
+        self.descriptors.insert(name, descriptor as *const KiriPluginV1);
+    }
+    fn resolve(&self, name: &str) -> Option<&'static KiriPluginV1> {
+        self.descriptors.get(name).map(|p| unsafe { &**p })
     }
 }
 
@@ -680,5 +809,42 @@ mod tests {
         };
         host.register_external(&ping).expect("plugin + command allowed");
         assert!(host.is_known(command_id::PING), "allowlisted command registered");
+    }
+
+    #[test]
+    fn manifest_empty_loads_no_external() {
+        // Default-deny: an empty manifest resolves to an empty allowlist and a
+        // registry with no descriptors, so no external command is registered.
+        let manifest = PluginManifest::empty();
+        let registry = PluginRegistry::empty();
+        let mut host = PluginHost::new();
+        host.load_external_from_manifest(&manifest, &registry);
+        assert!(!host.is_known(command_id::PING), "no external command from empty manifest");
+        assert_eq!(host.loaded_plugin_names().len(), 0);
+    }
+
+    #[test]
+    fn manifest_from_json_gates_external_by_name_and_command() {
+        // Manifest names the plugin and an allowlisted command set. Without a
+        // registry descriptor the load is skipped (fail-closed); with one, the
+        // allowlisted command registers and nothing else does.
+        let json = br#"{"plugins":[{"name":"kiri.ping","commands":["kiri.ping"],"library":"libkiri_ping.dylib"}]}"#;
+        let manifest = PluginManifest::from_json(json);
+        let mut registry = PluginRegistry::empty();
+        registry.register("kiri.ping".to_string(), &PING_PLUGIN);
+        let mut host = PluginHost::new();
+        host.load_external_from_manifest(&manifest, &registry);
+        assert!(host.is_known(command_id::PING), "manifest-allowed command registered");
+        assert_eq!(host.loaded_plugin_names(), vec!["kiri.ping"]);
+    }
+
+    #[test]
+    fn manifest_from_json_with_unknown_plugin_skips() {
+        let json = br#"{"plugins":[{"name":"ghost","commands":["x"],"library":"libghost.dylib"}]}"#;
+        let manifest = PluginManifest::from_json(json);
+        let registry = PluginRegistry::empty();
+        let mut host = PluginHost::new();
+        host.load_external_from_manifest(&manifest, &registry);
+        assert_eq!(host.loaded_plugin_names().len(), 0, "unknown plugin skipped");
     }
 }
