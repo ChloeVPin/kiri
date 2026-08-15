@@ -1,10 +1,10 @@
 # Cross-Platform Status (T011)
 
 Authoritative per-OS record of what is verified, cross-checked, and blocked.
-Written when CI was exhausted (100% of minutes used), so the only machine
-that can still *run* gates is the macOS development host (aarch64, real GPU
-via the wry/tao backend). Windows and Linux execution cannot happen locally;
-those lanes are document + cross-check only.
+The repository is now PUBLIC, so GitHub-hosted runners are free/unlimited and
+every OS runs the SAME gate on the SAME path (`.github/workflows/correctness.yml`).
+Windows native execution is now VERIFIED on `windows-latest` (run #19 closed
+Q-001). Linux native run stays a SOFT probe (no GPU on runners).
 
 Do not fake completion: a lane is "verified" only when a gate actually ran
 and passed on that platform's real runtime. Cross-checked (compile only) and
@@ -26,7 +26,7 @@ T011 added here: `kiri.open` (id 3) / `kiri.close` (id 4) control-plane
 commands backed by a real `ResourceTable<()>`, so the diagnostics panel's
 `open_resources` count is now honest and dynamic instead of a hardcoded 1.
 
-## Windows (Win32 + WebView2) — CROSS-CHECKED, blocked on execution
+## Windows (Win32 + WebView2) — VERIFIED on real Windows (CI)
 
 `host_windows.rs` is `#[cfg(target_os = "windows")]` and cannot build or run
 on this Mac. The only local evidence is compile-level.
@@ -37,10 +37,11 @@ on this Mac. The only local evidence is compile-level.
   granted the `RESOURCES` capability, the static `open_resources=1` baseline
   was removed in favor of the same dynamic table as macOS.
 
-NOT VERIFIED (needs a Windows machine; previously validated on
-windows-latest CI run #17 before minutes ran out): native smoke reached all 4
-required startup markers, stress ran 100 cycles / 0 failures. Re-run there
-once CI is available, or on a local Windows box.
+VERIFIED on `windows-latest` (correctness run #19, after repo went public):
+native smoke reached all required startup markers, 100-cycle stress ran 0
+failures. Q-001 (WebView2 Evergreen runtime present on windows-latest) is
+CLOSED — no install step was required. Cross-checks (`cargo check`/`clippy`
+against `x86_64-pc-windows-msvc`) remain green on macOS/Linux runners.
 
 ## Linux (wry/tao) — CROSS-CHECKED, blocked on execution
 

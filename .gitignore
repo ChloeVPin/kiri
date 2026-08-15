@@ -10,3 +10,5 @@ baselines/tauri/gen/
 # It is linked from docs/research/README.md. Import a snapshot with
 # tools/sync-corpus.sh when a release snapshot is needed.
 /kiri-agent-execution-corpus
+# Tauri v2 codegen output (regenerated from build.rs AppManifest::commands)
+baselines/tauri/permissions/

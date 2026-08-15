@@ -2,14 +2,15 @@
 
 Unresolved items, with the evidence needed to close them.
 
-## Q-001: WebView2 runtime on `windows-latest` GitHub runners (Windows direct backend only)
+## Q-001: WebView2 runtime on `windows-latest` GitHub runners (Windows direct backend only) — CLOSED
 
-Does a `windows-latest` runner have the WebView2 Evergreen runtime installed?
-If not, the smoke CI job must install it (e.g. via the
-`powerapps/install-webview2-win` action or `winget`).
+A `windows-latest` runner DOES have the WebView2 Evergreen runtime installed.
+Verified by correctness run #19: the `Native smoke run (Win32 + WebView2
+backend)` step passed and emitted all required startup markers, no install
+step required.
 
-- Needed evidence: Level A - first run of `.github/workflows/windows-host-smoke.yml`.
-- Fallback: add an install step gated on a `WebView2 Runtime` check.
+- Evidence: Level A - `correctness.yml` `test (windows-latest)` run #19,
+  `Native smoke run` + `Native stress run (100 cycles)` both green.
 
 ## Q-002: real Windows behavior of the direct Win32 + WebView2 backend
 
@@ -23,7 +24,7 @@ never executed on Windows. Open items:
 - QPC-based markers should be cross-checked against the WebView2
   `ProcessFailed`/`NavigationCompleted` ordering.
 
-## Q-003: Tauri baseline IPC latency contribution
+## Q-003: Tauri baseline IPC latency contribution — RESOLVED (method)
 
 The Tauri baseline routes the `dom`/`frame` markers through
 `__TAURI_INTERNALS__.invoke('kiri_marker')`, which costs more than the wry
@@ -31,10 +32,14 @@ The Tauri baseline routes the `dom`/`frame` markers through
 not directly comparable across the three targets for phases after
 `bridge_ready`.
 
-- Options: (a) document that only `webview_ready`-and-earlier phases are
-  comparable; (b) add a Tauri-side injection script that uses the same
-  `window.ipc` mechanism; (c) accept and record in the perf report.
-- Needed evidence: Level A - measured run on the self-hosted runner.
+- Resolution: the Tauri baseline now arms correctly (capability grant in
+  `build.rs` `AppManifest::commands` + `capabilities/default.json`, plus a
+  direct `invoke` in the injected `BRIDGE_SCRIPT`). Verified on macOS: all 9
+  markers, exit 0.
+- Decision: option (a) + (c). Only `webview_ready`-and-earlier phases are
+  directly comparable across targets; the `dom`/`frame` delta is recorded
+  explicitly in the T009 report rather than hidden. No attempt to force Tauri
+  onto the wry `window.ipc` path (that is not how Tauri IPC works).
 
 ## Q-004: `--frontend` path form and resolution
 

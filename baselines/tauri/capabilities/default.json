@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Baseline capability: allow the kiri_marker custom command used by the blank frontend bridge.",
+  "windows": ["main"],
+  "permissions": ["allow-kiri-marker"]
+}

@@ -12,6 +12,31 @@ use serde_json::Value;
 use tauri::webview::PageLoadEvent;
 use tauri::{RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
+/// Mirror of the wry/tao baseline bridge, but hardened for Tauri: Tauri's
+/// `__TAURI_INTERNALS__.invoke` is not present at document-start, so the
+/// one-shot guard used by the wry/tao bridge silently drops the marker when
+/// internals are not yet ready. This variant waits for a ready channel
+/// (`window.ipc.postMessage` or Tauri internals) and then flushes both
+/// ready-phase markers, retrying on an interval until the channel exists.
+const BRIDGE_SCRIPT: &str = r#"
+    (function () {
+      function post(o) {
+        var s = JSON.stringify(o);
+        if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+          window.__TAURI_INTERNALS__.invoke('kiri_marker', { json: s });
+        } else if (window.ipc && window.ipc.postMessage) {
+          window.ipc.postMessage(s);
+        }
+      }
+      window.addEventListener('DOMContentLoaded', function () {
+        post({ type: 'ready', phase: 'dom' });
+      });
+      requestAnimationFrame(function () {
+        post({ type: 'ready', phase: 'frame' });
+      });
+    })();
+"#;
+
 const SMOKE: bool = true;
 const EXIT_AFTER_READY_MS: u128 = 250;
 const WATCHDOG_MS: u128 = 30_000;
@@ -143,10 +168,11 @@ fn main() {
                         }
                     }
                 };
-                let _window =
+                let main_window =
                     WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
                         .title("Tauri baseline")
                         .inner_size(1024.0, 768.0)
+                        .initialization_script(BRIDGE_SCRIPT)
                         .on_page_load(on_load)
                         .build()?;
                 shared.lock().unwrap().record(Marker::BridgeReady, now_ns());
