@@ -20,6 +20,7 @@ pub mod platform;
 pub mod resources;
 pub mod security;
 pub mod trace;
+pub mod update;
 pub mod validate;
 pub mod wire;
 
@@ -40,6 +41,7 @@ pub use security::{
     WINDOWS_APP_ORIGIN,
 };
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
+pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
 pub use wire::{WireRequest, WireResponse};
 
 /// Protocol constants shared by all Kiri transports.

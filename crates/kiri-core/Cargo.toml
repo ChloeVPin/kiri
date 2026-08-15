@@ -8,6 +8,8 @@ description = "Kiri logical control protocol: errors, capabilities, resources, l
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
