@@ -77,21 +77,27 @@ depend on `kiri-core`.
 
 ## Current state and next work
 
-Status: T001 through T004 complete and committed. The runtime runs
-natively on every desktop platform from one codebase (direct Win32 + WebView2
-on Windows, wry/tao on macOS and Linux), and all four tasks pass their gates
-on the macOS development machine via the native wry/tao backend. The Windows
-direct backend is cross-checked locally and exercised on real Windows by CI.
+Status: T001 through T007 and T010 are complete and committed. The runtime
+runs natively on every desktop platform from one codebase (direct Win32 +
+WebView2 on Windows, wry/tao on macOS and Linux), and the Mac-headless gates
+are green. The Windows direct backend is cross-checked locally and exercised
+on real Windows by CI. The unsigned G-3 release path is implemented in
+`tools/packaging/package.sh` and `.github/workflows/unsigned-release.yml`:
+native OS signing is deliberately out of scope, while the application-level
+Ed25519 manifest signs the exact artifact bytes. The release workflow requires
+the `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret and rejects the known test
+key for publication.
 The queue lives in the corpus at `agent/task_queue.json` (T001 through T010)
 and is mirrored in `README.md`. Handoff notes are written to
 `kiri-agent-execution-corpus/agent/HANDOFF.md` at session end.
 
-Next unblocked steps: T005 (command codegen + static routing), T006
-(generational resource table), T007 (message bulk path benchmark) are
-Mac-runnable. T008 (WebView2 shared-buffer) and T009/T010 (comparison,
-diagnostics) depend on real Windows / self-hosted perf hardware and are
-gated on CI. Verify the `windows-host-smoke` workflow on `windows-latest` to
-close Q-001 and the direct backend's remaining acceptance.
+Next work: T008 (WebView2 shared-buffer) and the Windows leg of T009 depend on
+real Windows/performance hardware. G-1 mobile support and G-2 ecosystem
+breadth remain larger roadmap items. Before the first public release tag,
+rotate the pinned update public key away from the deterministic integration
+test fixture and store its private half as `KIRI_UPDATE_SIGNING_KEY_HEX`.
+The `correctness` workflow is the native all-OS correctness path; it includes
+the Windows smoke/stress acceptance on `windows-latest`.
 
 ## Conventions
 

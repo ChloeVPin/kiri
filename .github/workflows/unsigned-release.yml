@@ -1,0 +1,182 @@
+# Kiri's unsigned, all-desktop release path (G-3).
+#
+# Native OS signing is intentionally absent. The jobs produce unsigned
+# archives on macOS, Windows, and Linux, while RELEASES.json uses Kiri's
+# application-level Ed25519 signature over each artifact URL and SHA-256.
+# KIRI_UPDATE_SIGNING_KEY_HEX must be configured as a repository secret; the
+# private update key is never stored in this repository.
+# A tag run publishes one GitHub Release; a manual run only uploads workflow
+# artifacts for inspection.
+
+name: unsigned-release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      release_base_url:
+        description: "HTTPS base URL for manual artifact manifests"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      OUT_DIR: artifacts/${{ matrix.os }}
+      KIRI_UPDATE_SIGNING_KEY_HEX: ${{ secrets.KIRI_UPDATE_SIGNING_KEY_HEX }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - if: runner.os == 'Linux'
+        name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: Resolve release URL and validate tag version
+        shell: bash
+        env:
+          MANUAL_BASE_URL: ${{ inputs.release_base_url }}
+        run: |
+          cargo_version="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag_version="${GITHUB_REF_NAME#v}"
+            test "$tag_version" = "$cargo_version" || {
+              echo "tag $GITHUB_REF_NAME does not match Cargo version $cargo_version" >&2
+              exit 1
+            }
+            base_url="https://github.com/ChloeVPin/kiri/releases/download/$GITHUB_REF_NAME"
+          else
+            base_url="$MANUAL_BASE_URL"
+            [[ "$base_url" == https://* ]] || {
+              echo "manual release_base_url must use https://" >&2
+              exit 1
+            }
+          fi
+          echo "KIRI_RELEASE_BASE_URL=$base_url" >> "$GITHUB_ENV"
+
+      - name: Build unsigned package and real signed manifest
+        shell: bash
+        run: bash tools/packaging/package.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.os }}
+          path: artifacts/${{ matrix.os }}/
+          if-no-files-found: error
+
+  merge-manifest:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Merge and verify all platform manifests
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import subprocess
+          from pathlib import Path
+          from urllib.parse import urlparse
+
+          manifest_files = sorted(Path("dist").rglob("RELEASES.json"))
+          if len(manifest_files) != 3:
+              raise SystemExit(f"expected 3 platform manifests, found {len(manifest_files)}")
+
+          merged = None
+          verify_pairs = []
+          for path in manifest_files:
+              manifest = json.loads(path.read_text())
+              if len(manifest["platforms"]) != 1:
+                  raise SystemExit(f"expected one platform in {path}")
+              if merged is None:
+                  merged = {
+                      "version": manifest["version"],
+                      "notes": "Kiri unsigned desktop release " + manifest["version"],
+                      "pub_date": manifest.get("pub_date"),
+                      "platforms": {},
+                  }
+              if manifest["version"] != merged["version"]:
+                  raise SystemExit(f"version mismatch in {path}")
+
+              platform, asset = next(iter(manifest["platforms"].items()))
+              if platform in merged["platforms"]:
+                  raise SystemExit(f"duplicate platform asset: {platform}")
+              artifact_name = Path(urlparse(asset["url"]).path).name
+              candidates = list(Path("dist").rglob(artifact_name))
+              if len(candidates) != 1:
+                  raise SystemExit(
+                      f"expected one downloaded artifact named {artifact_name}, found {candidates}"
+                  )
+              actual_hash = hashlib.sha256(candidates[0].read_bytes()).hexdigest()
+              if actual_hash != asset["sha256"]:
+                  raise SystemExit(f"SHA-256 mismatch for {platform}: {candidates[0]}")
+              merged["platforms"][platform] = asset
+              verify_pairs.append(f"{platform}={candidates[0]}")
+
+          if len(merged["platforms"]) != 3:
+              raise SystemExit("merged manifest does not contain three platforms")
+          Path("RELEASES.json").write_text(json.dumps(merged, indent=2) + "\n")
+
+          subprocess.run(
+              [
+                  "cargo", "run", "-q", "-p", "kiri-core",
+                  "--example", "verify_release_manifest", "--",
+                  "RELEASES.json", *verify_pairs,
+              ],
+              check=True,
+          )
+          print("merged and cryptographically verified:", sorted(merged["platforms"]))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: RELEASES.json
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: merge-manifest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Collect unsigned release assets
+        shell: bash
+        run: |
+          mkdir -p publish
+          find dist -type f \( -name 'kiri-*.zip' -o -name 'kiri-*.tar.gz' \) -exec cp {} publish/ \;
+          cp dist/release-manifest/RELEASES.json publish/RELEASES.json
+          test "$(find publish -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 4
+          ls -lh publish
+
+      - name: Publish unsigned GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Kiri desktop artifacts are intentionally unsigned at the OS level.
+            RELEASES.json contains Kiri's Ed25519 application-level signatures and
+            SHA-256 digests for the exact artifacts published here.
+          files: publish/*

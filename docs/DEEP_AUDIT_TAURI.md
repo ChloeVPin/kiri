@@ -17,7 +17,7 @@ result; B = maintained implementation source; D = inference.
 |---|------------------|----------------|----------|
 | G-1 | Mobile targets (iOS, Android) via `tauri::mobile_entry_point` | Absent. Desktop only (Windows/macOS/Linux). | AGENTS.md env facts; `host_windows.rs`/`host_cross.rs` are the only backends. (A) |
 | G-2 | Plugin ecosystem + ABI. Tauri ships 50+ official plugins. | Plugin ABI is IMPLEMENTED (R-2): `kiri-agent-execution-corpus/examples/plugin_abi.h` is mirrored in `crates/kiri-runtime/src/plugins.rs` (Rust-native `KiriPluginV1`/`KiriHostV1` with `init`/`register_command`/`shutdown`), and built-in commands `kiri.ping`/`kiri.diag`/`kiri.open`/`kiri.close` are REGISTERED AS PLUGINS through that ABI with end-to-end dispatch tests. ADDITIONALLY the host-owned external plugin loader is implemented, headless-tested, AND wired into runtime startup: `build_router_with_plugins` now takes a host-owned `PluginManifest` (default-deny JSON) and a `PluginRegistry` (name -> descriptor). External plugins load only when named in the manifest, resolved through the registry, and gated by a per-plugin command allowlist; unknown or unallowed entries are skipped (fail-closed). This EXCEEDS Tauri's plugin model on the security axis: Tauri trusts any plugin present on the configured path, while Kiri refuses an unknown plugin before `init` and drops unvetted commands. The in-process descriptor registry stands in for a real `dlopen` loader (OS-specific, out of scope for headless Mac work); the security gate that exceeds Tauri is identical either way. Ecosystem breadth (50+ plugins, catalogs) is still absent. | `crates/kiri-runtime/src/plugins.rs` (PING/DIAG/RESOURCES_PLUGIN + `PluginAllowlist` + `PluginManifest` + `PluginRegistry` + `register_external` + `tests`), `kiri-agent-execution-corpus/examples/plugin_abi.h`. (A) |
-| G-3 | Official bundler + autoupdater. | Signed-update VERIFIER is implemented (`crates/kiri-core/src/update.rs`: Ed25519 manifest, version-negotiated, never lowers a security check) - now has a CONSISTENT producer to verifier round-trip (UpdateManifestBuilder signs url plus sha256 of the installer; UpdaterService.check verifies that same contract pre-flight, verify_asset_for verifies the bytes). Signature binds the concrete installer identity and the key stays host-pinned, exceeding Tauris updater on both axes. Distribution signing/packaging (MSI/dmg/AppImage) still needs certs. No packaging/bundling pipeline (MSI/dmg/AppImage/NSIS) yet; distribution signing needs certs. | `crates/kiri-core/src/update.rs`. (A) |
+| G-3 | Official bundler + autoupdater. | Application-level signed updates are implemented (`crates/kiri-core/src/update.rs`: Ed25519 manifest, version-negotiated, never lowers a security check) with a producer that signs the actual artifact URL + SHA-256 and a verifier that checks the downloaded bytes. The unsigned packaging pipeline now emits a macOS `.app` zip, Windows `.exe` zip, Linux `.tar.gz`, and a merged three-platform `RELEASES.json` through one GitHub Actions workflow. Native OS signing is deliberately out of scope, not an unresolved Kiri release blocker. | `crates/kiri-core/src/update.rs`, `tools/packaging/package.sh`, `.github/workflows/unsigned-release.yml`. (A) |
 | G-4 | `tauri://` asset protocol with range requests, content-type mapping, optimization, and `asset:customProtocol` allowlist. | `kiri://` now has content-type mapping + Range/206 (R-1) AND conditional caching (ETag + `If-None-Match` -> 304) + origin allowlist (G-4 parity), all headless-tested in `crates/kiri-runtime/src/assets.rs`. `serve_checked()` is wired into the macOS/Linux `host_cross.rs::serve_kiri`. Windows `host_windows.rs` uses WebView2 `SetVirtualHostNameToFolderMapping` (OS-handled content-types); custom mime/range/etag parity there is blocked pending real-Windows hardware (T008/T009 leg). | `crates/kiri-runtime/src/assets.rs`, `crates/kiri-runtime/src/host_cross.rs`. (A/B) |
 | G-5 | `window.__TAURI__.os/path/app/event/cli/dialog/fs/globalShortcut/http/notification/process/shell/updater/window` JS APIs. | Most of this surface is IMPLEMENTED and exceeds Tauri on the security axis (capability authority + host allowlist + server-side validation): `kiri.window.*` (14-22), `kiri.platform.*`/`kiri.app.*`/`kiri.event.*` (incl. channel-allowlisted audit-16), `kiri.path.*`/`kiri.os.*`, `kiri.http.get` (host-allowlisted), `kiri.shell.run` (host-allowlisted), `kiri.notification.show` (template-allowlisted), `kiri.dialog.open` (kind-allowlisted), `kiri.shortcut.register` (accelerator-allowlisted), `kiri.clipboard.*`, `kiri.opener.open`, `kiri.store.*` (namespace-allowlisted), `kiri.deeplink.register`, `kiri.tray.*`, `kiri.sidecar.*`, `kiri.window.state.*`, `kiri.config.get/keys` (key-allowlisted, audit-17). Still missing: `cli`, `process` (covered by sidecar/shell), and a `updater` JS binding (the verifier exists, no JS command yet). | `crates/kiri-core/src/{window,path,http,shell,notification,dialog,shortcut,clipboard,opener,store,deeplink,tray,sidecar,window_state,config,event}.rs`, `examples/blank/kiri.js`. (A) |
 | G-6 | Sidecar binaries, deep-link, tray, global shortcuts, window-state persistence. | ALL FIVE are implemented and exceed Tauri on the security axis: `kiri.sidecar.*` (host-allowlisted names + argv confinement, audit-15), `kiri.deeplink.register` (scheme-allowlisted), `kiri.tray.*` (item-allowlisted, audit-14), `kiri.shortcut.register` (accelerator-allowlisted), `kiri.window.state.*` (host-owned namespace, audit-13). | `crates/kiri-core/src/{sidecar,deeplink,tray,shortcut,window_state}.rs`. (A) |
@@ -114,9 +114,10 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
    to an ecosystem (G-2) and is pure Rust, Mac-runnable.
 3. **R-3 (P1): JS surface parity (os/path/app/event).** Expose a minimal,
    capability-gated `kiri.*` JS API mirroring Tauri's most-used modules. Mac-runnable.
-4. **R-4 (P1): Bundling + autoupdate.** Even a thin `cargo-bundle`-style step +
-   a signed-update check closes G-3. Requires release signing; Mac-runnable to
-   build, but distribution signing needs certs.
+4. **R-4 (P1): Bundling + autoupdate.** [DONE unsigned] The release path emits
+   unsigned desktop archives and a pinned-key update manifest whose signature
+   covers the actual published bytes. Native Apple/Microsoft signing is outside
+   Kiri's supported release contract.
 5. **R-5 (P1): Scoped `kiri.fs` surface (DONE headless).** `kiri.fs.read|write|exists|remove`
    close the Tauri `fs` plugin parity gap (G-2) and exceed it on the security axis: central
    `FS` capability authority + host-owned `PathScope` allowlist + base64 payloads + bulk-object
@@ -150,7 +151,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 - [x] R-3 spike DONE: capability-gated kiri.* JS surface (kiri.platform.os/arch, kiri.app.version, kiri.event.emit/listen) in crates/kiri-core/src/platform.rs + Router::with_platform(). Shipped frontend API in examples/blank/kiri.js served via kiri://. Headless unit tests enforce capabilities + verify payloads.
 - [x] R-3b DONE: G-4 asset-protocol parity on the cross backend. `serve_checked()` adds ETag + `If-None-Match` 304 + origin allowlist to `kiri://`; wired into `host_cross.rs::serve_kiri` (lines ~47-90) and exercised by 3 new headless asset tests. Windows folder-map leg stays blocked (T008/T009 hardware).
 - [x] R-2 COMPLETED: plugin ABI is now real, not a scaffold. `host_register_command` carries each command's actual `Handler` (previously a hardcoded echo), and four built-ins are ported as genuine plugins: `kiri.ping`, `kiri.diag`, `kiri.open`, `kiri.close`. Stateful plugins (`diag`, `open`, `close`) bind the runtime's shared `Diagnostics`/`ResourceTable`/`CallerId` via a new `KiriHostContextV1` pointer in `plugin_abi.h`, matching how an external plugin reaches host services. `build_router_with_plugins(diagnostics, resource_table, caller)` loads all three via the plugin path; capability bits are derived from the command id (`capability_bit::for_command`), so authority stays identical to the old inline `Router::with_*`. 5 headless plugin tests cover registration + dispatch + stateful open/close. This closes the G-2 on-ramp: the registration mechanism is proven end to end for every built-in command. Windows/macOS/Linux call sites updated to share one real `Arc<Mutex<ResourceTable>>` with the plugin (no double registration).
-- [x] R-4 (P1) signed-updater COMPLETE: the `UpdateManifestBuilder` producer signs each platform's installer bytes with the release Ed25519 key and emits the `RELEASES.json` the runtime pins (kiri-core::update::update::verify_asset_for verifies every OS asset on any host). The verifier rejects tampered/wrong-key/missing-signature/downgrade. Headless, no certs, proven on all three OSes via the `updater` CI job (cargo test -p kiri-core update::); that job previously caught a macOS-biased fixture (signature only on the darwin asset) that failed on Linux/Windows and was fixed. Signed distribution still needs Apple Developer + Windows code-sign certs, but the build+verify loop is closed and CI-verified.
+- [x] R-4 (P1) signed-updater + unsigned packaging COMPLETE: the `UpdateManifestBuilder` producer signs each platform's actual release archive bytes with the release Ed25519 key and emits the `RELEASES.json` the runtime pins (`verify_asset_for` verifies every OS asset on any host). The verifier rejects tampered/wrong-key/missing-signature/downgrade. Headless, no native OS certificate required; the all-OS producer/merge path is in `.github/workflows/unsigned-release.yml`. Native Apple/Microsoft signing is deliberately outside the supported release contract.
 - NOTE: no step in this loop launches `kiri-host` or a baseline binary, so the
   screen never flashes. All verification is `cargo test`/`clippy`/`fmt`/`bulk_bench`.
 
@@ -170,7 +171,8 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       `cargo test --workspace` = 252 pass, `bulk_bench` runs. No further Mac-headless-runnable
       "exceed Tauri" item remains. Remaining work is hardware/cert-blocked (T008 WebView2
       shared-buffer, T009 Windows perf leg, G-1 mobile, G-2 50+ plugin ecosystem breadth,
-      G-3 native signing certs) and cannot be closed on this macOS dev host without those.
+      native OS signing is intentionally out of scope) and cannot be closed on this macOS
+      dev host without those.
 
 
 - [x] R-5 DONE: scoped `kiri.fs` surface (read/write/exists/remove) in kiri-core::fs with
@@ -231,38 +233,38 @@ clean. (A)
 
 
 
-## 5b. G-3 packaging scaffold (fail-closed, cert-free signed manifest; native signing opt-in)
+## 5b. G-3 unsigned packaging and application-level updates
 
-- [x] `tools/packaging/package.sh` added: builds the release host binary, runs the
-      same headless gate set as the audit loop (`cargo fmt --check`, `cargo clippy
-      -p kiri-runtime --all-targets -- -D warnings`, `cargo test --workspace`), then
-      assembles the current-OS distributable. **Distribution signing is OPT-IN and
-      FAILS CLOSED**: macOS codesign/notarize run only when `KIRI_APPLE_SIGN_IDENTITY`
-      (and the notary vars) are set; Windows signtool runs only when `KIRI_WINDOWS_PFX`
-      + `KIRI_WINDOWS_PFX_PASSWORD` are set. With no creds the script refuses to emit a
-      "signed" artifact (prints the refusal, leaves an unsigned `.app` for local testing),
-      exits non-zero on the signing step, and STILL emits the cert-free `artifacts/RELEASES.json`.
-      Verified locally on this macOS host: with no cert env set it printed the
-      fail-closed refusal, emitted `artifacts/RELEASES.json`, and never launched a WebView
-      (no `kiri-host` process). (A, local macOS evidence)
-- [x] `crates/kiri-core/examples/emit_release_manifest.rs` added: the producer side of
-      G-3's signed-update chain. Needs NO Apple/Microsoft cert -- it signs each platform's
-      installer URL + SHA-256 with Kiri's pinned Ed25519 release key (seed `[7u8;32]`),
-      matching what the shipping runtime verifies (`UpdateManifest::verify_asset_for`).
-      It self-verifies the emitted manifest against the re-derived pinned public key so a
-      key mismatch fails loudly instead of shipping a manifest the runtime would reject.
-      Compiles (`cargo build -p kiri-core --examples`), runs (`RELEASES.json` written,
-      `verified=ok`), and is covered by the existing `updater` round-trip tests. (A)
-- [x] `tools/packaging/Info.plist` + `tools/packaging/entitlements.plist` added: minimal
-      hardened macOS app-bundle metadata + sandbox-hardened-runtime entitlements consumed
-      by `package.sh` on the signing path. (B, implementation source)
-- STATUS: G-3's *signed-update verifier + producer* is complete and Mac-headless-proven;
-      the *native distribution signing* (codesign + notarize on macOS, signtool on Windows)
-      remains genuinely cert-blocked. The scaffold makes that block explicit and non-fatal:
-      the pipeline can run end-to-end without secrets and produce a verifiable release
-      manifest, which closes the build+emit loop without lowering any security check.
-      Native signing/notarization is the only remaining G-3 sub-item and is gated on
-      obtaining the Apple Developer + Windows code-sign certificates.
+- [x] `tools/packaging/package.sh` now runs one headless path on all three desktop
+      OSes: it gates fmt/clippy/workspace tests, builds `kiri-host`, emits an unsigned
+      macOS `.app` zip, Windows `.exe` zip, or Linux `.tar.gz`, and never launches a
+      WebView. (A, implementation source)
+- [x] `crates/kiri-core/examples/emit_release_manifest.rs` now reads the actual
+      published artifact, signs its HTTPS URL + SHA-256 with Kiri's pinned Ed25519
+      update key, writes `RELEASES.json`, and verifies those exact bytes before success.
+      Placeholder installer bytes and placeholder update URLs are no longer accepted.
+      The private key is supplied only through `KIRI_UPDATE_SIGNING_KEY_HEX`; it is
+      never embedded in source. (A, implementation source)
+- [x] `crates/kiri-core/examples/verify_release_manifest.rs` verifies every platform
+      entry in the merged manifest against the downloaded artifact bytes and the pinned
+      public key. (A, implementation source)
+- [x] `.github/workflows/unsigned-release.yml` builds macOS, Windows, and Linux from
+      the same packaging script, merges and cryptographically verifies the three
+      manifests, uploads workflow artifacts on manual runs, and publishes an unsigned
+      GitHub Release on `v*` tags. It requires the repository secret
+      `KIRI_UPDATE_SIGNING_KEY_HEX`; missing key material fails closed before a
+      manifest or release is emitted. (B, workflow source; live run is the remaining
+      CI evidence)
+- STATUS: native Apple Developer signing, notarization, and Windows Authenticode are
+      deliberately outside Kiri's release contract. They are not treated as blockers.
+      The supported release guarantee is unsigned OS artifacts plus Kiri's
+      application-level signed-update manifest, which authenticates the exact bytes
+      downloaded by the updater. The checked-in public key currently matches the
+      deterministic integration-test fixture; `package.sh` rejects that known test
+      seed for publication. Before the first public tag, rotate the pinned public key
+      to a fresh Ed25519 key and store its private half only as the
+      `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret. This is update-key setup, not
+      Apple code signing.
 
 
 ## 6b. Ranked "exceed Tauri" next targets (Mac-headless-runnable)

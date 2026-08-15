@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>local.kiri.host</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>@KIRI_VERSION@</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>@KIRI_VERSION@</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>

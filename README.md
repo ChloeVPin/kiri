@@ -127,7 +127,7 @@ locally, so it is validated by the cross-target compile. The wry/tao backend
 runs natively here and is exercised by the smoke and stress runs. Local gates:
 
 ```sh
-cargo test --workspace                       # 45 tests
+cargo test --workspace                       # 252 tests
 cargo fmt --all -- --check
 cargo build -p kiri-runtime --bins           # native host (macOS/Linux)
 ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
@@ -166,11 +166,13 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
 
 - `correctness`: fmt, clippy, tests on windows/macos/ubuntu; the Windows
   runtime is cross-checked on non-Windows runners
-- `windows-host-smoke`: smoke run with marker verification plus a 100-cycle
-  launch-close stress run, on `windows-latest`
-- `controlled-performance`: manual dispatch on a self-hosted
-  `[self-hosted, windows, x64, kiri-perf]` runner; startup benchmarks for all
-  three targets, artifacts uploaded
+- `controlled-performance`: hosted macOS/Windows startup comparison for Kiri,
+  Wry/Tao, and Tauri; artifacts uploaded
+- `unsigned-release`: tag/manual packaging on macOS, Windows, and Linux from
+  one script; artifacts are intentionally unsigned at the OS level, while
+  `RELEASES.json` signs and verifies their exact bytes with Kiri's Ed25519 key.
+  The workflow requires the `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret;
+  no Apple Developer license or native OS signing certificate is required
 
 ## Roadmap
 

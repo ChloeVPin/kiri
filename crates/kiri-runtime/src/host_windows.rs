@@ -939,7 +939,7 @@ fn event_channels() -> Vec<kiri_core::event::AllowedChannel> {
 /// a key and accept an attacker-signed release. The matching secret signs release
 /// assets at build time. Rotate only via a new pinned build.
 const HOST_PINNED_UPDATE_PUBLIC_KEY: &str =
-    "7d4b3f2a9c1e8b6d5f0a3c2e9b7d4f1a6c8e0b3d5f7a9c2e4b6d8f0a1c3e5b7d";
+    "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c";
 
 fn config_keys() -> Vec<kiri_core::config::AllowedConfigKey> {
     vec![

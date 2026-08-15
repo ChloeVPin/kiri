@@ -1,26 +1,19 @@
 #!/usr/bin/env bash
-# Kiri release packaging scaffold (G-3).
+# Kiri unsigned release packaging (G-3).
 #
-# Builds the release host binary and produces a signed, notarized distributable
-# for the current OS. Signing is OPT-IN and FAILS CLOSED: if the required
-# credential environment variables are absent, the script refuses to emit a
-# "signed" artifact and exits non-zero after producing only the cert-free
-# release manifest (RELEASES.json), which is signed with Kiri's pinned Ed25519
-# release key (no Apple/Microsoft cert needed).
+# Native OS signing is intentionally out of scope: Kiri has no Apple
+# Developer account and this pipeline does not attempt codesign, notarization,
+# or Windows Authenticode. Every artifact is labeled and published unsigned.
+# Kiri's application-level Ed25519 update signature remains enabled: it binds
+# the public artifact URL and SHA-256 of the exact bytes shipped.
 #
-# This is intentionally runnable headlessly: it never launches the WebView host.
+# This script is headless and never launches kiri-host or a baseline binary.
 #
-# macOS env (optional):
-#   KIRI_APPLE_SIGN_IDENTITY   e.g. "Developer ID Application: ..."
-#   KIRI_APPLE_NOTARY_KEY_ID   App Store Connect key id
-#   KIRI_APPLE_NOTARY_ISSUER   App Store Connect issuer id
-#   KIRI_APPLE_NOTARY_KEY_PATH path to the .p8 auth key
-# Windows env (optional):
-#   KIRI_WINDOWS_PFX           path to the code-signing .pfx
-#   KIRI_WINDOWS_PFX_PASSWORD  password for the .pfx
-#
-# Cert-free outputs (always produced):
-#   artifacts/RELEASES.json    Ed25519-signed release manifest
+# Outputs in OUT_DIR (default: artifacts):
+#   macOS:   kiri-<version>-darwin-<arch>.zip containing unsigned Kiri.app
+#   Windows: kiri-<version>-windows-<arch>.zip containing kiri-host.exe
+#   Linux:   kiri-<version>-linux-<arch>.tar.gz containing kiri-host
+#   all OS:  RELEASES.json with a pinned-key signature over the artifact bytes
 
 set -euo pipefail
 
@@ -30,21 +23,73 @@ cd "$ROOT"
 OUT_DIR="${OUT_DIR:-artifacts}"
 mkdir -p "$OUT_DIR"
 
+if [ -z "${KIRI_UPDATE_SIGNING_KEY_HEX:-}" ]; then
+  echo "KIRI_UPDATE_SIGNING_KEY_HEX is required to emit RELEASES.json" >&2
+  echo "Store it in a secret manager; never commit the private update key." >&2
+  exit 2
+fi
+if [ "$KIRI_UPDATE_SIGNING_KEY_HEX" = \
+  "0707070707070707070707070707070707070707070707070707070707070707" ] && \
+  [ "${KIRI_ALLOW_TEST_UPDATE_KEY:-}" != "1" ]; then
+  echo "the deterministic test update key cannot publish a release" >&2
+  echo "use a fresh private key whose public half matches the host-pinned key" >&2
+  exit 2
+fi
+
 OS="$(uname -s)"
+ARCH="$(uname -m)"
+case "$OS" in
+  Darwin)
+    PLATFORM_OS="darwin"
+    case "$ARCH" in
+      arm64|aarch64) PLATFORM_ARCH="aarch64" ;;
+      x86_64|amd64) PLATFORM_ARCH="x86_64" ;;
+      *) echo "unsupported macOS architecture: $ARCH" >&2; exit 2 ;;
+    esac
+    ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    PLATFORM_OS="windows"
+    case "$ARCH" in
+      x86_64|amd64) PLATFORM_ARCH="x86_64" ;;
+      arm64|aarch64) PLATFORM_ARCH="aarch64" ;;
+      *) echo "unsupported Windows architecture: $ARCH" >&2; exit 2 ;;
+    esac
+    ;;
+  Linux)
+    PLATFORM_OS="linux"
+    case "$ARCH" in
+      x86_64|amd64) PLATFORM_ARCH="x86_64" ;;
+      aarch64|arm64) PLATFORM_ARCH="aarch64" ;;
+      *) echo "unsupported Linux architecture: $ARCH" >&2; exit 2 ;;
+    esac
+    ;;
+  *)
+    echo "unsupported packaging host: $OS" >&2
+    exit 2
+    ;;
+esac
+
+PLATFORM_KEY="$PLATFORM_OS-$PLATFORM_ARCH"
 PKG_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
 BIN="kiri-host"
+BIN_PATH="target/release/$BIN"
+if [ "$PLATFORM_OS" = "windows" ]; then
+  BIN_FILE="$BIN_PATH.exe"
+else
+  BIN_FILE="$BIN_PATH"
+fi
+ARTIFACT_STEM="kiri-$PKG_VERSION-$PLATFORM_KEY"
 
-echo "==> Kiri packaging ($OS, version $PKG_VERSION)"
+echo "==> Kiri unsigned packaging ($OS/$ARCH, version $PKG_VERSION)"
 
 # ---------------------------------------------------------------------------
-# 0. Gate: never package broken code. These are the same headless gates the
-#    audit loop runs; packaging must not skip them.
+# 0. Headless correctness gate. No native host or baseline is launched here.
 # ---------------------------------------------------------------------------
 echo "==> gate: fmt"
 cargo fmt --all -- --check
-echo "==> gate: clippy (runtime, macOS)"
+echo "==> gate: clippy (native runtime target)"
 cargo clippy -p kiri-runtime --all-targets -- -D warnings
-echo "==> gate: test"
+echo "==> gate: workspace tests"
 cargo test --workspace --quiet
 
 # ---------------------------------------------------------------------------
@@ -52,62 +97,64 @@ cargo test --workspace --quiet
 # ---------------------------------------------------------------------------
 echo "==> build release binary"
 cargo build --release -p kiri-runtime --bin "$BIN"
-BIN_PATH="target/release/$BIN"
 
 # ---------------------------------------------------------------------------
-# 2a. macOS: sign + notarize ONLY if credentials present (fail closed).
+# 2. Assemble an unsigned, runnable archive for the current OS.
 # ---------------------------------------------------------------------------
-if [ "$OS" = "Darwin" ]; then
-  APP_DIR="$OUT_DIR/Kiri.app"
-  rm -rf "$APP_DIR"
-  mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
-  cp "$BIN_PATH" "$APP_DIR/Contents/MacOS/$BIN"
-  cp tools/packaging/Info.plist "$APP_DIR/Contents/Info.plist"
-
-  if [ -z "${KIRI_APPLE_SIGN_IDENTITY:-}" ]; then
-    echo "==> macOS: NO signing identity set -> NOT producing a signed artifact (fail closed)."
-    echo "    Set KIRI_APPLE_SIGN_IDENTITY to sign; set the notary vars to notarize."
-    echo "    Leaving unsigned $APP_DIR in place for local testing only."
-  else
-    echo "==> macOS: codesign with $KIRI_APPLE_SIGN_IDENTITY"
-    codesign --force --options runtime --entitlements tools/packaging/entitlements.plist \
-      --sign "$KIRI_APPLE_SIGN_IDENTITY" "$APP_DIR"
-    codesign --verify --strict --verbose=2 "$APP_DIR"
-
-    if [ -n "${KIRI_APPLE_NOTARY_KEY_ID:-}" ] && [ -n "${KIRI_APPLE_NOTARY_ISSUER:-}" ] && [ -n "${KIRI_APPLE_NOTARY_KEY_PATH:-}" ]; then
-      echo "==> macOS: notarize"
-      xcrun notarytool submit "$APP_DIR" \
-        --key-id "$KIRI_APPLE_NOTARY_KEY_ID" \
-        --issuer "$KIRI_APPLE_NOTARY_ISSUER" \
-        --key "$KIRI_APPLE_NOTARY_KEY_PATH" --wait
-      xcrun stapler staple "$APP_DIR"
+case "$PLATFORM_OS" in
+  darwin)
+    APP_DIR="$OUT_DIR/$ARTIFACT_STEM.app"
+    ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
+    rm -rf "$APP_DIR" "$ARTIFACT_PATH"
+    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+    cp "$BIN_FILE" "$APP_DIR/Contents/MacOS/$BIN"
+    sed "s/@KIRI_VERSION@/$PKG_VERSION/g" tools/packaging/Info.plist \
+      > "$APP_DIR/Contents/Info.plist"
+    ditto -c -k --keepParent "$APP_DIR" "$ARTIFACT_PATH"
+    ;;
+  windows)
+    STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
+    ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
+    rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
+    mkdir -p "$STAGE_DIR"
+    cp "$BIN_FILE" "$STAGE_DIR/$BIN.exe"
+    if command -v powershell.exe >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
+      WIN_STAGE_DIR="$(cygpath -w "$STAGE_DIR")"
+      WIN_ARTIFACT_PATH="$(cygpath -w "$ARTIFACT_PATH")"
+      powershell.exe -NoProfile -NonInteractive -Command \
+        "Compress-Archive -Path '$WIN_STAGE_DIR\\*' -DestinationPath '$WIN_ARTIFACT_PATH' -Force"
+    elif command -v zip >/dev/null 2>&1; then
+      (cd "$STAGE_DIR" && zip -q -r "../$ARTIFACT_STEM.zip" .)
     else
-      echo "==> macOS: signed but NOT notarized (notary creds absent)."
+      echo "Windows packaging requires powershell.exe/cygpath or zip" >&2
+      exit 2
     fi
-  fi
+    ;;
+  linux)
+    STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
+    ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.tar.gz"
+    rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
+    mkdir -p "$STAGE_DIR"
+    cp "$BIN_FILE" "$STAGE_DIR/$BIN"
+    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN"
+    ;;
+esac
+
+if [ ! -s "$ARTIFACT_PATH" ]; then
+  echo "packaging produced no artifact: $ARTIFACT_PATH" >&2
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
-# 2b. Windows: sign ONLY if PFX present (fail closed). (Documented path; the
-#     actual run happens on windows-latest where signtool is available.)
+# 3. Emit a real signed manifest. The default URL is the predictable GitHub
+#    release URL; KIRI_RELEASE_ASSET_URL overrides it for another publisher.
 # ---------------------------------------------------------------------------
-if [ "$OS" = "MINGW" ] || [ "$OS" = "Windows_NT" ] || [ "${KIRI_WINDOWS:-}" = "1" ]; then
-  if [ -z "${KIRI_WINDOWS_PFX:-}" ] || [ -z "${KIRI_WINDOWS_PFX_PASSWORD:-}" ]; then
-    echo "==> Windows: NO PFX set -> NOT producing a signed artifact (fail closed)."
-    echo "    Set KIRI_WINDOWS_PFX + KIRI_WINDOWS_PFX_PASSWORD to sign."
-  else
-    echo "==> Windows: signtool sign"
-    signtool sign /f "$KIRI_WINDOWS_PFX" /p "$KIRI_WINDOWS_PFX_PASSWORD" \
-      /tr http://timestamp.digicert.com /td sha256 /fd sha256 "$BIN_PATH.exe"
-  fi
-fi
+RELEASE_BASE_URL="${KIRI_RELEASE_BASE_URL:-https://github.com/ChloeVPin/kiri/releases/download/v$PKG_VERSION}"
+ASSET_URL="${KIRI_RELEASE_ASSET_URL:-$RELEASE_BASE_URL/$(basename "$ARTIFACT_PATH")}"
+echo "==> release manifest (Ed25519 over real artifact bytes)"
+cargo run -q --release -p kiri-core --example emit_release_manifest -- \
+  "$PKG_VERSION" "$PLATFORM_KEY" "$ASSET_URL" "$ARTIFACT_PATH" \
+  "$OUT_DIR/RELEASES.json"
 
-# ---------------------------------------------------------------------------
-# 3. Cert-free release manifest (always). Signed with the pinned Ed25519 key;
-#    no Apple/Microsoft cert required. Reuses the existing UpdateManifestBuilder.
-# ---------------------------------------------------------------------------
-echo "==> release manifest (Ed25519, cert-free)"
-cargo run -q --release -p kiri-core --example emit_release_manifest \
-  -- "$PKG_VERSION" "$OUT_DIR/RELEASES.json"
-
-echo "==> done. Distributable signing is opt-in and fails closed without creds."
+echo "==> unsigned artifact: $ARTIFACT_PATH"
+echo "==> manifest: $OUT_DIR/RELEASES.json"
