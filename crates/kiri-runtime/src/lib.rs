@@ -13,6 +13,7 @@
 pub mod assets;
 pub mod markers;
 pub mod output;
+pub mod plugins;
 
 #[cfg(not(target_os = "windows"))]
 mod host_cross;
@@ -170,7 +171,7 @@ pub fn require_smoke_markers(markers: &StartupMarkers) -> Result<(), String> {
 mod control_plane_tests {
     use kiri_core::caller::CallerRegistry;
     use kiri_core::capabilities::CapabilityBits;
-    use kiri_core::dispatch::{is_pong, Router};
+    use kiri_core::dispatch::is_pong;
     use kiri_core::trace::NoopTraceSink;
     use kiri_core::wire::WireRequest;
     use serde_json::json;
@@ -189,7 +190,7 @@ mod control_plane_tests {
         let caller = registry.register();
         let mut caps = CapabilityBits::empty();
         caps.set(kiri_core::dispatch::capability_bit::PING);
-        let router = Router::new();
+        let router = crate::plugins::PluginHost::build_router_with_plugins();
         let mut sink = NoopTraceSink;
         router.dispatch(caller, &caps, &request, &mut sink)
     }

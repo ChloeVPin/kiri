@@ -80,6 +80,13 @@ impl Router {
         router
     }
 
+    /// Create a router with no commands registered. Used by the plugin host so
+    /// built-in commands come exclusively from loaded plugins (R-2), proving the
+    /// registration path instead of relying on inline defaults.
+    pub fn new_empty() -> Self {
+        Router { commands: HashMap::new(), limits: Limits::default() }
+    }
+
     /// Attach a shared diagnostics sink and register the `kiri.diag` command.
     /// The command returns the privacy-safe snapshot; it requires the
     /// `DIAGNOSTICS` capability, enforced by the validation pipeline.

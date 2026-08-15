@@ -250,7 +250,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
     caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
     let diagnostics = Diagnostics::new();
-    let router = Router::new()
+    let router = crate::plugins::PluginHost::build_router_with_plugins()
         .with_diagnostics(diagnostics.clone())
         // T011: real resource table. kiri.open/kiri.close mutate this table
         // and keep the diagnostics open-resource count honest and dynamic.

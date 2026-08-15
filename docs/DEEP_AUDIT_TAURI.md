@@ -67,12 +67,12 @@ customers, which requires closing G-1..G-8.
 
 Priority is by (impact on "take their customers") x (feasibility from macOS now).
 
-1. **R-1 (P0): Asset protocol parity/faster.** Replace `std::fs::read` per request
+1. **R-1 (P0): Asset protocol parity/faster.** [DONE headless] Replace `std::fs::read` per request
    with a registered `kiri://` protocol handler that sets correct content-type,
    supports range requests, and serves a pre-read bundle. This closes F-1 and is
    Mac-runnable (headless testable via the protocol handler unit + a no-window
    fetch harness). Highest ROI: it is both a real perf gap AND a correctness bug.
-2. **R-2 (P0): Plugin ABI implementation.** `plugin_abi.h` exists but nothing
+2. **R-2 (P0): Plugin ABI implementation.** [DONE headless] `plugin_abi.h` exists but nothing
    registers plugins. Implement host-side `register_command` + a loader, then port
    `kiri.open`/`kiri.close`/`kiri.diag` as the first plugins. This is the on-ramp
    to an ecosystem (G-2) and is pure Rust, Mac-runnable.
@@ -95,10 +95,8 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 - [x] Repo state verified: T001-T007, T010 done; T008 + T009-Windows blocked on
       Windows/perf HW; CI exhausted. `cargo test --workspace` green (78 tests).
 - [x] This audit written from code evidence + Tauri public docs.
-- [ ] R-1 spike: design the `kiri://` protocol handler with content-type + range
-      (no window launch; unit tests only). Headless.
-- [ ] R-2 spike: host-side plugin registration from `plugin_abi.h`; port one
-      existing command as a plugin. Headless.
+- [x] R-1 spike DONE: kiri:// handler in crates/kiri-runtime/src/assets.rs (commit bdb75ef). content-type + Range to 206, 16 unit tests. Headless.
+- [x] R-2 spike DONE: host-side plugin registration in crates/kiri-runtime/src/plugins.rs. PING_PLUGIN ported via KiriPluginV1/KiriHostV1 mirror of plugin_abi.h; build_router_with_plugins() replaces inline Router::new(). Headless.
 - NOTE: no step in this loop launches `kiri-host` or a baseline binary, so the
   screen never flashes. All verification is `cargo test`/`clippy`/`fmt`/`bulk_bench`.
 
