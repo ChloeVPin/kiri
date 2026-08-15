@@ -40,8 +40,18 @@ on this Mac. The only local evidence is compile-level.
 VERIFIED on `windows-latest` (correctness run #19, after repo went public):
 native smoke reached all required startup markers, 100-cycle stress ran 0
 failures. Q-001 (WebView2 Evergreen runtime present on windows-latest) is
-CLOSED — no install step was required. Cross-checks (`cargo check`/`clippy`
+CLOSED - no install step was required. Cross-checks (`cargo check`/`clippy`
 against `x86_64-pc-windows-msvc`) remain green on macOS/Linux runners.
+
+NOTE (run #31866478695, commit 051696a): the native smoke had silently been
+failing the marker assertion (missing webview_ready and dom_ready) while
+the prior handoff claimed Q-001 was closed. Root cause: the injected bridge
+script registered its DOMContentLoaded listener too late on WebView2 150/151
+for a fast local page, so the dom ready message was lost. first_animation_frame
+survived because it is driven by requestAnimationFrame. Fixed by guarding the
+listener with a document.readyState check; the existing dom-message fallback
+then also recovers webview_ready. Now genuinely green on real Windows.
+
 
 ## Linux (wry/tao) — CROSS-CHECKED, blocked on execution
 
