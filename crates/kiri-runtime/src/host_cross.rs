@@ -350,6 +350,17 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         std::sync::Arc::new(crate::tray_ctl::cross_tray::CrossTrayBackend::new()),
         kiri_core::tray::TrayAllowlist::new(tray_items()),
         kiri_core::limits::Limits::default(),
+    ))
+    // G-6: kiri.sidecar.spawn/stop/list surface (audit item 15). Capability-gated
+    // (SIDECAR) and bounded to a host allowlist of exact sidecar names, so a
+    // granted capability still cannot fork an unapproved binary or pass arbitrary
+    // argv. This exceeds Tauri's sidecar API, which lets the frontend name an
+    // arbitrary companion executable once the capability is present.
+    .with_sidecar(kiri_core::sidecar::SidecarService::new(
+        std::sync::Arc::new(crate::sidecar_ctl::cross_sidecar::CrossSidecarRunner::new()),
+        kiri_core::sidecar::SidecarAllowlist::new(sidecar_allow()),
+        kiri_core::sidecar::SidecarTable::new(),
+        kiri_core::limits::Limits::default(),
     ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -533,6 +544,16 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
     vec![kiri_core::shell::AllowedCommand {
         program: "echo".to_string(),
         args: vec!["kiri-probe".to_string()],
+    }]
+}
+
+/// Host allowlist of sidecar binary names (audit item 15, G-6). Only these
+/// exact names may be spawned by the frontend; argv is forced to the
+/// host-declared prefix. Never exposes a path to JavaScript.
+fn sidecar_allow() -> Vec<kiri_core::sidecar::AllowedSidecar> {
+    vec![kiri_core::sidecar::AllowedSidecar {
+        name: "kiri-helper".to_string(),
+        args: vec!["--mode".to_string(), "fast".to_string()],
     }]
 }
 

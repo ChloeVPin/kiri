@@ -30,6 +30,7 @@ pub mod resources;
 pub mod security;
 pub mod shell;
 pub mod shortcut;
+pub mod sidecar;
 pub mod store;
 pub mod trace;
 pub mod tray;

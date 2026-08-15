@@ -59,6 +59,9 @@
     "kiri.window.state.load": 50,
     "kiri.tray.setMenu": 51,
     "kiri.tray.invoke": 52,
+    "kiri.sidecar.spawn": 53,
+    "kiri.sidecar.stop": 54,
+    "kiri.sidecar.list": 55,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -375,6 +378,30 @@
       },
     },
 
+    // Restricted, host-allowlisted sidecar processes (kiri.sidecar.*). The
+    // frontend may only spawn a pre-approved sidecar by its host-owned name and
+    // cannot pass arbitrary argv or address a binary path, so JavaScript can
+    // never fork an unapproved companion executable. This exceeds Tauri's
+    // sidecar API (which lets the frontend name an arbitrary binary once the
+    // capability is present).
+    sidecar: {
+      spawn: function (name, args) {
+        return call("kiri.sidecar.spawn", { name: name, args: args || [] }).then(function (r) {
+          return { handle: r.handle, name: r.name, exitCode: r.exit_code, stdout: r.stdout, stderr: r.stderr };
+        });
+      },
+      stop: function (handle) {
+        return call("kiri.sidecar.stop", { handle: handle }).then(function (r) {
+          return { stopped: r.stopped };
+        });
+      },
+      list: function () {
+        return call("kiri.sidecar.list", {}).then(function (r) {
+          return { names: r.names };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -408,5 +435,6 @@
   global.kiri.opener = Kiri.opener;
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
+  global.kiri.sidecar = Kiri.sidecar;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

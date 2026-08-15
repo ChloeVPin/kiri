@@ -63,6 +63,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "opener" => crate::dispatch::capability_bit::OPENER,
         "window_state" => crate::dispatch::capability_bit::WINDOW_STATE,
         "tray" => crate::dispatch::capability_bit::TRAY,
+        "sidecar" => crate::dispatch::capability_bit::SIDECAR,
         _ => 0,
     }
 }
@@ -352,6 +353,29 @@ pub const COMMANDS: &[CommandSpec] = &[
         arity: 1,
     },
     CommandSpec { name: "kiri.tray.invoke", id: 52, capability: "tray", execution: "io", arity: 1 },
+    // --- audit item 15: kiri.sidecar (G-6) restricted, host-allowlisted sidecar
+    // (exceeds Tauri sidecar on the security axis) ---
+    CommandSpec {
+        name: "kiri.sidecar.spawn",
+        id: 53,
+        capability: "sidecar",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.sidecar.stop",
+        id: 54,
+        capability: "sidecar",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.sidecar.list",
+        id: 55,
+        capability: "sidecar",
+        execution: "io",
+        arity: 0,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

@@ -103,7 +103,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (189 tests: 164 kiri-core + 25 kiri-runtime). All of §6b's 14
+      --workspace` green (194 tests: 169 kiri-core + 25 kiri-runtime). All of §6b's 15
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
@@ -304,6 +304,24 @@ Cross-cutting differentiators to protect and advertise:
     unknown-invoke-denied, and frontend-supplied-label-ignored. Exceeds on the
     security axis (capability authority + host allowlist, frontend cannot forge or
     redirect native menu items); JS surface in examples/blank/kiri.js (Kiri.tray).
+14. [DONE] kiri.sidecar.spawn/stop/list (restricted, host-allowlisted sidecar, G-6) -
+    Tauri's sidecar API, once the capability is granted, launches an arbitrary
+    companion executable the frontend names (a tamper / supply-chain surface: a
+    malicious or buggy frontend can fork any binary, or one smuggled into an
+    allowed dir). Kiri gates kiri.sidecar.* behind the SIDECAR capability bit (21)
+    AND a host allowlist of exact sidecar names; the frontend may only spawn a
+    pre-approved binary by its host-owned name, cannot pass argv beyond the
+    host-declared prefix, and never addresses a path. Spawned output is captured
+    and bounded by the shared bulk-object ceiling (like kiri.shell). Implemented
+    in kiri-core::sidecar (capability bit 21, command ids 53/54/55) with host
+    seams in crates/kiri-runtime/src/sidecar_ctl.rs (CrossSidecarRunner/
+    WinSidecarRunner) wired into both backends via ".with_sidecar(...)". Both
+    paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc.
+    Headless tests cover allowed-spawn (handle + captured output), unknown-name-
+    denied, frontend-cannot-extend-argv, stop-unknown-handle-denied, and list-
+    returns-names-only. Exceeds on the security axis (capability authority + host
+    allowlist + argv confinement); JS surface in examples/blank/kiri.js
+    (Kiri.sidecar).
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw

@@ -164,6 +164,11 @@ pub mod command_id {
     // --- audit item 14: kiri.tray (G-6) restricted, host-allowlisted tray ---
     pub const TRAY_SET_MENU: u32 = 51;
     pub const TRAY_INVOKE: u32 = 52;
+
+    // --- audit item 15: kiri.sidecar (G-6) restricted, host-allowlisted sidecar ---
+    pub const SIDECAR_SPAWN: u32 = 53;
+    pub const SIDECAR_STOP: u32 = 54;
+    pub const SIDECAR_LIST: u32 = 55;
 }
 
 /// Capability bits used by built-in control commands.
@@ -253,6 +258,9 @@ pub mod capability_bit {
     /// Authorizes kiri.tray.* (audit item 14).
     pub const TRAY: u32 = 20;
 
+    /// Authorizes kiri.sidecar.* (audit item 15).
+    pub const SIDECAR: u32 = 21;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -313,6 +321,9 @@ pub mod capability_bit {
             | crate::dispatch::command_id::WINDOW_STATE_LOAD => WINDOW_STATE,
             crate::dispatch::command_id::TRAY_SET_MENU
             | crate::dispatch::command_id::TRAY_INVOKE => TRAY,
+            crate::dispatch::command_id::SIDECAR_SPAWN
+            | crate::dispatch::command_id::SIDECAR_STOP
+            | crate::dispatch::command_id::SIDECAR_LIST => SIDECAR,
             _ => PING,
         }
     }
@@ -706,6 +717,18 @@ impl Router {
     /// Tauri's tray on the security axis.
     pub fn with_tray(mut self, service: crate::tray::TrayService) -> Self {
         for (id, required, handler) in crate::tray::tray_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.sidecar.* command set (audit item 15). Sidecars are
+    /// capability-gated (bit SIDECAR) AND bounded to a host allowlist of exact
+    /// binary names; the frontend may only spawn a pre-approved sidecar by its
+    /// host-owned name and cannot pass arbitrary argv or address a path. Exceeds
+    /// Tauri's sidecar on the security axis.
+    pub fn with_sidecar(mut self, service: crate::sidecar::SidecarService) -> Self {
+        for (id, required, handler) in crate::sidecar::sidecar_handlers(service) {
             self.register(id, required, handler);
         }
         self
