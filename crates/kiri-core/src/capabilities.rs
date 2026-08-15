@@ -222,7 +222,162 @@ fn path_key_contains(root: &str, path: &str, recursive: bool) -> bool {
     }
 }
 
+/// Filesystem glob scope: an allowlist of glob patterns (relative to the
+/// `PathScope` root) that further restricts which paths may be touched. This is
+/// the granularity axis where Tauri v2's `fs` plugin wins today: it lets a host
+/// restrict a granted capability to `images/*`, `**/*.txt`, etc. Kiri's
+/// `PathScope` alone is a single root, so we add `GlobScope` on top of it and
+/// require BOTH checks to pass. Empty scope = no glob restriction (only the root
+/// applies), which preserves the existing default behavior.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GlobScope {
+    /// Glob patterns such as `data/*.json` or `**/*.log`. Matched against the
+    /// path relative to the `PathScope` root, forward-slash normalized.
+    pub patterns: Vec<String>,
+}
+
+impl GlobScope {
+    pub fn new(patterns: Vec<String>) -> Self {
+        Self { patterns }
+    }
+
+    /// True when no glob restriction is configured (root-only scoping).
+    pub fn is_empty(&self) -> bool {
+        self.patterns.is_empty()
+    }
+
+    /// Whether `relative` (path relative to the scope root, forward-slash
+    /// normalized) matches at least one pattern.
+    pub fn allows(&self, relative: &str) -> bool {
+        if self.patterns.is_empty() {
+            return true;
+        }
+        let rel = relative.trim_matches('/');
+        self.patterns.iter().any(|p| glob_match(p, rel))
+    }
+
+    pub fn patterns(&self) -> &[String] {
+        &self.patterns
+    }
+}
+
+/// Minimal glob matcher supporting `*` (one path segment, no separator) and
+/// `**` (zero or more segments, may cross separators). Hand-rolled to avoid a
+/// crate dependency in the platform-neutral core. Returns false on any error so
+/// an unparseable pattern fails closed (deny), never silently allows.
+fn glob_match(pattern: &str, text: &str) -> bool {
+    // Normalize both to forward slashes and collapse empty components.
+    let pat: Vec<&str> = pattern.split('/').filter(|c| !c.is_empty()).collect();
+    let txt: Vec<&str> = text.split('/').filter(|c| !c.is_empty()).collect();
+    glob_match_segments(&pat, 0, &txt, 0)
+}
+
+fn glob_match_segments(pat: &[&str], pi: usize, txt: &[&str], ti: usize) -> bool {
+    if pi == pat.len() && ti == txt.len() {
+        return true;
+    }
+    if pi == pat.len() {
+        return false;
+    }
+    let p = pat[pi];
+    if p == "**" {
+        // `**` matches zero or more remaining segments.
+        if glob_match_segments(pat, pi + 1, txt, ti) {
+            return true;
+        }
+        if ti < txt.len() {
+            return glob_match_segments(pat, pi, txt, ti + 1);
+        }
+        return false;
+    }
+    if ti == txt.len() {
+        return false;
+    }
+    if segment_match(p, txt[ti]) {
+        return glob_match_segments(pat, pi + 1, txt, ti + 1);
+    }
+    false
+}
+
+/// Match a single pattern segment against a single text segment. `*` matches
+/// any run of non-separator characters; everything else is a literal.
+fn segment_match(pattern: &str, text: &str) -> bool {
+    let p = pattern.as_bytes();
+    let t = text.as_bytes();
+    let (mut pi, mut ti) = (0usize, 0usize);
+    while pi < p.len() {
+        match p[pi] {
+            b'*' => {
+                // Greedy: try to consume the rest of text with the rest of pat.
+                let rest_pat = &p[pi + 1..];
+                // Try matching from each remaining text position.
+                let mut k = ti;
+                while k <= t.len() {
+                    if rest_pat.is_empty() && k == t.len() {
+                        return true;
+                    }
+                    if segment_match_suffix(rest_pat, &t[k..]) {
+                        return true;
+                    }
+                    k += 1;
+                }
+                // Fast path for trailing single `*`.
+                if rest_pat.is_empty() {
+                    return true;
+                }
+                return false;
+            }
+            _ => {
+                if ti >= t.len() || p[pi] != t[ti] {
+                    return false;
+                }
+                pi += 1;
+                ti += 1;
+            }
+        }
+    }
+    pi == p.len() && ti == t.len()
+}
+
+/// Match the remaining pattern (which may contain `*`) against the remaining
+/// text bytes, both starting at the current position.
+fn segment_match_suffix(pat: &[u8], text: &[u8]) -> bool {
+    let (mut pi, mut ti) = (0usize, 0usize);
+    while pi < pat.len() {
+        match pat[pi] {
+            b'*' => {
+                let rest = &pat[pi + 1..];
+                let mut k = ti;
+                while k <= text.len() {
+                    if rest.is_empty() && k == text.len() {
+                        return true;
+                    }
+                    if segment_match_suffix(rest, &text[k..]) {
+                        return true;
+                    }
+                    k += 1;
+                }
+                return false;
+            }
+            _ => {
+                if ti >= text.len() || pat[pi] != text[ti] {
+                    return false;
+                }
+                pi += 1;
+                ti += 1;
+            }
+        }
+    }
+    pi == pat.len() && ti == text.len()
+}
+
 impl Scope for PathScope {
+    fn allows(&self, value: &str) -> bool {
+        self.allows(value)
+    }
+}
+
+impl Scope for GlobScope {
     fn allows(&self, value: &str) -> bool {
         self.allows(value)
     }

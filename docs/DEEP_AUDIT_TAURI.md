@@ -186,6 +186,19 @@ axis (security, latency, or audibility), not just match it.
    both paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS
    surface in examples/blank/kiri.js (Kiri.notification.show).
 
+6. [DONE] kiri.fs glob scope (G-2b) - Tauri v2's `fs` plugin lets a host restrict a
+   granted capability to glob patterns (`images/*`, `**/*.txt`, `data/**/*.json`).
+   Kiri's `PathScope` was a single root only, so a granted FS capability could read
+   anywhere under that root. Added `GlobScope`: an allowlist of glob patterns
+   relative to the `PathScope` root that is enforced as a SECOND gate on every
+   kiri.fs.* call, on top of the FS capability bit. Hand-rolled, dependency-free
+   `*`/`**` matcher (fails closed on unparseable patterns). Seed host patterns:
+   `data/**`, `config/*.json`, `*.log`. Exceeds on the security axis (capability
+   authority + root + glob triple-bound, server-side, no client expansion); both
+   paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. Headless
+   tests cover in-pattern allow, out-of-pattern deny, empty-glob fallback, and
+   unit-level glob matching.
+
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).

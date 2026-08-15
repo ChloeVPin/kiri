@@ -313,7 +313,10 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
             // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
             .with_platform(events)
-            .with_fs(fs_scope, kiri_core::limits::Limits::default())
+            .with_fs_service(
+                kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
+                    .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
+            )
             .with_window(
                 std::sync::Arc::new(crate::window_ctl::WinWindowController::new(hwnd)),
                 std::sync::Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new(
@@ -735,6 +738,13 @@ fn http_allow_hosts() -> Vec<String> {
 /// Host allowlist for `kiri.shell.run` (audit item 4, G-4). Default-deny:
 /// only the exact program + arg prefix below may spawn. Inverts Tauri's shell
 /// plugin trust model: arbitrary execution is refused unless explicitly listed.
+/// Host glob allowlist for `kiri.fs.*` (audit item 6, fs glob scope). Same model
+/// as the cross backend: only paths matching a pattern relative to the fs root may
+/// be touched, so a granted FS capability is narrowed to safe shapes.
+fn fs_glob_patterns() -> Vec<String> {
+    vec!["data/**".to_string(), "config/*.json".to_string(), "*.log".to_string()]
+}
+
 fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
     vec![kiri_core::shell::AllowedCommand {
         program: "echo".to_string(),

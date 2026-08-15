@@ -32,7 +32,7 @@ pub mod window;
 pub mod wire;
 
 pub use caller::{CallerId, CallerRegistry};
-pub use capabilities::{CapabilityBits, CapabilityId, PathScope, Scope};
+pub use capabilities::{CapabilityBits, CapabilityId, GlobScope, PathScope, Scope};
 pub use clipboard::{ClipboardController, ClipboardState};
 pub use commands::{
     command_name, emit_typescript, required_capabilities, resolve_command, CommandSpec, COMMANDS,

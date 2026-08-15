@@ -210,7 +210,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
             // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
             .with_platform(events)
-            .with_fs(fs_scope, kiri_core::limits::Limits::default())
+            .with_fs_service(
+                kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
+                    .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
+            )
             // G-5: kiri.window.* surface backed by the real native window.
             .with_window(
                 Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
@@ -422,6 +425,15 @@ fn http_allow_hosts() -> Vec<String> {
 /// plugin use but inverts its trust model: Tauri grants arbitrary execution
 /// when the capability is present; Kiri refuses every command that is not an
 /// explicit allowlist entry. The seed entry is a harmless readonly probe.
+/// Host glob allowlist for `kiri.fs.*` (audit item 6, fs glob scope). Default-deny
+/// relative to the fs root: only paths matching a pattern may be touched. This
+/// matches Tauri v2's `fs` plugin scope granularity (e.g. `data/**/*.json`)
+/// while keeping the FS capability gate. Empty = root-only (seed uses a safe
+/// read-only data scope).
+fn fs_glob_patterns() -> Vec<String> {
+    vec!["data/**".to_string(), "config/*.json".to_string(), "*.log".to_string()]
+}
+
 fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
     vec![kiri_core::shell::AllowedCommand {
         program: "echo".to_string(),

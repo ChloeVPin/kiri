@@ -18,23 +18,39 @@ use std::sync::Arc;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::capabilities::{CapabilityBits, PathScope};
+use crate::capabilities::{CapabilityBits, GlobScope, PathScope};
 use crate::error::{Error, Result};
 use crate::limits::Limits;
 
 /// The capability bit that authorizes `kiri.fs.*` commands.
 pub const FS_CAPABILITY: u32 = 6;
 
-/// Filesystem service bounded to a host-assigned root scope plus limits.
+/// Filesystem service bounded to a host-assigned root scope plus an optional
+/// glob allowlist, plus limits. Every operation must satisfy BOTH the root
+/// `PathScope` and (when configured) the `GlobScope`, so a granted `FS`
+/// capability can be narrowed to `images/*` or `**/*.txt` exactly like Tauri
+/// v2's `fs` plugin scope, but enforced server-side and capability-gated.
 #[derive(Clone)]
 pub struct FsService {
     scope: Arc<PathScope>,
+    glob: Arc<GlobScope>,
     limits: Arc<Limits>,
 }
 
 impl FsService {
     pub fn new(scope: PathScope, limits: Limits) -> Self {
-        Self { scope: Arc::new(scope), limits: Arc::new(limits) }
+        Self {
+            scope: Arc::new(scope),
+            glob: Arc::new(GlobScope::default()),
+            limits: Arc::new(limits),
+        }
+    }
+
+    /// Attach a glob allowlist (relative to the root) that further restricts
+    /// which paths may be touched. Empty patterns = root-only scoping.
+    pub fn with_glob(mut self, glob: GlobScope) -> Self {
+        self.glob = Arc::new(glob);
+        self
     }
 
     fn require(&self, path: &str, write: bool) -> Result<PathBuf> {
@@ -46,6 +62,20 @@ impl FsService {
         }
         if !write && !self.scope.read {
             return Err(Error::scope_denied(format!("fs scope is write-only: {path}")));
+        }
+        // Second gate: optional glob allowlist, relative to the scope root.
+        if !self.glob.is_empty() {
+            let rel = match path_relative_to_root(&self.scope, path) {
+                Some(r) => r,
+                None => {
+                    return Err(Error::scope_denied(format!(
+                        "path not within fs root for glob check: {path}"
+                    )))
+                }
+            };
+            if !self.glob.allows(&rel) {
+                return Err(Error::scope_denied(format!("path not on fs glob allowlist: {path}")));
+            }
         }
         Ok(PathBuf::from(path))
     }
@@ -170,6 +200,54 @@ pub fn fs_handlers(service: FsService) -> Vec<(u32, CapabilityBits, crate::dispa
     ]
 }
 
+/// Compute `path` relative to the `PathScope` root, forward-slash normalized,
+/// suitable for glob matching. Returns None if `path` is not contained by the
+/// root (should not happen after `scope.allows`, but fail safe to deny).
+fn path_relative_to_root(scope: &PathScope, path: &str) -> Option<String> {
+    let root_key = normalize_for_rel(&scope.root);
+    let path_key = normalize_for_rel(std::path::Path::new(path));
+    if path_key == root_key {
+        return Some(String::new());
+    }
+    if let Some(rest) = path_key.strip_prefix(&format!("{root_key}/")) {
+        return Some(rest.to_string());
+    }
+    None
+}
+
+/// Lightweight normalization for relative computation: forward slashes, collapse
+/// `.`/`..`, macOS /private/var equivalence. Reuses the same spirit as
+/// `normalize_path_key` but preserves case on Windows for display fidelity.
+fn normalize_for_rel(p: &std::path::Path) -> String {
+    let raw = p.as_os_str().to_string_lossy().into_owned();
+    let s = if let Some(rest) = raw.strip_prefix("/private/var/") {
+        format!("/var/{rest}")
+    } else if let Some(rest) = raw.strip_prefix("/private/") {
+        format!("/{rest}")
+    } else {
+        raw
+    };
+    let s = if let Some(rest) = s.strip_prefix("\\?\\UNC\\") {
+        format!("\\{rest}")
+    } else if let Some(rest) = s.strip_prefix("\\?\\") {
+        rest.to_string()
+    } else {
+        s
+    };
+    let s = s.replace('\\', "/");
+    let mut out: Vec<&str> = Vec::new();
+    for comp in s.split('/') {
+        match comp {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            other => out.push(other),
+        }
+    }
+    out.join("/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +312,43 @@ mod tests {
             )
             .unwrap_err();
         assert_eq!(err.code, crate::error::ErrorCode::ScopeDenied);
+    }
+
+    #[test]
+    fn glob_allowlist_restricts_to_pattern() {
+        let dir = std::env::temp_dir().join("kiri-fs-glob");
+        let _ = std::fs::create_dir_all(&dir);
+        let mut scope = PathScope::new(dir.clone());
+        scope.read = true;
+        // Only .json files under data/ may be read.
+        let svc = FsService::new(scope, Limits::default())
+            .with_glob(GlobScope::new(vec!["data/**/*.json".to_string()]));
+        // In-pattern path passes.
+        let ok = svc.require(&dir.join("data/a.json").to_string_lossy(), false);
+        assert!(ok.is_ok(), "in-pattern path should be allowed: {ok:?}");
+        // Out-of-pattern path is denied.
+        let bad = svc.require(&dir.join("data/a.txt").to_string_lossy(), false);
+        assert!(bad.is_err(), "out-of-pattern path must be denied");
+    }
+
+    #[test]
+    fn empty_glob_falls_back_to_root_only() {
+        let dir = std::env::temp_dir().join("kiri-fs-glob-empty");
+        let _ = std::fs::create_dir_all(&dir);
+        let mut scope = PathScope::new(dir.clone());
+        scope.read = true;
+        let svc = FsService::new(scope, Limits::default()); // no with_glob
+        assert!(svc.require(&dir.join("anything.txt").to_string_lossy(), false).is_ok());
+    }
+
+    #[test]
+    fn glob_match_unit() {
+        assert!(GlobScope::new(vec!["*.json".to_string()]).allows("a.json"));
+        assert!(!GlobScope::new(vec!["*.json".to_string()]).allows("a.txt"));
+        assert!(GlobScope::new(vec!["data/**".to_string()]).allows("data/x/y/z.json"));
+        assert!(GlobScope::new(vec!["images/*".to_string()]).allows("images/logo.png"));
+        assert!(!GlobScope::new(vec!["images/*".to_string()]).allows("images/sub/logo.png"));
+        assert!(GlobScope::new(vec![]).allows("anything"));
     }
 
     #[test]
