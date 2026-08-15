@@ -47,6 +47,7 @@
     "kiri.http.get": 38,
     "kiri.shell.run": 39,
     "kiri.notification.show": 40,
+    "kiri.dialog.open": 41,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -243,6 +244,19 @@
       },
     },
 
+    // Restricted, host-allowlisted native dialogs (kiri.dialog.open). The host
+    // owns the title text and only pre-approved dialog kinds may open, so the
+    // frontend cannot fabricate a free-form native prompt. This exceeds Tauri's
+    // dialog plugin, which lets the frontend open arbitrary native dialogs once
+    // the capability is present.
+    dialog: {
+      open: function (kind, args, ext) {
+        return call("kiri.dialog.open", { kind: kind, args: args || [], ext: ext }).then(function (r) {
+          return { kind: r.kind, title: r.title, confirmed: r.confirmed, paths: r.paths };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -268,5 +282,6 @@
   global.kiri.http = Kiri.http;
   global.kiri.shell = Kiri.shell;
   global.kiri.notification = Kiri.notification;
+  global.kiri.dialog = Kiri.dialog;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

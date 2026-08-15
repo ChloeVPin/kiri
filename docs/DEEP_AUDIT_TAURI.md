@@ -199,6 +199,8 @@ axis (security, latency, or audibility), not just match it.
    tests cover in-pattern allow, out-of-pattern deny, empty-glob fallback, and
    unit-level glob matching.
 
+7. [DONE] kiri.dialog.open (restricted, host-allowlisted) - Tauri's `dialog` plugin lets the frontend open arbitrary native dialogs (message, confirm, open/save file pickers) once the capability is present, a social-engineering / spoofing surface. Kiri gates `kiri.dialog.open` behind the DIALOG capability bit AND a host allowlist of dialog kinds (`DialogTemplate`) with a host-owned title template and bounded positional args; file pickers additionally restrict allowed extensions (default-deny). The native runner only ever receives a host-owned, allowlisted title, so JS can never fabricate a free-form native prompt. Implemented in kiri-core::dialog (capability bit 13, command id 41) with host seams in crates/kiri-runtime/src/dialog_ctl.rs (osascript/zenity/PowerShell) wired into both backends via `.with_dialog(...)`. Both paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. Headless tests cover kind allow, kind deny, file-extension deny, and capability-denied. Exceeds on the security axis (capability authority + host kind/title/extension allowlist triple-bound, server-side); no client expansion.
+
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).

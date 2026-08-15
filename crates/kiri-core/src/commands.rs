@@ -58,6 +58,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "http" => crate::dispatch::capability_bit::HTTP,
         "shell" => crate::dispatch::capability_bit::SHELL,
         "notification" => crate::dispatch::capability_bit::NOTIFICATION,
+        "dialog" => crate::dispatch::capability_bit::DIALOG,
         _ => 0,
     }
 }
@@ -264,6 +265,14 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "kiri.notification.show",
         id: 40,
         capability: "notification",
+        execution: "io",
+        arity: 1,
+    },
+    // --- audit item 7: kiri.dialog.open (G-4c) restricted, host-allowlisted dialog kinds ---
+    CommandSpec {
+        name: "kiri.dialog.open",
+        id: 41,
+        capability: "dialog",
         execution: "io",
         arity: 1,
     },

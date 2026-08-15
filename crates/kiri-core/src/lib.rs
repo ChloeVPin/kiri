@@ -12,6 +12,7 @@ pub mod capabilities;
 pub mod clipboard;
 pub mod commands;
 pub mod diagnostics;
+pub mod dialog;
 pub mod dispatch;
 pub mod error;
 pub mod fs;
@@ -37,6 +38,7 @@ pub use clipboard::{ClipboardController, ClipboardState};
 pub use commands::{
     command_name, emit_typescript, required_capabilities, resolve_command, CommandSpec, COMMANDS,
 };
+pub use dialog::{DialogAllowlist, DialogKind, DialogService, DialogTemplate};
 pub use dispatch::{capability_bit, command_id, is_pong, ping_request, Router, StaticRouter};
 pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};

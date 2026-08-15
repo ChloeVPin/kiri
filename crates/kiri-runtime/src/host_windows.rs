@@ -360,6 +360,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 ),
                 kiri_core::notification::NotificationAllowlist::new(notification_templates()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4c: kiri.dialog.open surface (audit item 7). Capability-gated
+            // (DIALOG) and constrained to a host allowlist of dialog kinds with a
+            // host-owned title, so a granted capability still cannot open an
+            // arbitrary native prompt; only pre-approved dialog kinds may show.
+            .with_dialog(kiri_core::dialog::DialogService::new(
+                std::sync::Arc::new(crate::dialog_ctl::WinDialogRunner::new()),
+                kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -755,6 +764,28 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// Host template allowlist for `kiri.notification.show` (audit item 5, G-4b).
 /// Default-deny: only the exact template ids below may display, and the frontend
 /// may only supply bounded positional args. The host owns the title/body text.
+/// Host allowlist for `kiri.dialog.open` (audit item 7, G-4c). Default-deny:
+/// only the exact dialog kinds below may open, each with a host-owned title
+/// template and bounded args (file pickers additionally restrict extensions).
+/// Inverts Tauri's dialog plugin trust model: a granted DIALOG capability still
+/// cannot render a free-form native prompt; only pre-approved kinds may show.
+fn dialog_templates() -> Vec<kiri_core::dialog::DialogTemplate> {
+    vec![
+        kiri_core::dialog::DialogTemplate {
+            kind: kiri_core::dialog::DialogKind::Message,
+            title_template: "Update available: {0}".to_string(),
+            args: 1,
+            filters: vec![],
+        },
+        kiri_core::dialog::DialogTemplate {
+            kind: kiri_core::dialog::DialogKind::OpenFile,
+            title_template: "Open project".to_string(),
+            args: 0,
+            filters: vec!["kiri".to_string(), "json".to_string()],
+        },
+    ]
+}
+
 fn notification_templates() -> Vec<kiri_core::notification::NotificationTemplate> {
     vec![
         kiri_core::notification::NotificationTemplate {

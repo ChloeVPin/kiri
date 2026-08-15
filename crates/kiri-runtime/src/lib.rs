@@ -12,6 +12,7 @@
 
 pub mod assets;
 pub mod clipboard_ctl;
+pub mod dialog_ctl;
 pub mod markers;
 pub mod notification_ctl;
 pub mod output;

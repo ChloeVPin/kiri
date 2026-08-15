@@ -100,6 +100,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // granted here; the host template allowlist is the second gate, so this
     // still exceeds Tauri's unrestricted notification plugin.
     caps.set(crate::dispatch::capability_bit::NOTIFICATION);
+    // G-4c: the trusted frontend may use the restricted, host-allowlisted native
+    // dialog surface (kiri.dialog.open). Authorization still flows through the
+    // DIALOG capability bit even though it is granted here; the host allowlist is
+    // the second gate, so this still exceeds Tauri's unrestricted dialog plugin.
+    caps.set(crate::dispatch::capability_bit::DIALOG);
     caps
 }
 
