@@ -1,9 +1,16 @@
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/kiri.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/kiri-dark.svg">
+  <img alt="Kiri logo" src="assets/kiri.svg" width="180">
+</picture>
+
 # Kiri
 
-Cross-platform native desktop app runtime: a direct Win32 plus WebView2 host
-on Windows, a wry/tao host on macOS and Linux, a platform-neutral
-control-plane core, and Tauri/Wry baselines measured on a shared
-startup-marker schema.
+Cross-platform native desktop app runtime · wry/tao host on macOS and Linux · direct WebView2 host on Windows · platform-neutral control-plane core · Tauri and Wry baselines measured on a shared startup-marker schema
+
+</div>
 
 Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
 control protocol beats general-purpose wrappers (Tauri, Wry) on startup time,
@@ -17,12 +24,9 @@ Tasks T001-T010 are complete and committed. The runtime runs natively on
 every desktop platform from one codebase: the direct Win32 + WebView2 backend
 on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
-identity and capability authority). Verification is Mac-friendly: the primary
-development and gating machine is macOS, and the cross (wry/tao) backend runs
-here for smoke and stress. The Windows direct backend is cross-checked on
-macOS and exercised on real Windows by CI.
+identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). The macOS development machine exercises the native wry/tao backend locally; Windows and Linux are exercised by CI.
 
-- 76 tests pass (`cargo test --workspace`: 70 kiri-core + 6 kiri-runtime)
+- 78 tests pass (`cargo test --workspace`: 72 kiri-core + 6 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
@@ -33,8 +37,8 @@ macOS and exercised on real Windows by CI.
   privacy-safe runtime snapshot (backend, runtime version, open-resource count,
   recent-request latency waterfall); the `examples/panel` frontend renders it
 - Wry/Tao and Tauri baselines compile clean
-- the Windows direct host has not yet executed on real Windows; that run is
-  gated on the `windows-host-smoke` CI workflow (Q-001)
+- the direct Win32 + WebView2 host runs natively on real Windows
+  (`windows-latest` CI hard gate): native smoke + 100-cycle stress pass (Q-001 closed)
 
 ## Architecture
 
@@ -43,7 +47,7 @@ Three layers, one shared marker schema:
 ```
 crates/kiri-core               platform-neutral logical protocol, security
                                authority, resource table, tracing. Pure Rust,
-                               zero platform deps, 45 tests
+                               zero platform deps, 72 tests
 crates/kiri-runtime            the native host. Platform-neutral facade
                                (`lib.rs`) dispatches to a direct Win32 +
                                WebView2 backend on Windows
@@ -75,11 +79,11 @@ deliberately independent of wry, which pins an older API generation.
 ## Repository layout
 
 ```
-.github/workflows/            correctness, windows-host-smoke,
+.github/workflows/            correctness (all-OS hard gates),
                               controlled-performance (self-hosted runner)
 baselines/                    standalone comparators, own lockfiles
 benchmark/                    harness.py, test-vectors.json, README
-crates/kiri-core/             11 modules, 70 tests
+crates/kiri-core/             11 modules, 72 tests
 crates/kiri-runtime/         lib.rs (facade), host_windows.rs (WebView2),
                               host_cross.rs (wry/tao), markers.rs, output.rs,
                               bin/kiri-host, bin/kiri-host-stress
