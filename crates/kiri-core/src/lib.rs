@@ -16,6 +16,7 @@ pub mod dispatch;
 pub mod error;
 pub mod fs;
 pub mod header;
+pub mod http;
 pub mod latency;
 pub mod limits;
 pub mod path;
@@ -37,6 +38,7 @@ pub use commands::{
 pub use dispatch::{capability_bit, command_id, is_pong, ping_request, Router, StaticRouter};
 pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
+pub use http::{HostAllowlist, HttpService};
 pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
 pub use path::{PathService, PathState};

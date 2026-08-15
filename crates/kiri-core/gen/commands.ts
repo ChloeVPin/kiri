@@ -75,9 +75,11 @@ export interface KiriCommands {
   kiri_os_documentDir(arg: unknown): Promise<unknown>;
   /** kiri_os_appDir (id=37, capability="path", execution="pure") */
   kiri_os_appDir(arg: unknown): Promise<unknown>;
+  /** kiri_http_get (id=38, capability="http", execution="io") */
+  kiri_http_get(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -118,6 +120,7 @@ export function commandId(name: string): number | undefined {
     case "kiri.os.appCacheDir": return 35;
     case "kiri.os.documentDir": return 36;
     case "kiri.os.appDir": return 37;
+    case "kiri.http.get": return 38;
     default: return undefined;
   }
 }

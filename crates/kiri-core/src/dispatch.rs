@@ -102,6 +102,9 @@ pub mod command_id {
     pub const OS_DOCUMENT_DIR: u32 = 36;
     /// Application directory (kiri.os.appDir).
     pub const OS_APP_DIR: u32 = 37;
+    /// Capability-scoped HTTP GET (kiri.http.get, audit item 3). Allows a
+    /// host-allowlisted fetch only; exceeds Tauri's unrestricted http plugin.
+    pub const HTTP_GET: u32 = 38;
 }
 
 /// Capability bits used by built-in control commands.
@@ -134,6 +137,11 @@ pub mod capability_bit {
     /// item 2; exceeds Tauri's path/os plugins on the security axis: each access
     /// is capability-gated instead of granted by default).
     pub const PATH: u32 = 9;
+    /// Authorizes capability-scoped, host-allowlisted HTTP fetches
+    /// (kiri.http.get). Bit 10 (audit item 3; exceeds Tauri's http plugin on the
+    /// security axis: arbitrary fetch is denied unless the host is on the
+    /// allowlist).
+    pub const HTTP: u32 = 10;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -179,6 +187,7 @@ pub mod capability_bit {
             | crate::dispatch::command_id::OS_APP_CACHE_DIR
             | crate::dispatch::command_id::OS_DOCUMENT_DIR
             | crate::dispatch::command_id::OS_APP_DIR => PATH,
+            crate::dispatch::command_id::HTTP_GET => HTTP,
             _ => PING,
         }
     }
@@ -445,6 +454,18 @@ impl Router {
     /// headlessly with no WebView and no real filesystem mutation.
     pub fn with_path(mut self, service: crate::path::PathService) -> Self {
         for (id, required, handler) in crate::path::path_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.http.* command set (audit item 3, G-3 JS surface parity
+    /// with Tauri's http plugin). Every request is capability-gated (bit HTTP) and
+    /// constrained to a host allowlist supplied by the native host, so a granted
+    /// capability still cannot fetch an unapproved origin. Responses are bounded by
+    /// the shared bulk-object ceiling, matching kiri.fs backpressure.
+    pub fn with_http(mut self, service: crate::http::HttpService) -> Self {
+        for (id, required, handler) in crate::http::http_handlers(service) {
             self.register(id, required, handler);
         }
         self

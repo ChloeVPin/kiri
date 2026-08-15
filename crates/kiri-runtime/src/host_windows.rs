@@ -331,7 +331,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             )
             // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
             // math plus read-only OS directory discovery, capability-gated (PATH).
-            .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()));
+            .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
+            // G-3: kiri.http.get surface (audit item 3). Capability-gated (HTTP) and
+            // constrained to a host allowlist so a granted capability still cannot
+            // reach an unapproved origin; responses are bulk-capped like kiri.fs.
+            .with_http(kiri_core::http::HttpService::new(
+                std::sync::Arc::new(kiri_core::http::StdHttpClient),
+                kiri_core::http::HostAllowlist::new(http_allow_hosts()),
+                kiri_core::limits::Limits::default(),
+            ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
     markers.record(Marker::WebViewCreationRequested, qpc_now_ns());
@@ -696,4 +704,12 @@ fn handle_web_message(
     let request_id = value.get("requestId").and_then(|r| r.as_u64());
     let command = value.get("command").and_then(|c| c.as_str());
     rt.reply_protocol_error(request_id, command);
+}
+
+/// Host-allowlist for kiri.http.get. Default-deny: only these hosts may be
+/// fetched even when the HTTP capability is granted. Expanded per-app config
+/// in a later task; for now this is the seed allowlist that proves the
+/// exceed-Tauri security axis (Tauri's http plugin has no host allowlist).
+fn http_allow_hosts() -> Vec<String> {
+    vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
 }

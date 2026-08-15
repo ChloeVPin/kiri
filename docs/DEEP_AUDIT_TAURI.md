@@ -150,10 +150,14 @@ axis (security, latency, or audibility), not just match it.
    the whole surface is headless-testable with no WebView and no FS mutation. Exceeds on
    the security axis (capability authority + audit); Windows path cross-checked with
    cargo clippy --target x86_64-pc-windows-msvc. JS surface in examples/blank/kiri.js.
-3. **kiri.http (client, capability-scoped)** — Tauri's `http` plugin allows
-   arbitrary fetch. Kiri: `HTTP` capability bit + an allowlist of hosts; responses
-   streamed through the same bulk/backpressure path as `kiri.fs`. Headless tests
-   against a local mock server.
+3. [DONE] kiri.http.get (capability-scoped) - Tauri's `http` plugin allows arbitrary
+   fetch when granted. Kiri gates kiri.http.get behind the HTTP capability bit (10) AND a
+   host allowlist (default-deny), so a granted capability still cannot reach an unapproved
+   origin; responses are bounded by the same bulk-object ceiling as kiri.fs. Transport is a
+   trait seam (HttpClient); the seed StdHttpClient does loopback/plaintext for headless tests,
+   a TLS client slots in unchanged. Exceeds on the security axis (capability + allowlist);
+   Windows path cross-checked with cargo clippy --target x86_64-pc-windows-msvc. JS surface
+   in examples/blank/kiri.js (Kiri.http.get).
 4. **kiri.shell / process (restricted)** — the single biggest Tauri escape risk.
    Kiri: only if an explicit `SHELL` capability + command allowlist is set; never
    a default. This turns a Tauri weakness into a Kiri strength.

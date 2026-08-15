@@ -83,6 +83,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // its path/os plugins by default; Kiri gates them, exceeding that
     // security axis by default.
     caps.set(crate::dispatch::capability_bit::PATH);
+    // G-3: the trusted frontend may use the capability-scoped http surface
+    // (kiri.http.get). Authorization still flows through the HTTP capability
+    // bit even though it is granted here; the host allowlist is the second
+    // gate, so this still exceeds Tauri's unrestricted http plugin.
+    caps.set(crate::dispatch::capability_bit::HTTP);
     caps
 }
 

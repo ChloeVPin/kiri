@@ -44,6 +44,7 @@
     "kiri.os.appCacheDir": 35,
     "kiri.os.documentDir": 36,
     "kiri.os.appDir": 37,
+    "kiri.http.get": 38,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -200,6 +201,14 @@
       appDir: function () { return call("kiri.os.appDir").then(function (r) { return r.dir; }); },
     },
 
+    http: {
+      get: function (url, maxBytes) {
+        return call("kiri.http.get", { url: url, maxBytes: maxBytes || null }).then(function (r) {
+          return { status: r.status, headers: r.headers, base64: r.base64, bytes: r.bytes };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -222,5 +231,6 @@
   global.kiri.clipboard = Kiri.clipboard;
   global.kiri.path = Kiri.path;
   global.kiri.os = Kiri.os;
+  global.kiri.http = Kiri.http;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);
