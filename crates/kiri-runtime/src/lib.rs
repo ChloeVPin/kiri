@@ -14,6 +14,7 @@ pub mod assets;
 pub mod markers;
 pub mod output;
 pub mod plugins;
+pub mod window_ctl;
 
 #[cfg(not(target_os = "windows"))]
 mod host_cross;

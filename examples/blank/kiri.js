@@ -20,6 +20,15 @@
     "kiri.fs.write": 11,
     "kiri.fs.exists": 12,
     "kiri.fs.remove": 13,
+    "kiri.window.title.get": 14,
+    "kiri.window.title.set": 15,
+    "kiri.window.show": 16,
+    "kiri.window.hide": 17,
+    "kiri.window.minimize": 18,
+    "kiri.window.maximize": 19,
+    "kiri.window.restore": 20,
+    "kiri.window.close": 21,
+    "kiri.window.focus": 22,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -118,6 +127,35 @@
       },
     },
 
+    window: {
+      title: function () {
+        return call("kiri.window.title.get").then(function (r) { return r.title; });
+      },
+      setTitle: function (title) {
+        return call("kiri.window.title.set", { title: title }).then(function (r) { return r.title; });
+      },
+      show: function () {
+        return call("kiri.window.show");
+      },
+      hide: function () {
+        return call("kiri.window.hide");
+      },
+      minimize: function () {
+        return call("kiri.window.minimize");
+      },
+      maximize: function () {
+        return call("kiri.window.maximize");
+      },
+      restore: function () {
+        return call("kiri.window.restore");
+      },
+      close: function () {
+        return call("kiri.window.close");
+      },
+      focus: function () {
+        return call("kiri.window.focus");
+      },
+    },
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -136,5 +174,6 @@
   global.kiri.app = Kiri.app;
   global.kiri.event = Kiri.event;
   global.kiri.fs = Kiri.fs;
+  global.kiri.window = Kiri.window;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

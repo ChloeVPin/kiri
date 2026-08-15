@@ -265,11 +265,6 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     fs_scope.read = true;
     fs_scope.write = true;
 
-    let router =
-        crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
-            // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-            .with_platform(events)
-            .with_fs(fs_scope, kiri_core::limits::Limits::default());
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
     let hinstance = windows::Win32::Foundation::HINSTANCE(hmodule.0);
@@ -308,6 +303,21 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     )
     .map_err(|e| format!("CreateWindowExW: {e}"))?;
     markers.record(Marker::PlatformInit, qpc_now_ns());
+
+    // Control-plane router (built after the window so it can own the native
+    // window handle). Caller identity is assigned by the native runtime, never
+    // by JavaScript. G-5: kiri.window.* surface backed by the real HWND.
+    let router =
+        crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
+            // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+            .with_platform(events)
+            .with_fs(fs_scope, kiri_core::limits::Limits::default())
+            .with_window(
+                std::sync::Arc::new(crate::window_ctl::WinWindowController::new(hwnd)),
+                std::sync::Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new(
+                    &options.title,
+                ))),
+            );
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
     markers.record(Marker::WebViewCreationRequested, qpc_now_ns());

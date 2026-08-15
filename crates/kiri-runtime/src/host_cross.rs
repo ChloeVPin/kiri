@@ -170,14 +170,19 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     record(&markers, Marker::NativeEntry);
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title(options.title.clone())
-        .with_inner_size(tao::dpi::LogicalSize::new(options.width as f64, options.height as f64))
-        .build(&event_loop)
-        .map_err(|e| {
-            eprintln!("[kiri] window creation failed: {e}");
-            1
-        })?;
+    let window = std::sync::Arc::new(
+        WindowBuilder::new()
+            .with_title(options.title.clone())
+            .with_inner_size(tao::dpi::LogicalSize::new(
+                options.width as f64,
+                options.height as f64,
+            ))
+            .build(&event_loop)
+            .map_err(|e| {
+                eprintln!("[kiri] window creation failed: {e}");
+                1
+            })?,
+    );
     record(&markers, Marker::PlatformInit);
 
     record(&markers, Marker::WebViewCreationRequested);
@@ -205,7 +210,12 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
             // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
             .with_platform(events)
-            .with_fs(fs_scope, kiri_core::limits::Limits::default());
+            .with_fs(fs_scope, kiri_core::limits::Limits::default())
+            // G-5: kiri.window.* surface backed by the real native window.
+            .with_window(
+                Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
+                Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))),
+            );
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
@@ -298,7 +308,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 }
             }
         })
-        .build(&window)
+        .build(&*window)
         .map_err(|e| {
             eprintln!("[kiri] webview build failed: {e}");
             1

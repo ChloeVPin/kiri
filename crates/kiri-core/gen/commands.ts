@@ -27,9 +27,27 @@ export interface KiriCommands {
   kiri_fs_exists(arg: unknown): Promise<unknown>;
   /** kiri_fs_remove (id=13, capability="fs", execution="io") */
   kiri_fs_remove(arg: unknown): Promise<unknown>;
+  /** kiri_window_title_get (id=14, capability="window", execution="pure") */
+  kiri_window_title_get(arg: unknown): Promise<unknown>;
+  /** kiri_window_title_set (id=15, capability="window", execution="pure") */
+  kiri_window_title_set(arg: unknown): Promise<unknown>;
+  /** kiri_window_show (id=16, capability="window", execution="pure") */
+  kiri_window_show(arg: unknown): Promise<unknown>;
+  /** kiri_window_hide (id=17, capability="window", execution="pure") */
+  kiri_window_hide(arg: unknown): Promise<unknown>;
+  /** kiri_window_minimize (id=18, capability="window", execution="pure") */
+  kiri_window_minimize(arg: unknown): Promise<unknown>;
+  /** kiri_window_maximize (id=19, capability="window", execution="pure") */
+  kiri_window_maximize(arg: unknown): Promise<unknown>;
+  /** kiri_window_restore (id=20, capability="window", execution="pure") */
+  kiri_window_restore(arg: unknown): Promise<unknown>;
+  /** kiri_window_close (id=21, capability="window", execution="pure") */
+  kiri_window_close(arg: unknown): Promise<unknown>;
+  /** kiri_window_focus (id=22, capability="window", execution="pure") */
+  kiri_window_focus(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -46,6 +64,15 @@ export function commandId(name: string): number | undefined {
     case "kiri.fs.write": return 11;
     case "kiri.fs.exists": return 12;
     case "kiri.fs.remove": return 13;
+    case "kiri.window.title.get": return 14;
+    case "kiri.window.title.set": return 15;
+    case "kiri.window.show": return 16;
+    case "kiri.window.hide": return 17;
+    case "kiri.window.minimize": return 18;
+    case "kiri.window.maximize": return 19;
+    case "kiri.window.restore": return 20;
+    case "kiri.window.close": return 21;
+    case "kiri.window.focus": return 22;
     default: return undefined;
   }
 }

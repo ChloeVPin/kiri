@@ -51,6 +51,25 @@ pub mod command_id {
     pub const FS_EXISTS: u32 = 12;
     /// Remove a scoped file (R-5: kiri.fs.remove).
     pub const FS_REMOVE: u32 = 13;
+
+    /// Get the window title (G-5: kiri.window.title.get).
+    pub const WINDOW_TITLE_GET: u32 = 14;
+    /// Set the window title (G-5: kiri.window.title.set).
+    pub const WINDOW_TITLE_SET: u32 = 15;
+    /// Show the window (G-5: kiri.window.show).
+    pub const WINDOW_SHOW: u32 = 16;
+    /// Hide the window (G-5: kiri.window.hide).
+    pub const WINDOW_HIDE: u32 = 17;
+    /// Minimize the window (G-5: kiri.window.minimize).
+    pub const WINDOW_MINIMIZE: u32 = 18;
+    /// Maximize the window (G-5: kiri.window.maximize).
+    pub const WINDOW_MAXIMIZE: u32 = 19;
+    /// Restore the window from minimized/maximized (G-5: kiri.window.restore).
+    pub const WINDOW_RESTORE: u32 = 20;
+    /// Request the window to close (G-5: kiri.window.close).
+    pub const WINDOW_CLOSE: u32 = 21;
+    /// Focus the window (G-5: kiri.window.focus).
+    pub const WINDOW_FOCUS: u32 = 22;
 }
 
 /// Capability bits used by built-in control commands.
@@ -70,6 +89,9 @@ pub mod capability_bit {
 
     /// Authorizes scoped filesystem access (R-5: kiri.fs.*). Bit 6.
     pub const FS: u32 = 6;
+
+    /// Authorizes window control (kiri.window.*). Bit 7 (G-5 JS surface).
+    pub const WINDOW: u32 = 7;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -91,6 +113,15 @@ pub mod capability_bit {
             | crate::dispatch::command_id::FS_WRITE
             | crate::dispatch::command_id::FS_EXISTS
             | crate::dispatch::command_id::FS_REMOVE => FS,
+            crate::dispatch::command_id::WINDOW_TITLE_GET
+            | crate::dispatch::command_id::WINDOW_TITLE_SET
+            | crate::dispatch::command_id::WINDOW_SHOW
+            | crate::dispatch::command_id::WINDOW_HIDE
+            | crate::dispatch::command_id::WINDOW_MINIMIZE
+            | crate::dispatch::command_id::WINDOW_MAXIMIZE
+            | crate::dispatch::command_id::WINDOW_RESTORE
+            | crate::dispatch::command_id::WINDOW_CLOSE
+            | crate::dispatch::command_id::WINDOW_FOCUS => WINDOW,
             _ => PING,
         }
     }
@@ -305,6 +336,23 @@ impl Router {
     /// wired inline or through the plugin host.
     pub fn with_fs_service(mut self, service: crate::fs::FsService) -> Self {
         for (id, required, handler) in crate::fs::fs_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the `kiri.window.*` command set (G-5 JS surface parity with
+    /// Tauri's `window` module). Every handler is capability-gated (bit
+    /// `WINDOW`) and operates on a host-owned `WindowController` + shared
+    /// `WindowState` mirror, so the native window handle is never reachable
+    /// from JavaScript. The host supplies the real controller; tests use a
+    /// stub and assert routing/authorization/state without a WebView.
+    pub fn with_window(
+        mut self,
+        controller: std::sync::Arc<dyn crate::window::WindowController>,
+        state: std::sync::Arc<std::sync::Mutex<crate::window::WindowState>>,
+    ) -> Self {
+        for (id, required, handler) in crate::window::window_handlers(controller, state) {
             self.register(id, required, handler);
         }
         self

@@ -23,6 +23,7 @@ pub mod security;
 pub mod trace;
 pub mod update;
 pub mod validate;
+pub mod window;
 pub mod wire;
 
 pub use caller::{CallerId, CallerRegistry};

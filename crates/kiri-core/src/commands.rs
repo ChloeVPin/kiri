@@ -52,6 +52,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "app" => crate::dispatch::capability_bit::APP,
         "event" => crate::dispatch::capability_bit::EVENT,
         "fs" => crate::dispatch::capability_bit::FS,
+        "window" => crate::dispatch::capability_bit::WINDOW,
         _ => 0,
     }
 }
@@ -98,6 +99,69 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec { name: "kiri.fs.write", id: 11, capability: "fs", execution: "io", arity: 2 },
     CommandSpec { name: "kiri.fs.exists", id: 12, capability: "fs", execution: "pure", arity: 1 },
     CommandSpec { name: "kiri.fs.remove", id: 13, capability: "fs", execution: "io", arity: 1 },
+    CommandSpec {
+        name: "kiri.window.title.get",
+        id: 14,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.title.set",
+        id: 15,
+        capability: "window",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.window.show",
+        id: 16,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.hide",
+        id: 17,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.minimize",
+        id: 18,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.maximize",
+        id: 19,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.restore",
+        id: 20,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.close",
+        id: 21,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.window.focus",
+        id: 22,
+        capability: "window",
+        execution: "pure",
+        arity: 0,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).
