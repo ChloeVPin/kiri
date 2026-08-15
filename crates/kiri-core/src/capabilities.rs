@@ -136,10 +136,10 @@ impl PathScope {
             }
         }
         candidates.push(path.to_path_buf());
-        let root_norm = normalize_var(&self.root);
+        let root_norm = normalize_path_key(&self.root);
         candidates
             .iter()
-            .any(|c| lexical_contains_norm(&root_norm, &normalize_var(c), self.recursive))
+            .any(|c| path_key_contains(&root_norm, &normalize_path_key(c), self.recursive))
     }
 }
 
@@ -155,55 +155,47 @@ impl PathScope {
 ///    and therefore lacks it. Stripping the prefix on both sides keeps the
 ///    containment comparison consistent across Windows, where otherwise
 ///    in-scope writes to not-yet-created files would be wrongly denied.
-fn normalize_var(p: &std::path::Path) -> std::path::PathBuf {
-    let s = p.as_os_str().to_string_lossy();
-    let s = if let Some(rest) = s.strip_prefix("/private/var/") {
+// Reduce a path to an OS-agnostic comparison key so containment checks
+// behave identically across macOS/Linux/Windows. The key strips the macOS
+// /private/var symlink equivalence and Windows verbatim prefixes, normalizes
+// separators to "/", case-folds on Windows, and lexically collapses "."/".."
+// so an escape like root/../etc cannot satisfy containment.
+fn normalize_path_key(p: &std::path::Path) -> String {
+    let raw = p.as_os_str().to_string_lossy();
+    let s: String = if let Some(rest) = raw.strip_prefix("/private/var/") {
         format!("/var/{rest}")
-    } else if let Some(rest) = s.strip_prefix("/private/") {
-        // General /private/* normalization (covers /private/tmp etc.).
+    } else if let Some(rest) = raw.strip_prefix("/private/") {
         format!("/{rest}")
     } else {
-        s.into_owned()
+        raw.into_owned()
     };
-    let s = if let Some(rest) = s.strip_prefix("\\\\?\\UNC\\") {
-        format!("\\{rest}")
-    } else if let Some(rest) = s.strip_prefix("\\\\?\\") {
-        rest.to_string()
-    } else {
-        s
-    };
-    std::path::PathBuf::from(s)
-}
-
-/// Lexically normalize a path by resolving `.` and `..` components without
-/// touching the filesystem. This makes `starts_with` containment safe: an
-/// escape like `root/../../etc/passwd` collapses to `root/../etc/passwd`,
-/// which no longer starts with `root`. `root` is already canonical and free
-/// of `..`, so only the candidate needs collapsing.
-fn lexical_normalize(p: &std::path::Path) -> std::path::PathBuf {
-    use std::path::Component;
-    let mut out = std::path::PathBuf::new();
-    for comp in p.components() {
+    let s = s.replace("\\\\?\\\\UNC\\\\", "\\\\").replace("\\\\?\\\\", "");
+    let s = s.replace('\\', "/");
+    let s = if cfg!(target_os = "windows") { s.to_lowercase() } else { s };
+    let mut out: Vec<&str> = Vec::new();
+    for comp in s.split('/') {
         match comp {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                // Drop the last normal segment; keep leading `..` if present.
+            "" | "." => {}
+            ".." => {
                 out.pop();
             }
-            other => out.push(other.as_os_str()),
+            other => out.push(other),
         }
     }
-    out
+    out.join("/")
 }
 
-/// Lexical containment on already `/var`-normalized paths. The candidate is
-/// first collapsed so `..` escapes cannot defeat `starts_with`.
-fn lexical_contains_norm(root: &std::path::Path, path: &std::path::Path, recursive: bool) -> bool {
-    let path = lexical_normalize(path);
+/// Containment on normalized path keys. `root` is already canonical and free of
+/// `..`; only the candidate is collapsed. `recursive` allows any descendant;
+/// non-recursive requires the candidate to sit directly under the root.
+fn path_key_contains(root: &str, path: &str, recursive: bool) -> bool {
     if recursive {
-        path.starts_with(root)
+        path == root || path.starts_with(&format!("{root}/"))
     } else {
-        path.parent() == Some(root)
+        match path.rfind('/') {
+            Some(idx) => &path[..idx] == root,
+            None => path == root,
+        }
     }
 }
 
