@@ -18,7 +18,7 @@ use std::sync::Arc;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::capabilities::{normalize_path_key, CapabilityBits, GlobScope, PathScope};
+use crate::capabilities::{CapabilityBits, GlobScope, PathScope};
 use crate::error::{Error, Result};
 use crate::limits::Limits;
 
@@ -204,15 +204,7 @@ pub fn fs_handlers(service: FsService) -> Vec<(u32, CapabilityBits, crate::dispa
 /// suitable for glob matching. Returns None if `path` is not contained by the
 /// root (should not happen after `scope.allows`, but fail safe to deny).
 fn path_relative_to_root(scope: &PathScope, path: &str) -> Option<String> {
-    let root_key = normalize_path_key(&scope.root);
-    let path_key = normalize_path_key(std::path::Path::new(path));
-    if path_key == root_key {
-        return Some(String::new());
-    }
-    if let Some(rest) = path_key.strip_prefix(&format!("{root_key}/")) {
-        return Some(rest.to_string());
-    }
-    None
+    scope.relative_path(path)
 }
 
 #[cfg(test)]

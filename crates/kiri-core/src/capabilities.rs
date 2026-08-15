@@ -123,9 +123,37 @@ impl PathScope {
     ///    canonicalized path against a canonicalized root would deny valid
     ///    writes, which is the bug this closes.
     pub fn allows(&self, value: &str) -> bool {
+        let Some(resolved) = self.resolve_for_containment(value) else {
+            return false;
+        };
+        let root_norm = normalize_path_key(&self.root);
+        path_key_contains(&root_norm, &normalize_path_key(&resolved), self.recursive)
+    }
+
+    /// Resolve a path using the same canonical existing-ancestor algorithm as
+    /// [`PathScope::allows`] and return its root-relative form for secondary
+    /// scope checks such as filesystem globs. This avoids comparing a raw
+    /// Windows short-name path with a canonical long-name root.
+    pub(crate) fn relative_path(&self, value: &str) -> Option<String> {
+        let resolved = self.resolve_for_containment(value)?;
+        if let Ok(relative) = resolved.strip_prefix(&self.root) {
+            return Some(relative.to_string_lossy().replace('\\', "/"));
+        }
+
+        // Keep the fallback fail-closed for roots that do not exist yet while
+        // retaining the same normalization used by the containment check.
+        let root_key = normalize_path_key(&self.root);
+        let path_key = normalize_path_key(&resolved);
+        if path_key == root_key {
+            return Some(String::new());
+        }
+        path_key.strip_prefix(&format!("{root_key}/")).map(str::to_owned)
+    }
+
+    fn resolve_for_containment(&self, value: &str) -> Option<std::path::PathBuf> {
         let path = std::path::Path::new(value);
         if !path.is_absolute() {
-            return false;
+            return None;
         }
         // Climb to the deepest existing ancestor so the part we hand to
         // canonicalize actually exists. The trailing components are re-
@@ -149,8 +177,7 @@ impl PathScope {
         for part in tail.into_iter().rev() {
             resolved = resolved.join(part);
         }
-        let root_norm = normalize_path_key(&self.root);
-        path_key_contains(&root_norm, &normalize_path_key(&resolved), self.recursive)
+        Some(resolved)
     }
 }
 

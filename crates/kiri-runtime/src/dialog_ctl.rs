@@ -46,7 +46,7 @@ fn notifier_for(kind: &DialogKind, title: &str) -> (&'static str, Vec<String>) {
 #[cfg(all(not(target_os = "windows"), target_os = "linux"))]
 fn notifier_for(kind: &DialogKind, title: &str) -> (&'static str, Vec<String>) {
     match kind {
-        &&DialogKind::Confirm => {
+        DialogKind::Confirm => {
             ("zenity", vec!["--question".to_string(), "--text".to_string(), title.to_string()])
         }
         _ => ("zenity", vec!["--info".to_string(), "--text".to_string(), title.to_string()]),
