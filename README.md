@@ -172,7 +172,9 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
   one script; artifacts are intentionally unsigned at the OS level, while
   `RELEASES.json` signs and verifies their exact bytes with Kiri's Ed25519 key.
   The workflow requires the `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret;
-  no Apple Developer license or native OS signing certificate is required
+  no Apple Developer license or native OS signing certificate is required.
+  Configure the secret from the local Keychain with:
+  `./tools/packaging/setup-release-key.sh`
 
 ## Roadmap
 
