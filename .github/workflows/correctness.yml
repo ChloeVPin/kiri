@@ -60,8 +60,12 @@ jobs:
       - if: runner.os == 'Windows'
         run: cargo clippy -p kiri-runtime --all-targets -- -D warnings
 
+      # Build the native host binary (needed by the native smoke/stress runs
+      # below on macOS and Windows). Linux also builds it for the soft probe.
       - if: runner.os != 'Windows'
         run: cargo build -p kiri-runtime --bins
+      - if: runner.os == 'Windows'
+        run: cargo build -p kiri-runtime --bin kiri-host --bin kiri-host-stress
 
       # Native smoke + stress are HARD gates on macOS and Windows (real GPU).
       - if: runner.os == 'macOS'
@@ -80,7 +84,7 @@ jobs:
         run: |
           $out = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          .\target\debug\kiri-host.exe --smoke --frontend examples/blank --markers-out artifacts\startup.json
+          .\target\debug\kiri-host.exe --smoke --frontend examples\blank --markers-out artifacts\startup.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Content artifacts\startup.json
           python -c "import json; d=json.load(open('artifacts/startup.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('startup markers OK:', sorted(names))"
@@ -88,7 +92,7 @@ jobs:
         name: Native stress run (Win32 + WebView2 backend, real GPU)
         shell: pwsh
         run: |
-          .\target\debug\kiri-host-stress.exe --cycles 100 --frontend examples/blank --exit-after-ready-ms 250 --watchdog-ms 30000
+          .\target\debug\kiri-host-stress.exe --cycles 100 --frontend examples\blank --exit-after-ready-ms 250 --watchdog-ms 30000
           exit $LASTEXITCODE
 
       # Linux: native run is a SOFT probe (headless WebKit has no GPU).
