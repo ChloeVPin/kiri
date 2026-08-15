@@ -277,4 +277,39 @@ mod tests {
         let resp = router.dispatch(CallerId(1), &granted, &req, &mut NoopTraceSink);
         assert!(resp.error.is_some());
     }
+
+    #[test]
+    fn producer_manifest_verifies_on_every_platform_key() {
+        let signing_key_hex = hex::encode([7u8; 32]);
+        let pk = host_pinned_pk();
+        let platforms = ["darwin-aarch64", "windows-x86_64", "linux-x86_64"];
+        let mut builder =
+            crate::update::UpdateManifestBuilder::new("0.4.0").notes("cross-os release");
+        for plat in platforms {
+            let installer = format!("kiri-0.4.0-{plat}.bin").into_bytes();
+            let url = format!("https://example.invalid/kiri-0.4.0-{plat}.bin");
+            builder = builder.add_signed_asset(plat, url, &installer, &signing_key_hex).unwrap();
+        }
+        let json = builder.to_json().unwrap();
+        let m = crate::update::UpdateManifest::parse_json(&json).unwrap();
+        for plat in platforms {
+            let installer = format!("kiri-0.4.0-{plat}.bin").into_bytes();
+            let verified =
+                m.verify_asset_for(plat, &pk, &installer).expect("verify per-OS must pass");
+            assert_eq!(verified.version, crate::update::Version::parse("0.4.0").unwrap());
+        }
+    }
+
+    #[test]
+    fn check_accepts_correctly_signed_current_os_asset() {
+        let pk = host_pinned_pk();
+        let r = router(&pk, "0.1.0");
+        let out = dispatch(
+            &r,
+            command_id::UPDATER_CHECK,
+            json!({ "manifest": produce_manifest("0.2.0") }),
+        );
+        assert!(out["error"].is_null(), "unexpected error: {out}");
+        assert_eq!(out["payload"]["available"], true);
+    }
 }
