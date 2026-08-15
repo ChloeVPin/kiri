@@ -71,6 +71,32 @@ winnable." Claims here are tied to verified gates, not aspirations.
   on CI (no GPU on runners); Tauri has the same limitation. Neither can claim
   a hard Linux render gate on shared CI.
 
+## Measured IPC evidence (answers Q-003, level A)
+
+`cargo run -q --release -p kiri-core --example bulk_bench` drives the real
+kiri-core JSON control path (serialize `WireRequest` -> `Router.dispatch` ->
+deserialize `WireResponse`) at the bulk sizes in `benchmark/test-vectors.json`,
+on the macOS development host (Apple Silicon, Rust 1.97). Raw artifact:
+`artifacts/bulk-ordinary.json`. 20 runs each, mean wall time:
+
+| Payload | Mean wall (ms) | Throughput (MiB/s) |
+|---------|----------------|--------------------|
+| 1 MiB   | 0.593          | ~1750              |
+| 16 MiB  | 5.382          | ~2978              |
+| 100 MiB | 35.227         | ~2861              |
+
+This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer
+fast path). The structural reason it stays low-latency at bulk sizes: Kiri's
+commands are numeric, build-time ids with one shared validation pipeline and
+server-side capability bits; there is no per-call string command-name lookup and
+no runtime reflection. Tauri's `#[tauri::command]` IPC serializes every call
+through serde plus a string command name plus the invoke channel. So on the
+dimension customers feel per call (IPC cost at bulk sizes) Kiri is faster and
+auditable; Tauri's command model remains more ergonomic and example-rich.
+Claim level: **A (measured locally)**. Q-003 is answered for the ordinary path;
+the shared-buffer fast path (T008) and the three-way startup delta (T009) remain
+blocked on real Windows / perf hardware and exhausted CI.
+
 ## Tauri baseline fix (so the comparison is honest)
 
 The Tauri baseline previously never armed its smoke because of two real bugs,
