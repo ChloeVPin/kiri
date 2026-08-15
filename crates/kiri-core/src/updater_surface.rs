@@ -78,11 +78,29 @@ impl UpdaterService {
         };
 
         // Verify the signed asset descriptor against the host-pinned key. The
-        // build pipeline signs each OS asset's descriptor (url); any key
-        // mismatch or tamper is rejected before the version decision is made.
-        if crate::update::Ed25519Verifier::verify(&self.public_key, asset.url.as_bytes(), signature)
-            .is_err()
-        {
+        // build pipeline signs `url + "|" + sha256(installer)`, so a manifest
+        // authenticates the exact installer this platform would download. Legacy
+        // manifests without a recorded hash verify against the url only. Any key
+        // mismatch, missing hash, or tamper is rejected before the version
+        // decision is made.
+        let sig_ok = match &asset.sha256 {
+            Some(digest) => {
+                let message = crate::update::signed_message(&asset.url, digest);
+                crate::update::Ed25519Verifier::verify(
+                    &self.public_key,
+                    message.as_bytes(),
+                    signature,
+                )
+                .is_ok()
+            }
+            None => crate::update::Ed25519Verifier::verify(
+                &self.public_key,
+                asset.url.as_bytes(),
+                signature,
+            )
+            .is_ok(),
+        };
+        if !sig_ok {
             return Ok(serde_json::json!({
                 "available": false,
                 "version": manifest.version,
@@ -137,27 +155,30 @@ mod tests {
     use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
     use serde_json::json;
 
-    fn keypair() -> (String, SigningKey) {
-        let sk = SigningKey::from_bytes(&[7u8; 32]);
-        let vk = VerifyingKey::from(&sk);
-        (hex::encode(vk.to_bytes()), sk)
+    const RELEASE_KEY_HEX: &str =
+        "0707070707070707070707070707070707070707070707070707070707070707";
+
+    /// Build a real producer manifest (same path the release pipeline uses) so
+    /// the live check path is exercised end to end, not a hand-crafted URL
+    /// signature. Each platform asset is signed over url + sha256(installer).
+    fn produce_manifest(version: &str) -> String {
+        let platform = crate::update::current_platform_key();
+        let installer = format!("kiri-{version}-{platform}.bin").into_bytes();
+        let url = format!("https://example.invalid/kiri-{version}-{platform}.bin");
+        crate::update::UpdateManifestBuilder::new(version)
+            .notes(format!("release {version}"))
+            .add_signed_asset(platform, url, &installer, RELEASE_KEY_HEX)
+            .unwrap()
+            .to_json()
+            .unwrap()
     }
 
-    fn signed_manifest(_pk: &str, sk: &SigningKey, version: &str) -> String {
-        let platform = crate::update::current_platform_key();
-        let url = format!("https://example.invalid/kiri-{version}-{platform}.bin");
-        let sig = hex::encode(sk.sign(url.as_bytes()).to_bytes());
-        format!(
-            r#"{{
-              "version": "{version}",
-              "notes": "release {version}",
-              "platforms": {{
-                "{platform}": {{ "url": "{url}", "signature": "{sig}" }}
-              }}
-            }}"#
+    fn host_pinned_pk() -> String {
+        hex::encode(
+            ed25519_dalek::VerifyingKey::from(&ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]))
+                .to_bytes(),
         )
     }
-
     fn router(pk: &str, current: &str) -> Router {
         let svc = UpdaterService::new(
             pk.to_string(),
@@ -177,12 +198,12 @@ mod tests {
 
     #[test]
     fn newer_signed_manifest_reports_available() {
-        let (pk, sk) = keypair();
+        let pk = host_pinned_pk();
         let r = router(&pk, "0.1.0");
         let out = dispatch(
             &r,
             command_id::UPDATER_CHECK,
-            json!({ "manifest": signed_manifest(&pk, &sk, "0.2.0") }),
+            json!({ "manifest": produce_manifest("0.2.0") }),
         );
         assert!(out["error"].is_null(), "unexpected error: {out}");
         assert_eq!(out["payload"]["available"], true);
@@ -193,12 +214,12 @@ mod tests {
 
     #[test]
     fn stale_manifest_reports_unavailable() {
-        let (pk, sk) = keypair();
+        let pk = host_pinned_pk();
         let r = router(&pk, "0.3.0");
         let out = dispatch(
             &r,
             command_id::UPDATER_CHECK,
-            json!({ "manifest": signed_manifest(&pk, &sk, "0.2.0") }),
+            json!({ "manifest": produce_manifest("0.2.0") }),
         );
         assert!(out["error"].is_null());
         assert_eq!(out["payload"]["available"], false);
@@ -207,14 +228,13 @@ mod tests {
 
     #[test]
     fn tampered_or_wrongkey_manifest_reports_unavailable() {
-        let (_pk, sk) = keypair();
         let other_pk =
             hex::encode(VerifyingKey::from(&SigningKey::from_bytes(&[9u8; 32])).to_bytes());
         let r = router(&other_pk, "0.1.0");
         let out = dispatch(
             &r,
             command_id::UPDATER_CHECK,
-            json!({ "manifest": signed_manifest(&_pk, &sk, "0.2.0") }),
+            json!({ "manifest": produce_manifest("0.2.0") }),
         );
         assert!(out["error"].is_null());
         assert_eq!(out["payload"]["available"], false);
@@ -222,7 +242,7 @@ mod tests {
 
     #[test]
     fn missing_signature_reports_unavailable() {
-        let (pk, _sk) = keypair();
+        let pk = host_pinned_pk();
         let platform = crate::update::current_platform_key();
         let manifest = format!(
             r#"{{ "version": "0.2.0", "platforms": {{ "{platform}": {{ "url": "https://example.invalid/x" }} }} }}"#
@@ -235,7 +255,7 @@ mod tests {
 
     #[test]
     fn invalid_json_is_rejected() {
-        let (pk, _sk) = keypair();
+        let pk = host_pinned_pk();
         let r = router(&pk, "0.1.0");
         let out = dispatch(&r, command_id::UPDATER_CHECK, json!({ "manifest": "{not json" }));
         assert!(!out["error"].is_null());
@@ -243,7 +263,7 @@ mod tests {
 
     #[test]
     fn updater_denied_without_capability() {
-        let (pk, sk) = keypair();
+        let pk = host_pinned_pk();
         let svc =
             UpdaterService::new(pk.clone(), Version::parse("0.1.0").unwrap(), Limits::default());
         let router = Router::new().with_updater(svc);
@@ -252,7 +272,7 @@ mod tests {
             command_id::UPDATER_CHECK,
             1,
             1,
-            json!({ "manifest": signed_manifest(&pk, &sk, "0.2.0") }),
+            json!({ "manifest": produce_manifest("0.2.0") }),
         );
         let resp = router.dispatch(CallerId(1), &granted, &req, &mut NoopTraceSink);
         assert!(resp.error.is_some());

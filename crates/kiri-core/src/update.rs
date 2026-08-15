@@ -15,6 +15,26 @@ use std::collections::HashMap;
 
 use ed25519_dalek::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+/// Canonical message that an asset signature commits to: the installer URL
+/// concatenated with the hex SHA-256 of the installer bytes. Binding the hash
+/// (not just the URL) means a manifest signature authenticates the exact
+/// installer a client would download, so a swapped URL or a tampered binary
+/// fails verification. This is the contract the builder signs and both the
+/// pre-flight `UpdaterService::check` and the post-download `verify_asset_for`
+/// verify against, so a manifest produced by the real builder passes the live
+/// `kiri.updater.check` path.
+pub(crate) fn signed_message(url: &str, installer_sha256_hex: &str) -> String {
+    format!("{url}|{installer_sha256_hex}")
+}
+
+/// Hex-encoded SHA-256 of installer bytes.
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    hex::encode(h.finalize())
+}
 
 /// A parsed semantic version: major.minor.patch[-pre][+build].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +146,11 @@ impl Ord for Version {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PlatformAsset {
     pub url: String,
+    /// Hex SHA-256 of the installer this asset resolves to. Recorded by the
+    /// builder so the pre-flight check can authenticate the installer identity
+    /// without downloading it; absent on legacy manifests.
+    #[serde(default)]
+    pub sha256: Option<String>,
     #[serde(default)]
     pub signature: Option<String>,
 }
@@ -307,8 +332,14 @@ impl UpdateManifestBuilder {
     }
 
     /// Sign `installer_bytes` for `platform_key` (e.g. `darwin-aarch64`) and
-    /// record the asset URL + signature. The same `signing_key_hex` must be
-    /// pinned in the shipping runtime, or `verify_asset` rejects the update.
+    /// record the asset URL + signature. The signature commits to
+    /// `url + "|" + sha256(installer_bytes)`, so the shipping runtime can both
+    /// pre-flight the manifest (`UpdaterService::check`) and verify the
+    /// downloaded bytes (`verify_asset_for`) against the same producer output.
+    /// The same `signing_key_hex` must be pinned in the shipping runtime, or
+    /// `verify_asset` rejects the update. The installer SHA-256 is stored on the
+    /// asset so the pre-flight check can authenticate the installer identity
+    /// before any download.
     pub fn add_signed_asset(
         mut self,
         platform_key: impl Into<String>,
@@ -316,10 +347,13 @@ impl UpdateManifestBuilder {
         installer_bytes: &[u8],
         signing_key_hex: &str,
     ) -> Result<Self> {
-        let signature = Ed25519Signer::sign(signing_key_hex, installer_bytes)?;
+        let url = url.into();
+        let digest = sha256_hex(installer_bytes);
+        let message = signed_message(&url, &digest);
+        let signature = Ed25519Signer::sign(signing_key_hex, message.as_bytes())?;
         self.platforms.insert(
             platform_key.into(),
-            PlatformAsset { url: url.into(), signature: Some(signature) },
+            PlatformAsset { url, sha256: Some(digest), signature: Some(signature) },
         );
         Ok(self)
     }
@@ -351,7 +385,20 @@ impl UpdateManifest {
         let asset = self.asset_for(platform_key)?;
         let version = self.version()?;
         let sig = asset.signature.as_ref().ok_or(Error::SignatureMissing)?;
-        Ed25519Verifier::verify(public_key_hex, file_bytes, sig)?;
+        // Prefer the strong contract: signature binds url + installer hash, and
+        // the actual downloaded bytes must hash to the recorded value. Falls back
+        // to the legacy url-only signature when no hash is recorded, so manifests
+        // produced by older builders still verify.
+        if let Some(recorded_hash) = &asset.sha256 {
+            let actual_hash = sha256_hex(file_bytes);
+            if &actual_hash != recorded_hash {
+                return Err(Error::SignatureInvalid);
+            }
+            let message = signed_message(&asset.url, recorded_hash);
+            Ed25519Verifier::verify(public_key_hex, message.as_bytes(), sig)?;
+        } else {
+            Ed25519Verifier::verify(public_key_hex, asset.url.as_bytes(), sig)?;
+        }
         Ok(VerifiedAsset { version, asset })
     }
 }
@@ -478,11 +525,18 @@ mod tests {
 
     #[test]
     fn signed_asset_verifies_with_correct_key() {
-        let (pk, sk) = keypair();
+        let signing_key_hex = hex::encode([7u8; 32]);
+        let pk = hex::encode(VerifyingKey::from(&SigningKey::from_bytes(&[7u8; 32])).to_bytes());
         let bytes = b"fake-installer-bytes";
-        let sig = sk.sign(bytes);
-        let sig_hex = hex::encode(sig.to_bytes());
-        let m = UpdateManifest::parse_json(&manifest_with_signature(&sig_hex)).unwrap();
+        let m = UpdateManifestBuilder::new("0.2.0")
+            .add_signed_asset(
+                "darwin-aarch64",
+                "https://example.invalid/kiri-0.2.0.dmg",
+                bytes,
+                &signing_key_hex,
+            )
+            .unwrap()
+            .build();
         let verified = m.verify_asset(&pk, bytes).expect("verify must pass");
         assert_eq!(verified.version, Version::parse("0.2.0").unwrap());
     }
