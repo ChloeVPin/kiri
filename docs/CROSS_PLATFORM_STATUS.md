@@ -14,7 +14,7 @@ blocked are called out explicitly.
 
 The day-to-day verification target. Real GPU, real WebView.
 
-- `cargo test --workspace`: 72 kiri-core + 6 kiri-runtime unit tests pass.
+- `cargo test --workspace`: 186 kiri-core + 25 kiri-runtime unit tests pass.
 - `cargo build -p kiri-runtime --bins`: builds.
 - `kiri-host --smoke --frontend examples/blank`: all 9 startup markers,
   exit 0 (webview_ready, bridge_ready, dom_ready, first_animation_frame, ...).

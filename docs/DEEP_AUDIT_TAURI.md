@@ -54,9 +54,9 @@ on the macOS development host (M-series, Rust 1.97). Raw artifact:
 
 | Payload | Mean wall (ms) | Throughput (MiB/s) |
 |---------|----------------|--------------------|
-| 1 MiB   | 0.593          | ~1750              |
-| 16 MiB  | 5.382          | ~2978              |
-| 100 MiB | 35.227         | ~2861              |
+| 1 MiB   | 0.621          | ~1674              |
+| 16 MiB  | 5.413          | ~2961              |
+| 100 MiB | 35.224         | ~2872              |
 
 This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer fast
 path). Tauri's command IPC serializes every call through serde + a string command
@@ -131,7 +131,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (203 tests: 178 kiri-core + 25 kiri-runtime). All of §6b's 17
+      --workspace` green (211 tests: 186 kiri-core + 25 kiri-runtime). All of §6b's 17
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never

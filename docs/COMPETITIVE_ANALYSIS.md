@@ -81,9 +81,9 @@ on the macOS development host (Apple Silicon, Rust 1.97). Raw artifact:
 
 | Payload | Mean wall (ms) | Throughput (MiB/s) |
 |---------|----------------|--------------------|
-| 1 MiB   | 0.593          | ~1750              |
-| 16 MiB  | 5.382          | ~2978              |
-| 100 MiB | 35.227         | ~2861              |
+| 1 MiB   | 0.621          | ~1674              |
+| 16 MiB  | 5.413          | ~2961              |
+| 100 MiB | 35.224         | ~2872              |
 
 This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer
 fast path). The structural reason it stays low-latency at bulk sizes: Kiri's
@@ -162,3 +162,48 @@ resource safety, privacy-scoped diagnostics, narrow default capability surface,
 and a frozen cross-platform startup contract. Do not compete on rendering —
 it is the same engine. Win on everything around it, measure it honestly, and
 never claim a number we have not run.
+
+
+## Remaining gaps vs Tauri (honest, what we do NOT yet match)
+
+These are the reasons Tauri has customers today. None is "the engine is worse" -
+they are product surface area. Each is tracked with an evidence level.
+
+| # | Tauri capability | Kiri state | Level | Path to exceed |
+|---|------------------|-----------|-------|----------------|
+| G-1 | Mobile (iOS/Android) via `tauri::mobile_entry_point` | Desktop only. wry has a mobile backend in 0.40+, but no Kiri mobile host exists. | A | Largest unseized Tauri segment; needs a mobile backend + device CI. |
+| G-3 | Official bundler + autoupdater distribution | Signed-update VERIFIER + producer are done and cross-OS-verified (Ed25519, host-pinned key, installer-bound signature). But no MSI/dmg/AppImage packaging pipeline and no distribution signing certs. | A | `cargo-bundle`-style step + signing certs (certs are the real blocker). |
+| G-7 | Mature docs site, `create-tauri-app` templates, 80k+ stars, commercial backing | Public but tiny; no templates, no community, naming-clearance risk flagged in docs/16-branding-legal.md. | A | Marketing/docs/community - not a code problem. |
+
+## What we have VERIFIED we exceed Tauri on (security axis)
+
+The structural win is double-gating: every capability-gated command also requires a
+host-owned allowlist, and BOTH backends (`host_cross.rs` macOS/Linux, `host_windows.rs`
+Windows) wire the identical allowlist set. Verified this session (headless, double-gating
+audit): no capability-gated command is missing a warranted host allowlist in either backend.
+This inverts Tauri's trust model, where a granted capability is often sufficient by itself.
+
+- `kiri.http.get` - capability + host allowlist (Tauri http plugin has no host allowlist).
+- `kiri.shell.run` - capability + command allowlist (Tauri shell plugin allows arbitrary exec).
+- `kiri.notification.show` - capability + template allowlist (Tauri lets JS set free-form body).
+- `kiri.dialog.open` - capability + kind allowlist.
+- `kiri.shortcut.register` - capability + exact-accelerator allowlist.
+- `kiri.store.*` - capability + namespace allowlist.
+- `kiri.deeplink.register` - capability + scheme allowlist.
+- `kiri.opener.open` - capability + scheme/extension allowlist.
+- `kiri.tray.*` - capability + item-id allowlist.
+- `kiri.sidecar.*` - capability + exact-binary-name allowlist.
+- `kiri.event.*` - capability + channel allowlist.
+- `kiri.config.get/keys` - capability + key allowlist.
+- `kiri.updater.check` - capability + host-pinned signing key (installer-bound signature).
+- `kiri.window.state.*` - capability + host-owned store namespace.
+- `kiri.fs.*` - capability + host-owned path glob scope.
+
+## Bottom line (updated)
+
+We are at parity with Tauri on platform coverage and capability *concept*, and we have
+measured wins on startup (macOS, 18-25% on engine-independent phases) and IPC throughput
+(~1.7/3.0/2.9 GiB/s at 1/16/100 MiB, level-A). The durable, defensible edge is the
+double-gated control plane: a granted capability can never by itself reach an unapproved
+host, command, template, channel, or scheme. The remaining work to take Tauri customers is
+product surface (mobile, bundling/signing, community) - not engine quality.

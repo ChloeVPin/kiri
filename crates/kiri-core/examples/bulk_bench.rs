@@ -150,10 +150,26 @@ fn main() {
         }));
     }
 
+    let commit = {
+        let env_commit = option_env!("KIRI_COMMIT").unwrap_or("");
+        if !env_commit.is_empty() {
+            env_commit.to_string()
+        } else {
+            std::process::Command::new("git")
+                .args(["rev-parse", "--short", "HEAD"])
+                .output()
+                .ok()
+                .and_then(
+                    |o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None },
+                )
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        }
+    };
     let artifact = serde_json::json!({
         "schema_version": 1,
         "name": "ordinary-message-bulk-path",
-        "commit": option_env!("KIRI_COMMIT").unwrap_or(""),
+        "commit": commit,
         "created_unix_ns": std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0),
         "sizes_bytes": sizes.clone(),
