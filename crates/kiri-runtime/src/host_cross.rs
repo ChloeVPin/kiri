@@ -48,8 +48,11 @@ fn serve_kiri(
     options: &HostOptions,
     request_path: &str,
     range: Option<&str>,
+    if_none_match: Option<&str>,
 ) -> WryResponse<Cow<'static, [u8]>> {
-    use crate::assets::{response_headers, serve, status_code, AssetResponse};
+    use crate::assets::{
+        response_headers, serve_checked, status_code, AssetResponse, ServeOptions,
+    };
     let root = match options.frontend_dir.as_ref() {
         Some(d) => d.clone(),
         None => {
@@ -70,7 +73,8 @@ fn serve_kiri(
         }
     };
 
-    let resp = serve(&root, request_path, range);
+    let resp =
+        serve_checked(&root, request_path, &ServeOptions { range, if_none_match, allow: &[] });
     let status = status_code(&resp);
     let mut builder = WryResponse::builder().status(status);
     for (k, v) in response_headers(&resp) {
@@ -212,7 +216,12 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     .get(header::RANGE)
                     .and_then(|v| v.to_str().ok())
                     .map(|s| s.to_string());
-                serve_kiri(&options, &path, range.as_deref())
+                let if_none_match = request
+                    .headers()
+                    .get(header::IF_NONE_MATCH)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                serve_kiri(&options, &path, range.as_deref(), if_none_match.as_deref())
             }
         })
         .with_navigation_handler(|url| is_navigation_allowed(&url))

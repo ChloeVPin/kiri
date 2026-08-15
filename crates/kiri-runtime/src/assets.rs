@@ -30,6 +30,8 @@ pub enum AssetResponse {
     NotFound,
     /// 416 Range Not Satisfiable (requested range past end of file).
     RangeNotSatisfiable { total: u64 },
+    /// 304 Not Modified (client ETag matched via If-None-Match).
+    NotModified,
 }
 
 /// Map a file extension to a content-type. Conservative, common subset used by
@@ -112,6 +114,88 @@ fn parse_range(header: &str, total: u64) -> Option<(u64, Option<u64>)> {
 }
 
 /// Serve `request_path` from `root`. `range_header` is the optional
+/// Compute a stable, content-addressed ETag for a served asset. Uses FNV-1a
+/// over the bytes (cheap, deterministic, collision-resistant enough for
+/// HTTP caching decisions; not a cryptographic hash, which is unnecessary
+/// here). Wrapped in double quotes per RFC 7232.
+pub fn etag_for(bytes: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    let q = "\"";
+    format!("{q}{:016x}{q}", hash)
+}
+
+/// Options controlling a kiri:// asset response beyond the raw file read.
+///
+/// - range: optional Range header (existing behavior).
+/// - if_none_match: optional If-None-Match header; when it equals the
+///   computed ETag, the server returns NotModified (304) instead of the
+///   body (closes the caching gap in G-4 vs Tauri cached asset protocol).
+/// - allow: when non-empty, only paths whose resolved sub-path starts with
+///   one of these prefixes are served; everything else is NotFound. This is
+///   the kiri:// origin allowlist parity with Tauri asset:customProtocol
+///   allowlist (G-4).
+#[derive(Default)]
+pub struct ServeOptions<'a> {
+    pub range: Option<&'a str>,
+    pub if_none_match: Option<&'a str>,
+    pub allow: &'a [&'a str],
+}
+
+/// Serve with full policy: allowlist, range, and conditional (ETag) caching.
+pub fn serve_checked(root: &Path, request_path: &str, opts: &ServeOptions) -> AssetResponse {
+    let path = match resolve(root, request_path) {
+        Some(p) => p,
+        None => return AssetResponse::NotFound,
+    };
+    if !opts.allow.is_empty() {
+        let sub = request_path.trim_start_matches('/');
+        let allowed = opts.allow.iter().any(|prefix| {
+            sub == *prefix || sub.starts_with(&format!("{prefix}/", prefix = prefix))
+        });
+        if !allowed {
+            return AssetResponse::NotFound;
+        }
+    }
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(_) => return AssetResponse::NotFound,
+    };
+    let total = bytes.len() as u64;
+    let content_type = content_type_for(&path);
+    if let Some(client_etag) = opts.if_none_match {
+        if client_etag == etag_for(&bytes) {
+            return AssetResponse::NotModified;
+        }
+    }
+    if let Some(rh) = opts.range {
+        let (start, end_opt) = match parse_range(rh, total) {
+            Some(v) => v,
+            None => return AssetResponse::RangeNotSatisfiable { total },
+        };
+        let end = match end_opt {
+            Some(e) => {
+                if e >= total {
+                    total.saturating_sub(1)
+                } else {
+                    e
+                }
+            }
+            None => total.saturating_sub(1),
+        };
+        if start > end || total == 0 {
+            return AssetResponse::RangeNotSatisfiable { total };
+        }
+        let end_usize = end as usize;
+        let body = bytes[start as usize..=end_usize].to_vec();
+        return AssetResponse::Partial { body, content_type, start, end, total };
+    }
+    AssetResponse::Full { body: bytes, content_type }
+}
+
 /// `Range` request header. This is the single entry point used by both the
 /// WebView protocol closure and the unit tests.
 pub fn serve(root: &Path, request_path: &str, range_header: Option<&str>) -> AssetResponse {
@@ -158,19 +242,25 @@ pub fn serve(root: &Path, request_path: &str, range_header: Option<&str>) -> Ass
 pub fn response_headers(resp: &AssetResponse) -> Vec<(String, String)> {
     let mut h = Vec::new();
     match resp {
-        AssetResponse::Full { content_type, .. } => {
+        AssetResponse::Full { body, content_type } => {
             h.push(("Content-Type".into(), content_type.clone()));
+            h.push(("ETag".into(), etag_for(body)));
+            h.push(("Cache-Control".into(), "public, max-age=0, must-revalidate".into()));
         }
-        AssetResponse::Partial { content_type, start, end, total, .. } => {
+        AssetResponse::Partial { body, content_type, start, end, total } => {
             h.push(("Content-Type".into(), content_type.clone()));
             h.push(("Content-Range".into(), format!("bytes {start}-{end}/{total}")));
             h.push(("Accept-Ranges".into(), "bytes".into()));
+            h.push(("ETag".into(), etag_for(body)));
         }
         AssetResponse::NotFound => {
             h.push(("Content-Type".into(), "text/plain".into()));
         }
         AssetResponse::RangeNotSatisfiable { total } => {
             h.push(("Content-Range".into(), format!("bytes */{total}")));
+        }
+        AssetResponse::NotModified => {
+            h.push(("Cache-Control".into(), "public, max-age=0, must-revalidate".into()));
         }
     }
     h
@@ -183,6 +273,7 @@ pub fn status_code(resp: &AssetResponse) -> u16 {
         AssetResponse::Partial { .. } => 206,
         AssetResponse::NotFound => 404,
         AssetResponse::RangeNotSatisfiable { .. } => 416,
+        AssetResponse::NotModified => 304,
     }
 }
 
@@ -374,5 +465,58 @@ mod tests {
             }
             other => panic!("expected Full, got {:?}", other),
         }
+    }
+    // R-4 (G-4 parity): conditional GET returns 304 when the client ETag
+    // matches, and the full response carries an ETag + Cache-Control.
+    #[test]
+    fn conditional_get_returns_304_on_etag_match() {
+        let (dir, root) = tmp_root();
+        let _guard = _Cleanup(dir);
+        let r = serve_checked(
+            &root,
+            "app.js",
+            &ServeOptions { range: None, if_none_match: None, allow: &[] },
+        );
+        let etag = match &r {
+            AssetResponse::Full { body, .. } => etag_for(body),
+            other => panic!("expected Full, got {:?}", other),
+        };
+        assert!(!etag.is_empty());
+        let headers = response_headers(&r);
+        assert!(headers.iter().any(|(k, _)| k == "ETag"));
+        assert!(headers.iter().any(|(k, _)| k == "Cache-Control"));
+
+        let r2 = serve_checked(
+            &root,
+            "app.js",
+            &ServeOptions { range: None, if_none_match: Some(&etag), allow: &[] },
+        );
+        assert!(matches!(r2, AssetResponse::NotModified));
+        assert_eq!(status_code(&r2), 304);
+    }
+
+    #[test]
+    fn etag_is_stable_for_same_bytes() {
+        assert_eq!(etag_for(b"hello"), etag_for(b"hello"));
+        assert_ne!(etag_for(b"hello"), etag_for(b"hellp"));
+    }
+
+    // R-4 (G-4 parity): the kiri:// origin allowlist restricts served paths.
+    #[test]
+    fn allowlist_only_serves_permitted_prefixes() {
+        let (dir, root) = tmp_root();
+        let _guard = _Cleanup(dir);
+        // Only allow exactly "app.js" and the "assets/" prefix.
+        let allow = ["app.js", "assets/"];
+        let opts = ServeOptions { range: None, if_none_match: None, allow: &allow };
+        assert!(matches!(serve_checked(&root, "app.js", &opts), AssetResponse::Full { .. }));
+        assert!(matches!(serve_checked(&root, "assets/icon.png", &opts), AssetResponse::NotFound));
+        // Disallowed prefix is rejected even though the file exists.
+        assert!(matches!(serve_checked(&root, "style.css", &opts), AssetResponse::NotFound));
+        // Empty allowlist means allow everything.
+        assert!(matches!(
+            serve_checked(&root, "style.css", &ServeOptions::default()),
+            AssetResponse::Full { .. }
+        ));
     }
 }
