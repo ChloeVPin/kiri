@@ -146,8 +146,12 @@ fn kiri_marker(state: tauri::State<'_, MarkerState>, json: String) {
 
 fn main() {
     let mut markers = Markers::default();
+    // Mirror the wry/tao baseline clock convention: t0 is locked on the first
+    // real now_ns() sample (NativeEntry), so every later marker is measured from
+    // process start. Hardcoding both early markers to 0 corrupts the t0 reference
+    // and collapses all early phases to ~0 (Q-003 fragility).
     markers.record(Marker::ProcessSpawnRequested, 0);
-    markers.record(Marker::NativeEntry, 0);
+    markers.record(Marker::NativeEntry, now_ns());
     let shared = Arc::new(Mutex::new(markers));
 
     tauri::Builder::default()

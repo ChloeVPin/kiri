@@ -89,6 +89,46 @@ Verified on macOS (this host): the Tauri baseline now emits all 9 markers and
 exits 0, same as the Kiri wry/tao host. This makes the T009 three-way
 comparison (Kiri vs Wry/Tao vs Tauri) a real, apples-to-apples measurement.
 
+## T009 three-way comparison: macOS-native leg (MEASURED)
+
+Run on macOS aarch64 (this dev host, real GPU), same blank frontend
+(`examples/blank`), same frozen marker schema (schema_version: 1). Each target
+launched 5 times; values below are medians of `since_first_ns` (ns from process
+start). Raw artifact: `artifacts/compare-macos.json` (gitignored, retained
+locally). Harness: `benchmark/compare_macos.py`.
+
+| marker (median ns)        | Kiri native (wry/tao) | wry/tao baseline | Tauri baseline |
+|---------------------------|----------------------:|-----------------:|---------------:|
+| platform_initialized      |          128,799,083 |     167,666,125 |   156,603,417 |
+| webview_creation_requested|          128,801,667 |     167,668,833 |   156,609,209 |
+| webview_ready             |          337,272,417 |     448,506,042 |   422,872,125 |
+| bridge_ready              |          217,924,000 |     319,127,958 |   301,354,625 |
+| first_animation_frame     |          337,397,250 |     448,645,667 |   423,760,875 |
+
+**Comparable phases (webview_ready and earlier): Kiri native is faster on every
+one.** Medians: ~0.77x the wry/tao baseline and ~0.82x the Tauri baseline on
+`platform_initialized`; ~0.75x / ~0.80x on `webview_ready`. That is an 18-25%
+startup-edge on macOS, on the honest (engine-independent) phases.
+
+**Honesty notes (carried from Q-003):**
+- `dom_ready` / `app_ready` / `first_animation_frame` for the Tauri baseline run
+  through `__TAURI_INTERNALS__.invoke('kiri_marker')`, which is heavier than the
+  wry `window.ipc.postMessage` path. Those phases are reported but flagged
+  non-comparable across targets; Kiri and the wry/tao baseline share the lighter
+  path and are directly comparable there.
+- This is the **macOS leg only**. The Windows leg (direct Win32 + WebView2 host
+  vs the baselines) is still blocked on T008 (WebView2 shared-buffer) and
+  self-hosted perf hardware, and is not represented here. Do not generalize the
+  macOS number to Windows/Linux.
+- Linux is a documented headless soft probe (no GPU on runners), so no hard
+  Linux comparison is claimed.
+
+**Baseline fix made during this measurement:** the Tauri baseline hardcoded
+`ProcessSpawnRequested` and `NativeEntry` to 0, which corrupted its `t0`
+reference and collapsed every early marker to ~0ns. Corrected to record
+`NativeEntry` with a real `now_ns()` sample (matching the wry/tao baseline), so
+Tauri's early phases are now honestly measured (was ~84ns, now ~156ms).
+
 ## Bottom line
 
 Exceed Tauri by owning the control plane: typed codegen routing, generational
