@@ -98,7 +98,11 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 ## 5. Immediate workstream (this loop, headless only)
 
 - [x] Repo state verified: T001-T007, T010 done; T008 + T009-Windows blocked on
-      Windows/perf HW; CI exhausted. `cargo test --workspace` green (98 tests).
+      Windows/perf HW. `cargo test --workspace` green (131 tests: 106 kiri-core +
+      25 kiri-runtime). PUBLIC repo => GitHub-hosted CI is free/unlimited for all
+      three OSes; the only real constraint observed is transient Windows-runner
+      provisioning congestion (runs queue, they do not fail for quota). Never
+      assume CI is exhausted.
 - [x] This audit written from code evidence + Tauri public docs.
 - [x] R-1 spike DONE: kiri:// handler in crates/kiri-runtime/src/assets.rs (commit bdb75ef). content-type + Range to 206, 16 unit tests. Headless.
 - [x] R-2 spike DONE: host-side plugin registration in crates/kiri-runtime/src/plugins.rs. PING_PLUGIN ported via KiriPluginV1/KiriHostV1 mirror of plugin_abi.h; build_router_with_plugins() replaces inline Router::new(). Headless.
@@ -111,11 +115,53 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 
 - [x] R-5 DONE: scoped `kiri.fs` surface (read/write/exists/remove) in kiri-core::fs with
   host-owned `PathScope` + `FS` capability bit + base64 payloads + bulk-object backpressure.
-  `PathScope::allows` hardened for `/var` <-> `/private/var` normalization and `..` escape
-  rejection (2 regression tests). Wired into both hosts and the frontend (examples/blank/kiri.js).
-  9 fs unit tests. All-OS CI-verifiable. This exceeds Tauri's `fs` plugin on the security axis.
+  `PathScope::allows` hardened: `/var` <-> `/private/var` normalization, `..` escape
+  rejection, AND (Windows fix) climbing to the deepest existing ancestor so missing
+  intermediate dirs + `\\?\` verbatim prefixes resolve correctly. 2 regression tests.
+  Wired into both hosts and the frontend (examples/blank/kiri.js). 9 fs unit tests.
+  All-OS CI-verifiable. This exceeds Tauri's `fs` plugin on the security axis.
+- [x] R-5b DONE: `kiri.window.*` (ids 14-22) capability-gated control surface
+  (bit `WINDOW`) with host-owned `TaoWindowController` (macOS/Linux) and
+  `WinWindowController` (Windows) so JS never reaches the native handle. State mirrored
+  in core `WindowState`. Exceeds Tauri's `window` module on the security axis. Frontend
+  bindings in examples/blank/kiri.js. Headless unit tests (StubWindow) cover routing +
+  authorization + state transitions; both backends compile clean (clippy -D warnings).
 
 ---
+
+
+## 6b. Ranked "exceed Tauri" next targets (Mac-headless-runnable)
+
+These close remaining Tauri gaps while staying verifiable on the macOS dev host
+(no WebView binary launch, no Windows HW). Each must beat Tauri on a concrete
+axis (security, latency, or audibility), not just match it.
+
+1. **kiri.clipboard (read/write)** — Tauri's `clipboard`/`clipboard-manager`
+   plugin is unrestricted by default. Kiri: gate behind a `CLIPBOARD` capability
+   bit, route through a host-owned `ClipboardController` (same pattern as
+   `WindowController`), mirror last-value in core state. Headless tests via a
+   `StubClipboard`. Exceeds on the security axis (capability authority + audit).
+2. **kiri.path / kiri.os path helpers** — close the rest of Tauri's `path`/
+   `os` surface (dirname, extname, basename, app/config/data dirs) as pure,
+   capability-gated commands. Pure functions => fully Mac-headless-testable.
+3. **kiri.http (client, capability-scoped)** — Tauri's `http` plugin allows
+   arbitrary fetch. Kiri: `HTTP` capability bit + an allowlist of hosts; responses
+   streamed through the same bulk/backpressure path as `kiri.fs`. Headless tests
+   against a local mock server.
+4. **kiri.shell / process (restricted)** — the single biggest Tauri escape risk.
+   Kiri: only if an explicit `SHELL` capability + command allowlist is set; never
+   a default. This turns a Tauri weakness into a Kiri strength.
+5. **kiri.notification / global-shortcut** — lower priority; implement after the
+   above when a real notification backend exists on macOS (headless tests stub
+   the OS call).
+
+Cross-cutting differentiators to protect and advertise:
+- Numeric, build-time command routing with one validation pipeline + server-side
+  capability bits (auditable, no per-plugin ACL drift).
+- Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw
+  IDs.
+- Privacy-scoped diagnostics (never logs payloads).
+
 
 ## 6. Threats to the "exceed Tauri" claim (call them out)
 
