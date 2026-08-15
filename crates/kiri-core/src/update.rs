@@ -270,6 +270,8 @@ mod tests {
     }
 
     fn manifest_with_signature(sig_hex: &str) -> String {
+        // Every platform asset carries the signature so the verifier is
+        // exercised regardless of which OS the test runs on.
         format!(
             r#"{{
               "version": "0.2.0",
@@ -277,8 +279,8 @@ mod tests {
               "pub_date": "2026-08-15T00:00:00Z",
               "platforms": {{
                 "darwin-aarch64": {{ "url": "https://example.invalid/kiri-0.2.0.dmg", "signature": "{sig_hex}" }},
-                "windows-x86_64": {{ "url": "https://example.invalid/kiri-0.2.0.msi" }},
-                "linux-x86_64": {{ "url": "https://example.invalid/kiri-0.2.0.AppImage" }}
+                "windows-x86_64": {{ "url": "https://example.invalid/kiri-0.2.0.msi", "signature": "{sig_hex}" }},
+                "linux-x86_64": {{ "url": "https://example.invalid/kiri-0.2.0.AppImage", "signature": "{sig_hex}" }}
               }}
             }}"#
         )
@@ -354,8 +356,18 @@ mod tests {
 
     #[test]
     fn missing_signature_detected() {
-        let m = UpdateManifest::parse_json(&manifest_with_signature("00")).unwrap();
-        assert_eq!(m.asset_for("windows-x86_64").unwrap().signature, None);
+        let platform = current_platform_key();
+        let json = format!(
+            r#"{{
+              "version": "0.2.0",
+              "platforms": {{
+                "{platform}": {{ "url": "https://example.invalid/kiri-0.2.0.bin" }}
+              }}
+            }}"#
+        );
+        let m = UpdateManifest::parse_json(&json).unwrap();
+        let pk = hex::encode(VerifyingKey::from(&SigningKey::from_bytes(&[7u8; 32])).to_bytes());
+        assert_eq!(m.verify_asset(&pk, b"bytes"), Err(Error::SignatureMissing));
     }
 
     #[test]
