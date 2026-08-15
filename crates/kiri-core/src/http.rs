@@ -418,7 +418,7 @@ mod tests {
     use crate::dispatch::{command_id, Router};
     use crate::trace::NoopTraceSink;
     use crate::wire::WireRequest;
-    use std::io::{Read, Write};
+    use std::io::Write;
     use std::net::TcpListener;
     use std::thread;
 

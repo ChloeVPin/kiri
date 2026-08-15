@@ -108,6 +108,13 @@ pub struct PluginHost {
     /// the C `KiriHandle` semantics) while the handler itself is a fat pointer.
     handler_store: HashMap<u32, Handler>,
     next_handle: u32,
+    /// Host-owned allowlist governing which external plugins (and which of their
+    /// commands) may load. Empty by default: nothing external is permitted until
+    /// the host sets a policy.
+    allowlist: PluginAllowlist,
+    /// When an external plugin is loading, the allowlisted command names for the
+    /// current plugin. `None` for built-in registration (no command-level gate).
+    current_allowed_commands: Option<std::collections::HashSet<String>>,
 }
 
 impl PluginHost {
@@ -121,6 +128,8 @@ impl PluginHost {
             pending: HashMap::new(),
             handler_store: HashMap::new(),
             next_handle: 1,
+            allowlist: PluginAllowlist::empty(),
+            current_allowed_commands: None,
         }
     }
 
@@ -258,6 +267,32 @@ impl PluginHost {
             .expect("built-in resources plugin must load");
         host.router
     }
+
+    /// Replace the host-owned plugin allowlist (G-2 external-plugin policy).
+    pub fn set_allowlist(&mut self, allowlist: PluginAllowlist) {
+        self.allowlist = allowlist;
+    }
+
+    /// Load an EXTERNAL plugin (shipped as a separate library) through the
+    /// host-owned allowlist. The plugin name must be on `self.allowlist`; if not,
+    /// loading is refused before `init` runs. Every command the plugin registers
+    /// is then checked against that plugin's allowlisted command set and dropped
+    /// if absent (fail-closed). This is the G-2 on-ramp: third-party code can
+    /// extend Kiri only through a surface the host explicitly approved, which
+    /// exceeds Tauri's plugin model (any plugin on the configured path is
+    /// trusted). A real loader resolves the `KiriPluginV1` via a `dlopen`/entry
+    /// point and hands the resulting descriptor here; the allowlist gate is
+    /// identical either way.
+    pub fn register_external(&mut self, plugin: &KiriPluginV1) -> Result<(), PluginError> {
+        let name = String::from_utf8_lossy(plugin.name).to_string();
+        if !self.allowlist.is_plugin_allowed(&name) {
+            return Err(PluginError::NotAllowed(name));
+        }
+        self.current_allowed_commands = self.allowlist.commands_for(&name).cloned();
+        let result = self.register_plugin(plugin);
+        self.current_allowed_commands = None;
+        result
+    }
 }
 
 impl Default for PluginHost {
@@ -269,6 +304,39 @@ impl Default for PluginHost {
 #[derive(Debug, PartialEq)]
 pub enum PluginError {
     UnsupportedAbi(u32),
+    /// The plugin name is not present on the host-owned allowlist.
+    NotAllowed(String),
+    /// Loading or resolving the plugin library failed (dlopen/entry point).
+    LoadError(String),
+}
+
+/// Host-owned plugin allowlist (G-2 external-plugin security model). An external
+/// plugin is only loadable when its name is present, and only the command names
+/// listed for it are registered; everything else is dropped. This exceeds
+/// Tauri's plugin loading, which trusts any plugin on the configured path, by
+/// requiring an explicit, named, command-level allowlist.
+#[derive(Debug, Clone, Default)]
+pub struct PluginAllowlist {
+    plugins: std::collections::HashMap<String, std::collections::HashSet<String>>,
+}
+
+impl PluginAllowlist {
+    pub fn empty() -> Self {
+        PluginAllowlist { plugins: std::collections::HashMap::new() }
+    }
+    /// Allow `plugin` to load, restricted to the exact `commands` it may expose.
+    pub fn allow<P: Into<String>, C: AsRef<str>>(mut self, plugin: P, commands: &[C]) -> Self {
+        let set: std::collections::HashSet<String> =
+            commands.iter().map(|c| c.as_ref().to_string()).collect();
+        self.plugins.insert(plugin.into(), set);
+        self
+    }
+    pub fn is_plugin_allowed(&self, name: &str) -> bool {
+        self.plugins.contains_key(name)
+    }
+    pub fn commands_for(&self, name: &str) -> Option<&std::collections::HashSet<String>> {
+        self.plugins.get(name)
+    }
 }
 
 /// Host `log` implementation (C signature). Writes the message to stderr with a
@@ -287,6 +355,14 @@ extern "C" fn host_log(level: u32, message: KiriBytes) {
 /// identical: name -> (id, handler).
 extern "C" fn host_register_command(command_id_bytes: KiriBytes, callback: u32) {
     let name = unsafe { String::from_utf8_lossy(command_id_bytes.as_slice()).to_string() };
+    // Fail-closed: when an external plugin is loading, drop any command whose
+    // name is not on that plugin's host-allowlisted set.
+    if let Some(allowed) = with_host_allowed_commands() {
+        if !allowed.contains(&name) {
+            eprintln!("[kiri-plugin] command {name} not on allowlist; dropped");
+            return;
+        }
+    }
     let id = match name.as_str() {
         "kiri.ping" => command_id::PING,
         "kiri.diag" => command_id::DIAGNOSTICS,
@@ -329,6 +405,17 @@ fn with_host_ptr<R>(ptr: *mut PluginHost, f: impl FnOnce() -> R) -> R {
     let r = f();
     HOST_PTR.with(|c| c.set(std::ptr::null_mut()));
     r
+}
+
+fn with_host_allowed_commands() -> Option<std::collections::HashSet<String>> {
+    HOST_PTR.with(|c| {
+        let ptr = c.get();
+        if ptr.is_null() {
+            return None;
+        }
+        let host = unsafe { &*ptr };
+        host.current_allowed_commands.clone()
+    })
 }
 
 fn with_host_mut<R>(f: impl FnOnce(&mut PluginHost) -> R) -> R {
@@ -545,5 +632,53 @@ mod tests {
         let mut host = PluginHost::new();
         let err = host.register_plugin(&bad);
         assert_eq!(err, Err(PluginError::UnsupportedAbi(99)));
+    }
+
+    #[test]
+    fn external_loader_rejects_unknown_plugin() {
+        let mut host = PluginHost::new();
+        host.set_allowlist(PluginAllowlist::empty());
+        let bad = KiriPluginV1 {
+            abi_version: 1,
+            struct_size: std::mem::size_of::<KiriPluginV1>() as u32,
+            name: b"evil.plugin" as &'static [u8; 11] as &'static [u8],
+            init: ping_plugin_init,
+            shutdown: ping_plugin_shutdown,
+        };
+        let err = host.register_external(&bad);
+        assert_eq!(err, Err(PluginError::NotAllowed("evil.plugin".to_string())));
+        assert!(!host.is_known(command_id::PING), "no commands leaked");
+    }
+
+    #[test]
+    fn external_loader_allows_plugin_but_drops_unlisted_command() {
+        let mut host = PluginHost::new();
+        // Allow the plugin but with an EMPTY command set: fail-closed means the
+        // command it registers is dropped, so the router never learns it.
+        host.set_allowlist(PluginAllowlist::empty().allow("kiri.ping", &[] as &[&str]));
+        let ping = KiriPluginV1 {
+            abi_version: 1,
+            struct_size: std::mem::size_of::<KiriPluginV1>() as u32,
+            name: b"kiri.ping" as &'static [u8; 9] as &'static [u8],
+            init: ping_plugin_init,
+            shutdown: ping_plugin_shutdown,
+        };
+        host.register_external(&ping).expect("plugin name allowed");
+        assert!(!host.is_known(command_id::PING), "unlisted command dropped");
+    }
+
+    #[test]
+    fn external_loader_allows_plugin_and_command() {
+        let mut host = PluginHost::new();
+        host.set_allowlist(PluginAllowlist::empty().allow("kiri.ping", &["kiri.ping"]));
+        let ping = KiriPluginV1 {
+            abi_version: 1,
+            struct_size: std::mem::size_of::<KiriPluginV1>() as u32,
+            name: b"kiri.ping" as &'static [u8; 9] as &'static [u8],
+            init: ping_plugin_init,
+            shutdown: ping_plugin_shutdown,
+        };
+        host.register_external(&ping).expect("plugin + command allowed");
+        assert!(host.is_known(command_id::PING), "allowlisted command registered");
     }
 }
