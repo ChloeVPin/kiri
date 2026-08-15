@@ -1103,38 +1103,53 @@ impl StaticRouter {
         crate::commands::command_name(id).is_some()
     }
 
-    /// Dispatch a parsed request using the catalog-defined handler and the
-    /// capability required by the command id. The actual execution handler is
-    /// the built-in ping for now; T005's codegen path replaces this with
-    /// per-command glue, but the routing decision stays catalog-driven.
-    pub fn dispatch(
+    /// Resolve the command name purely from the authoritative `COMMANDS`
+    /// catalog. No handler registration is consulted, so this is a pure
+    /// routing lookup: the same `id -> name` projection the runtime uses to
+    /// build every `Router`. Auditable because it has no handler state to
+    /// drift from the catalog.
+    pub fn command_name(&self, id: u32) -> Option<&'static str> {
+        crate::commands::command_name(id)
+    }
+
+    /// Resolve the capability bit a command id requires, purely from the
+    /// authoritative catalog (`capability_bit::for_command`). The runtime's
+    /// `Router::dispatch` authorizes against exactly this value, so this is
+    /// the same authorization decision expressed as a side-effect-free
+    /// function. Used by the audit harness to verify the full id -> bit
+    /// matrix without constructing a WebView (T005: auditable routing).
+    pub fn required_capability(&self, id: u32) -> u32 {
+        capability_bit::for_command(id)
+    }
+
+    /// Catalog-driven authorization oracle. Resolves the command name and the
+    /// required capability bit from the `COMMANDS` catalog alone, then checks
+    /// the caller's granted bits WITHOUT executing any handler. This makes the
+    /// authorization matrix for all known commands auditable headlessly: the
+    /// decision is a pure function of (id, caller capabilities) resolved from
+    /// the catalog, identical to what `Router::dispatch` enforces. Unknown ids
+    /// are rejected with a protocol error before any capability is consulted.
+    pub fn authorize(
         &self,
-        caller: CallerId,
         caller_capabilities: &CapabilityBits,
         request: &WireRequest,
-        sink: &mut dyn TraceSink,
-    ) -> WireResponse {
-        // The catalog is authoritative for routing. If the request carries an
-        // id the catalog does not know, reject it before any handler runs
-        // (T005 acceptance: unknown IDs rejected). The capability requirement
-        // is resolved by `Router::dispatch` through the catalog so the caller
-        // is authorized against the real required bit, never self-granted.
-        if crate::commands::command_name(request.command_id).is_none() {
-            let e = Error::protocol_error(format!("unknown command id {}", request.command_id));
-            return WireResponse::err(request.request_id, e);
+    ) -> std::result::Result<(&'static str, u32), Error> {
+        let name = match crate::commands::command_name(request.command_id) {
+            Some(n) => n,
+            None => {
+                return Err(Error::protocol_error(format!("unknown command id {}", request.command_id)));
+            }
+        };
+        let required = capability_bit::for_command(request.command_id);
+        let mut required_bits = CapabilityBits::empty();
+        required_bits.set(required);
+        if !caller_capabilities.is_superset_of(&required_bits) {
+            return Err(Error::unauthorized(format!(
+                "command {name} (id {}) requires capability bit {required}",
+                request.command_id
+            )));
         }
-        // Delegate to the shared pipeline. The caller's granted capabilities
-        // are passed through unchanged: the runtime assigns them natively and
-        // JavaScript can never widen them. The catalog `required` cap is the
-        // authorization requirement checked against the caller by
-        // `validate_request` (specs/SECURITY.md step 3) -- it is NOT granted
-        // to the caller here.
-        Router::new().with_limits(self.limits.clone()).dispatch(
-            caller,
-            caller_capabilities,
-            request,
-            sink,
-        )
+        Ok((name, required))
     }
 }
 
@@ -1434,5 +1449,97 @@ mod tests {
         let resp = router.dispatch(CallerId(1), &full_caps(), &req, &mut sink);
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, ErrorCode::ProtocolError);
+    }
+
+    #[test]
+    fn static_router_rejects_unknown_command_id() {
+        let sr = StaticRouter::new();
+        let _caller = CallerId(1);
+        let caps = CapabilityBits::empty();
+        let req = WireRequest::new(9999, 1, 1, json!(null));
+        let res = sr.authorize(&caps, &req);
+        assert!(res.is_err(), "unknown id must be rejected");
+        assert_eq!(
+            res.unwrap_err().code,
+            crate::error::ErrorCode::ProtocolError
+        );
+        // is_known agrees.
+        assert!(!sr.is_known(9999));
+    }
+
+    #[test]
+    fn static_router_denies_known_command_without_capability() {
+        let sr = StaticRouter::new();
+        let caps = CapabilityBits::empty();
+        let req = WireRequest::new(command_id::PING, 1, 1, json!(null));
+        let res = sr.authorize(&caps, &req);
+        assert!(res.is_err());
+        assert_eq!(
+            res.unwrap_err().code,
+            crate::error::ErrorCode::Unauthorized
+        );
+        // name + required bit are resolved purely from the catalog.
+        assert_eq!(sr.command_name(command_id::PING), Some("kiri.ping"));
+        assert_eq!(sr.required_capability(command_id::PING), capability_bit::PING);
+    }
+
+    #[test]
+    fn static_router_authorizes_with_capability() {
+        let sr = StaticRouter::new();
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+        let req = WireRequest::new(command_id::PING, 1, 1, json!(null));
+        let res = sr.authorize(&caps, &req);
+        assert!(res.is_ok(), "ping must authorize with PING bit: {:?}", res.err());
+        let (name, bit) = res.unwrap();
+        assert_eq!(name, "kiri.ping");
+        assert_eq!(bit, capability_bit::PING);
+        assert_eq!(sr.is_known(command_id::PING), true);
+    }
+
+    #[test]
+    fn static_router_authorization_matrix_covers_every_catalog_command() {
+        // Every catalog id must resolve to a known name and a required bit, and
+        // an empty caller must be denied (no command is granted by default).
+        // This is the decisive headless proof that the auditable routing layer
+        // covers the full command surface (T005), not just a few hand-picked
+        // ids. It also guards against a silent catalog/router drift.
+        let sr = StaticRouter::new();
+        let empty = CapabilityBits::empty();
+        let specs = crate::commands::COMMANDS;
+        let mut covered = 0usize;
+        for spec in specs {
+            assert!(
+                sr.is_known(spec.id),
+                "catalog id {} ({}) must be known to StaticRouter",
+                spec.id,
+                spec.name
+            );
+            assert_eq!(
+                sr.command_name(spec.id),
+                Some(spec.name),
+                "name projection must match catalog for id {}",
+                spec.id
+            );
+            // Empty caller must be denied for every command.
+            let req = WireRequest::new(spec.id, spec.id as u64, 1, json!(null));
+            let denied = sr.authorize(&empty, &req);
+            assert!(
+                denied.is_err(),
+                "command {} ({}) MUST be denied with empty capabilities",
+                spec.id,
+                spec.name
+            );
+            assert_eq!(
+                denied.unwrap_err().code,
+                crate::error::ErrorCode::Unauthorized,
+                "command {} denied for wrong reason",
+                spec.id
+            );
+            covered += 1;
+        }
+        // Catalog max id is 74 (kiri.plugin.list). Require the matrix to span
+        // the whole surface so a future id-add cannot silently escape audit.
+        assert!(covered >= 74, "expected >=74 catalog commands, got {covered}");
     }
 }

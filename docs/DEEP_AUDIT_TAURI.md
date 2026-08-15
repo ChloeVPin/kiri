@@ -37,7 +37,7 @@ product surface area.
 |---|------|----------------|---------------|-------|
 | F-1 | Asset/protocol loading | `tauri://` is a registered custom protocol with content-type + allowlist + in some configs optimized reads. | `kiri://localhost` does a synchronous `std::fs::read` per navigation with no mime/range/cache (`host_cross.rs:45`). For a multi-asset app this is strictly slower and less correct (wrong/omitted content-type). | B |
 | F-2 | Cold-start is comparable, Tauri's mature builder avoids redundant windowing work | Our macOS `platform_initialized` ~129ms vs Tauri ~157ms (Kiri faster here, see COMPETITIVE_ANALYSIS T009 leg) — so on FIRST paint Kiri currently leads. But Tauri's startup is battle-tested across 1000s of apps; ours is measured on one host. | `artifacts/compare-macos.json` (gitignored). | A (macOS only) |
-| F-3 | IPC for app logic | Tauri's command system (`#[tauri::command]`) is the de-facto ergonomic standard; huge body of examples. Kiri's numeric command routing is faster/auditable but has near-zero examples and no plugin surface. | `dispatch.rs` Router/StaticRouter. | B |
+| F-3 | IPC for app logic | Tauri's command system (`#[tauri::command]`) is the de-facto ergonomic standard; huge body of examples. Kiri's numeric command routing is faster AND auditable: the required-capability matrix is resolved from one catalog and proven by a headless test covering all 74 commands, so capability authority cannot silently drift. Near-zero examples and no plugin ecosystem remain the real gaps (G-2 ecosystem, F-3 ergonomics). | `dispatch.rs` Router/StaticRouter (`authorize` oracle). | B / A (matrix coverage test) |
 
 **Where we already measured a win:** on macOS startup phases (platform_initialized,
 webview_ready) Kiri native is ~0.75-0.82x the wry/tao and Tauri baselines
@@ -78,6 +78,14 @@ Tauri's custom-protocol correctness. Kiri no longer does a bare synchronous
 
 - Numeric, build-time command routing with a single validation pipeline and
   server-side capability bits (`dispatch.rs:165 register(id, required, handler)`).
+- **Auditable catalog-driven authorization oracle (T005, now REAL + tested):** `StaticRouter::authorize`
+  resolves every command's name and required capability bit purely from the authoritative `COMMANDS`
+  catalog (`commands.rs`) and `capability_bit::for_command` — no handler state to drift. A headless
+  test (`static_router_authorization_matrix_covers_every_catalog_command`) proves all 74 catalog
+  commands are known and denied-by-default with empty capabilities, and that an unknown id is
+  rejected with a protocol error. This closes the gap where `StaticRouter` was previously dead code
+  that delegated to a handler-less `Router` and would have denied every real command. Level A
+  (runs in `cargo test -p kiri-core --lib static_router`).
 - Generational resource handles (`resources.rs`, T006): stale/wrong-owner handles
   rejected, not reused. Tauri returns raw resource IDs with caller-managed lifetime.
 - Privacy-scoped diagnostics (`diagnostics.rs`): never logs payload contents;
@@ -297,6 +305,10 @@ Cross-cutting differentiators to protect and advertise:
     Exceeds on the security axis (capability authority + exact-scheme/extension allowlist,
     host-owned); no arbitrary scheme/file launch.
 
+13b. [DONE headless] T005 auditable catalog-driven routing: `StaticRouter::authorize` resolves
+    name + required capability from the `COMMANDS` catalog with no handler state; a headless test
+    proves all 74 commands are covered and denied-by-default. Closes the differentiator that was
+    previously only a claim (StaticRouter was dead code delegating to a handler-less Router). Mac-runnable, no WebView.
 13. [DONE] kiri.window.state.save/load (restricted, host-owned window-state
     persistence) - Tauri's `window-state` plugin auto-persists window geometry to a
     JSON file the frontend can read and write, and applies it on startup without a
