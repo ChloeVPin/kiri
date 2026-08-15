@@ -206,95 +206,104 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     fs_scope.read = true;
     fs_scope.write = true;
 
-    let router =
-        crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
-            // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-            .with_platform(events)
-            .with_fs_service(
-                kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
-                    .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
-            )
-            // G-5: kiri.window.* surface backed by the real native window.
-            .with_window(
-                Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
-                Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))),
-            )
-            // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
-            .with_clipboard(
-                Arc::new(
-                    crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init"),
-                ),
-                Arc::new(Mutex::new(kiri_core::clipboard::ClipboardState::new())),
-            )
-            // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
-            // math plus read-only OS directory discovery, capability-gated (PATH).
-            .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
-            // G-3: kiri.http.get surface (audit item 3). Capability-gated (HTTP) and
-            // constrained to a host allowlist so a granted capability still cannot
-            // reach an unapproved origin; responses are bulk-capped like kiri.fs.
-            .with_http(kiri_core::http::HttpService::new(
-                std::sync::Arc::new(kiri_core::http::StdHttpClient),
-                kiri_core::http::HostAllowlist::new(http_allow_hosts()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
-            // and constrained to a host allowlist so a granted capability still
-            // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
-            .with_shell(kiri_core::shell::ShellService::new(
-                std::sync::Arc::new(crate::shell_ctl::CrossShellRunner::new()),
-                kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4b: kiri.notification.show surface (audit item 5). Capability-gated
-            // (NOTIFICATION) and constrained to a host template allowlist so a
-            // granted capability still cannot render arbitrary title/body; only
-            // pre-approved templates with bounded args may show.
-            .with_notification(kiri_core::notification::NotificationService::new(
-                std::sync::Arc::new(
-                    crate::notification_ctl::cross_notify::CrossNotificationRunner::new(),
-                ),
-                kiri_core::notification::NotificationAllowlist::new(notification_templates()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4c: kiri.dialog.open surface (audit item 7). Capability-gated
-            // (DIALOG) and constrained to a host allowlist of dialog kinds with a
-            // host-owned title, so a granted capability still cannot open an
-            // arbitrary native prompt; only pre-approved dialog kinds may show.
-            .with_dialog(kiri_core::dialog::DialogService::new(
-                std::sync::Arc::new(crate::dialog_ctl::CrossDialogRunner::new()),
-                kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4d: kiri.shortcut.register surface (audit item 8). Capability-gated
-            // (SHORTCUT) and constrained to a host allowlist of exact accelerators mapped
-            // to host-owned actions, so a granted capability still cannot register an
-            // arbitrary global hotkey; only pre-approved accelerators may bind.
-            .with_shortcut(kiri_core::shortcut::ShortcutService::new(
-                std::sync::Arc::new(crate::shortcut_ctl::CrossShortcutRunner::new()),
-                kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4e: kiri.autostart.set/get surface (audit item 9). Capability-gated
-            // (AUTOSTART) and bounded to a host policy (default-deny). Even when the
-            // policy permits it, the runner only registers the host's own binary, so a
-            // granted capability still cannot persist an arbitrary executable. This
-            // exceeds Tauri's autostart plugin, which lets the frontend enable login
-            // launch freely once the capability is present.
-            .with_autostart(kiri_core::autostart::AutostartService::new(
-                std::sync::Arc::new(crate::autostart_ctl::CrossAutostartRunner::new()),
-                kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
-                kiri_core::limits::Limits::default(),
-            ))
-            // G-4f: kiri.store.get/set surface (audit item 10). Capability-gated (STORE)
-            // and bounded to a host allowlist of namespaces, so a granted capability still
-            // cannot read/write outside an approved namespace. This exceeds Tauri's store
-            // plugin, which lets the frontend read/write the whole store once the capability
-            // is present (a cross-feature data-leak surface).
-            .with_store(kiri_core::store::StoreService::new(
-                std::sync::Arc::new(crate::store_ctl::CrossStoreBackend::new()),
-                kiri_core::store::StoreAllowlist::new(store_namespaces()),
-                kiri_core::limits::Limits::default(),
-            ));
+    let router = crate::plugins::PluginHost::build_router_with_plugins(
+        &diagnostics,
+        &resources,
+        caller,
+    )
+    // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+    .with_platform(events)
+    .with_fs_service(
+        kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
+            .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
+    )
+    // G-5: kiri.window.* surface backed by the real native window.
+    .with_window(
+        Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
+        Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))),
+    )
+    // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
+    .with_clipboard(
+        Arc::new(crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init")),
+        Arc::new(Mutex::new(kiri_core::clipboard::ClipboardState::new())),
+    )
+    // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
+    // math plus read-only OS directory discovery, capability-gated (PATH).
+    .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
+    // G-3: kiri.http.get surface (audit item 3). Capability-gated (HTTP) and
+    // constrained to a host allowlist so a granted capability still cannot
+    // reach an unapproved origin; responses are bulk-capped like kiri.fs.
+    .with_http(kiri_core::http::HttpService::new(
+        std::sync::Arc::new(kiri_core::http::StdHttpClient),
+        kiri_core::http::HostAllowlist::new(http_allow_hosts()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
+    // and constrained to a host allowlist so a granted capability still
+    // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
+    .with_shell(kiri_core::shell::ShellService::new(
+        std::sync::Arc::new(crate::shell_ctl::CrossShellRunner::new()),
+        kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4b: kiri.notification.show surface (audit item 5). Capability-gated
+    // (NOTIFICATION) and constrained to a host template allowlist so a
+    // granted capability still cannot render arbitrary title/body; only
+    // pre-approved templates with bounded args may show.
+    .with_notification(kiri_core::notification::NotificationService::new(
+        std::sync::Arc::new(crate::notification_ctl::cross_notify::CrossNotificationRunner::new()),
+        kiri_core::notification::NotificationAllowlist::new(notification_templates()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4c: kiri.dialog.open surface (audit item 7). Capability-gated
+    // (DIALOG) and constrained to a host allowlist of dialog kinds with a
+    // host-owned title, so a granted capability still cannot open an
+    // arbitrary native prompt; only pre-approved dialog kinds may show.
+    .with_dialog(kiri_core::dialog::DialogService::new(
+        std::sync::Arc::new(crate::dialog_ctl::CrossDialogRunner::new()),
+        kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4d: kiri.shortcut.register surface (audit item 8). Capability-gated
+    // (SHORTCUT) and constrained to a host allowlist of exact accelerators mapped
+    // to host-owned actions, so a granted capability still cannot register an
+    // arbitrary global hotkey; only pre-approved accelerators may bind.
+    .with_shortcut(kiri_core::shortcut::ShortcutService::new(
+        std::sync::Arc::new(crate::shortcut_ctl::CrossShortcutRunner::new()),
+        kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4e: kiri.autostart.set/get surface (audit item 9). Capability-gated
+    // (AUTOSTART) and bounded to a host policy (default-deny). Even when the
+    // policy permits it, the runner only registers the host's own binary, so a
+    // granted capability still cannot persist an arbitrary executable. This
+    // exceeds Tauri's autostart plugin, which lets the frontend enable login
+    // launch freely once the capability is present.
+    .with_autostart(kiri_core::autostart::AutostartService::new(
+        std::sync::Arc::new(crate::autostart_ctl::CrossAutostartRunner::new()),
+        kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4f: kiri.store.get/set surface (audit item 10). Capability-gated (STORE)
+    // and bounded to a host allowlist of namespaces, so a granted capability still
+    // cannot read/write outside an approved namespace. This exceeds Tauri's store
+    // plugin, which lets the frontend read/write the whole store once the capability
+    // is present (a cross-feature data-leak surface).
+    .with_store(kiri_core::store::StoreService::new(
+        std::sync::Arc::new(crate::store_ctl::CrossStoreBackend::new()),
+        kiri_core::store::StoreAllowlist::new(store_namespaces()),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-4g: kiri.deeplink.register surface (audit item 11). Capability-gated
+    // (DEEPLINK) and bounded to a host allowlist of exact schemes, so a granted
+    // capability still cannot squat on an arbitrary URI scheme. This exceeds
+    // Tauri's deep-link plugin, which lets the frontend register any scheme once
+    // the capability is present (a scheme-squatting surface).
+    .with_deeplink(kiri_core::deeplink::DeeplinkService::new(
+        std::sync::Arc::new(crate::deeplink_ctl::cross_deeplink::CrossDeeplinkRunner::new()),
+        kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
+        kiri_core::limits::Limits::default(),
+    ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
@@ -507,6 +516,10 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// frontend read/write the whole store once the capability is present.
 fn store_namespaces() -> Vec<kiri_core::store::StoreNamespace> {
     vec![kiri_core::store::StoreNamespace { prefix: "app.prefs".to_string() }]
+}
+
+fn deeplink_schemes() -> Vec<kiri_core::deeplink::DeeplinkScheme> {
+    vec![kiri_core::deeplink::DeeplinkScheme { scheme: "kiri-app".to_string() }]
 }
 
 fn autostart_policy() -> bool {

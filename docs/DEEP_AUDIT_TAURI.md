@@ -229,6 +229,22 @@ axis (security, latency, or audibility), not just match it.
     capability-denied. Exceeds on the security axis (capability authority + namespace allowlist,
     server-side); no cross-namespace reach.
 
+11. [DONE] kiri.deeplink.register (restricted, host-scheme-allowlisted) - Tauri's
+    deep-link plugin, when the capability is granted, lets the frontend register an
+    arbitrary URI scheme, a scheme-squatting / handler-hijack surface (a malicious app
+    can bind a scheme owned by another app, e.g. `zoom://`, `ssh://`, and intercept
+    launches meant for it). Kiri gates `kiri.deeplink.register` behind the DEEPLINK
+    capability bit (17) AND a host allowlist of exact schemes; the frontend may only
+    register a host-approved scheme, so it can never squat on another app's scheme. The
+    runner only ever receives a host-owned, allowlisted scheme. Implemented in
+    kiri-core::deeplink (capability bit 17, command id 47) with host seams in
+    crates/kiri-runtime/src/deeplink_ctl.rs (CrossDeeplinkRunner/WinDeeplinkRunner,
+    host-owned registrar) wired into both backends via `.with_deeplink(...)`. Both paths
+    cross-checked with cargo clippy --target x86_64-pc-windows-msvc. Headless tests cover
+    allowed-scheme-register, unknown-scheme-denied, and capability-denied-without-bit.
+    Exceeds on the security axis (capability authority + exact-scheme allowlist,
+    host-owned); no arbitrary scheme squatting.
+
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).

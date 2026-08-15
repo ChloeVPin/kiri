@@ -120,6 +120,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // capability bit even though it is granted here; the namespace allowlist is the
     // second gate, so this still exceeds Tauri's unscoped store plugin.
     caps.set(crate::dispatch::capability_bit::STORE);
+    // G-4g: the trusted frontend may use the restricted, host-scheme-allowlisted
+    // deep-link surface (kiri.deeplink.register). Authorization still flows through the
+    // DEEPLINK capability bit even though it is granted here; the scheme allowlist is the
+    // second gate, so this still exceeds Tauri's unscoped deep-link plugin.
+    caps.set(crate::dispatch::capability_bit::DEEPLINK);
     caps
 }
 

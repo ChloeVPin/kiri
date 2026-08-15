@@ -3,12 +3,14 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/kiri.svg">
   <source media="(prefers-color-scheme: light)" srcset="assets/kiri-dark.svg">
-  <img alt="Kiri logo" src="assets/kiri.svg" width="180">
+  <img alt="Kiri logo" src="assets/kiri.svg" width="180" align="center">
 </picture>
 
-# Kiri
+<h1 align="center">Kiri</h1>
 
-Cross-platform native desktop app runtime for Windows, macOS, and Linux · direct WebView2 host on Windows, wry/tao host on macOS and Linux · platform-neutral control-plane core · Tauri and Wry baselines measured on a shared startup-marker schema
+<p align="center">
+  Cross-platform native desktop app runtime for Windows, macOS, and Linux &middot; direct WebView2 host on Windows, wry/tao host on macOS and Linux &middot; platform-neutral control-plane core &middot; Tauri and Wry baselines measured on a shared startup-marker schema
+</p>
 
 </div>
 
@@ -26,7 +28,7 @@ on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
 identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). All three platforms (Windows, macOS, Linux) are equal targets; the macOS dev machine exercises the native wry/tao backend locally while Windows and Linux are exercised by CI and cross-checks.
 
-- 172 tests pass (cargo test --workspace: 147 kiri-core + 25 kiri-runtime)
+- 175 tests pass (cargo test --workspace: 150 kiri-core + 25 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records

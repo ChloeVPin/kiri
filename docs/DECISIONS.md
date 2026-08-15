@@ -68,12 +68,12 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 wry/tao backend on macOS and Linux
 
 - **Status**: decided (T001), superseded by D-009 (see note)
-- **Context**: the original corpus rule was Windows-first: make the Windows
-  path work first and only cross-check other platforms. That constraint was
-  removed (see D-009/D-010). The host now runs natively on every desktop
-  platform from one codebase, and the primary development and gating machine
-  is macOS, so the cross (wry/tao) backend is the day-to-day verification
-  target here while the Windows direct backend is cross-checked and CI-run.
+- **Context**: the original corpus rule prioritized Windows ahead of the other
+  platforms. That constraint was removed (see D-009/D-010). The host now runs
+  natively on every desktop platform from one codebase, and all three platforms
+  (Windows, macOS, Linux) are equal targets. The macOS development machine is the
+  day-to-day verification target for the cross (wry/tao) backend, while the
+  Windows direct backend is cross-checked and CI-run.
 - **Decision**: `kiri-runtime` is a platform-neutral facade. On Windows it
   uses the direct Win32 + WebView2 host (`host_windows.rs`); on macOS and
   Linux it uses a wry/tao host (`host_cross.rs`). Both record the same nine

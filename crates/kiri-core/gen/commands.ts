@@ -93,9 +93,11 @@ export interface KiriCommands {
   kiri_store_get(arg: unknown): Promise<unknown>;
   /** kiri_store_set (id=46, capability="store", execution="io") */
   kiri_store_set(arg: unknown): Promise<unknown>;
+  /** kiri_deeplink_register (id=47, capability="deeplink", execution="io") */
+  kiri_deeplink_register(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set", "kiri.deeplink.register"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -145,6 +147,7 @@ export function commandId(name: string): number | undefined {
     case "kiri.autostart.get": return 44;
     case "kiri.store.get": return 45;
     case "kiri.store.set": return 46;
+    case "kiri.deeplink.register": return 47;
     default: return undefined;
   }
 }

@@ -53,6 +53,7 @@
     "kiri.autostart.get": 44,
     "kiri.store.get": 45,
     "kiri.store.set": 46,
+    "kiri.deeplink.register": 47,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -310,6 +311,17 @@
       },
     },
 
+    // Restricted, host-scheme-allowlisted deep-link registration
+    // (kiri.deeplink.register). The host owns the scheme allowlist; the frontend
+    // may only register a host-approved scheme, never squat on an arbitrary scheme.
+    deeplink: {
+      register: function (scheme) {
+        return call("kiri.deeplink.register", { scheme: scheme }).then(function (r) {
+          return { scheme: r.scheme };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -339,5 +351,6 @@
   global.kiri.shortcut = Kiri.shortcut;
   global.kiri.autostart = Kiri.autostart;
   global.kiri.store = Kiri.store;
+  global.kiri.deeplink = Kiri.deeplink;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

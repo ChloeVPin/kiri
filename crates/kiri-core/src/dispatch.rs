@@ -143,6 +143,11 @@ pub mod command_id {
     /// Capability-scoped, host-namespace-allowlisted store write (kiri.store.set, audit
     /// item 10). Same namespace boundary as STORE_GET; values are bulk-capped.
     pub const STORE_SET: u32 = 46;
+    /// Capability-scoped, host-scheme-allowlisted deep-link registration
+    /// (kiri.deeplink.register, audit item 11). A granted DEEPLINK capability still
+    /// cannot bind an arbitrary scheme; only a host-allowlisted exact scheme may be
+    /// registered, inverting Tauri's deep-link plugin (scheme-squatting surface).
+    pub const DEEPLINK_REGISTER: u32 = 47;
 }
 
 /// Capability bits used by built-in control commands.
@@ -213,6 +218,11 @@ pub mod capability_bit {
     /// Bit 16 (audit item 10). Exceeds Tauri's store plugin on the security axis: a
     /// granted capability still cannot read/write outside an approved namespace.
     pub const STORE: u32 = 16;
+    /// Authorizes restricted, host-scheme-allowlisted deep-link registration
+    /// (kiri.deeplink.register). Bit 17 (audit item 11). Exceeds Tauri's deep-link
+    /// plugin on the security axis: a granted capability still cannot bind an
+    /// arbitrary scheme; only a host-allowlisted exact scheme may be registered.
+    pub const DEEPLINK: u32 = 17;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -268,6 +278,7 @@ pub mod capability_bit {
             crate::dispatch::command_id::STORE_GET | crate::dispatch::command_id::STORE_SET => {
                 STORE
             }
+            crate::dispatch::command_id::DEEPLINK_REGISTER => DEEPLINK,
             _ => PING,
         }
     }
@@ -615,6 +626,17 @@ impl Router {
     /// are bounded by the shared bulk-object limit.
     pub fn with_store(mut self, service: crate::store::StoreService) -> Self {
         for (id, required, handler) in crate::store::store_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.deeplink.* command set (audit item 11). Deep-link
+    /// registration is capability-gated (bit DEEPLINK) AND bounded to a host
+    /// allowlist of exact schemes, so a granted capability still cannot squat on an
+    /// arbitrary URI scheme. Inverts Tauri's deep-link plugin trust model.
+    pub fn with_deeplink(mut self, service: crate::deeplink::DeeplinkService) -> Self {
+        for (id, required, handler) in crate::deeplink::deeplink_handlers(service) {
             self.register(id, required, handler);
         }
         self

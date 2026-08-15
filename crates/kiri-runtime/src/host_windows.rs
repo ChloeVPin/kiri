@@ -399,6 +399,16 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(crate::store_ctl::WinStoreBackend::new()),
                 kiri_core::store::StoreAllowlist::new(store_namespaces()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4g: kiri.deeplink.register surface (audit item 11). Capability-gated
+            // (DEEPLINK) and bounded to a host allowlist of exact schemes, so a granted
+            // capability still cannot squat on an arbitrary URI scheme. This exceeds
+            // Tauri's deep-link plugin, which lets the frontend register any scheme once
+            // the capability is present (a scheme-squatting surface).
+            .with_deeplink(kiri_core::deeplink::DeeplinkService::new(
+                std::sync::Arc::new(crate::deeplink_ctl::win_deeplink::WinDeeplinkRunner::new()),
+                kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -816,6 +826,10 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// frontend read/write the whole store once the capability is present.
 fn store_namespaces() -> Vec<kiri_core::store::StoreNamespace> {
     vec![kiri_core::store::StoreNamespace { prefix: "app.prefs".to_string() }]
+}
+
+fn deeplink_schemes() -> Vec<kiri_core::deeplink::DeeplinkScheme> {
+    vec![kiri_core::deeplink::DeeplinkScheme { scheme: "kiri-app".to_string() }]
 }
 
 fn autostart_policy() -> bool {

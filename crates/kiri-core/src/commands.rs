@@ -59,6 +59,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "shell" => crate::dispatch::capability_bit::SHELL,
         "notification" => crate::dispatch::capability_bit::NOTIFICATION,
         "dialog" => crate::dispatch::capability_bit::DIALOG,
+        "deeplink" => crate::dispatch::capability_bit::DEEPLINK,
         _ => 0,
     }
 }
@@ -305,6 +306,15 @@ pub const COMMANDS: &[CommandSpec] = &[
     // store (exceeds Tauri store plugin on the security axis) ---
     CommandSpec { name: "kiri.store.get", id: 45, capability: "store", execution: "io", arity: 1 },
     CommandSpec { name: "kiri.store.set", id: 46, capability: "store", execution: "io", arity: 1 },
+    // --- audit item 11: kiri.deeplink.register (G-4g) restricted, host-scheme-allowlisted
+    // deep-link registration (exceeds Tauri deep-link plugin on the security axis) ---
+    CommandSpec {
+        name: "kiri.deeplink.register",
+        id: 47,
+        capability: "deeplink",
+        execution: "io",
+        arity: 1,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).
