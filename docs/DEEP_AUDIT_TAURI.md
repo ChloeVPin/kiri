@@ -259,12 +259,11 @@ clean. (A)
       deliberately outside Kiri's release contract. They are not treated as blockers.
       The supported release guarantee is unsigned OS artifacts plus Kiri's
       application-level signed-update manifest, which authenticates the exact bytes
-      downloaded by the updater. The checked-in public key currently matches the
-      deterministic integration-test fixture; `package.sh` rejects that known test
-      seed for publication. Before the first public tag, rotate the pinned public key
-      to a fresh Ed25519 key and store its private half only as the
-      `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret. This is update-key setup, not
-      Apple code signing.
+      downloaded by the updater. A fresh Ed25519 public key is now pinned in both
+      native backends; its private half must be supplied only as the
+      `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret before the first public tag.
+      The deterministic integration-test seed remains rejected for publication.
+      This is update-key setup, not Apple code signing.
 
 
 ## 6b. Ranked "exceed Tauri" next targets (Mac-headless-runnable)

@@ -93,11 +93,11 @@ and is mirrored in `README.md`. Handoff notes are written to
 
 Next work: T008 (WebView2 shared-buffer) and the Windows leg of T009 depend on
 real Windows/performance hardware. G-1 mobile support and G-2 ecosystem
-breadth remain larger roadmap items. Before the first public release tag,
-rotate the pinned update public key away from the deterministic integration
-test fixture and store its private half as `KIRI_UPDATE_SIGNING_KEY_HEX`.
-The `correctness` workflow is the native all-OS correctness path; it includes
-the Windows smoke/stress acceptance on `windows-latest`.
+breadth remain larger roadmap items. A fresh update public key is now pinned
+in the runtime; its private half must be supplied to GitHub as
+`KIRI_UPDATE_SIGNING_KEY_HEX` before the first public release tag. The
+`correctness` workflow is the native all-OS correctness path; it includes the
+Windows smoke/stress acceptance on `windows-latest`.
 
 ## Conventions
 
