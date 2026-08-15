@@ -171,7 +171,7 @@ impl PathScope {
 // /private/var symlink equivalence and Windows verbatim prefixes, normalizes
 // separators to "/", case-folds on Windows, and lexically collapses "."/".."
 // so an escape like root/../etc cannot satisfy containment.
-fn normalize_path_key(p: &std::path::Path) -> String {
+pub(crate) fn normalize_path_key(p: &std::path::Path) -> String {
     let raw = p.as_os_str().to_string_lossy().into_owned();
     // macOS: /private/var <-> /var equivalence (symlink).
     let s = if let Some(rest) = raw.strip_prefix("/private/var/") {

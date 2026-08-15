@@ -335,10 +335,11 @@ mod tests {
     #[test]
     fn join_is_os_normalized() {
         let r = router();
+        let base = if cfg!(windows) { r"\a" } else { "/a" };
         let out = dispatch(
             &r,
             command_id::PATH_JOIN,
-            serde_json::json!({ "path": "/a", "segments": ["b", "c"] }),
+            serde_json::json!({ "path": base, "segments": ["b", "c"] }),
         );
         assert_eq!(out["payload"]["path"], if cfg!(windows) { r"\a\b\c" } else { "/a/b/c" });
     }
@@ -346,8 +347,10 @@ mod tests {
     #[test]
     fn is_absolute_reports_correctly() {
         let r = router();
-        let abs = dispatch(&r, command_id::PATH_IS_ABSOLUTE, serde_json::json!({ "path": "/a/b" }));
-        assert_eq!(abs["payload"]["isAbsolute"], !cfg!(windows) || true);
+        let absolute = if cfg!(windows) { r"C:\a\b" } else { "/a/b" };
+        let abs =
+            dispatch(&r, command_id::PATH_IS_ABSOLUTE, serde_json::json!({ "path": absolute }));
+        assert_eq!(abs["payload"]["isAbsolute"], true);
         let rel = dispatch(&r, command_id::PATH_IS_ABSOLUTE, serde_json::json!({ "path": "a/b" }));
         assert_eq!(rel["payload"]["isAbsolute"], false);
     }

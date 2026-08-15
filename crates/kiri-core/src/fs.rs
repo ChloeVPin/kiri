@@ -18,7 +18,7 @@ use std::sync::Arc;
 use base64::Engine;
 use serde_json::Value;
 
-use crate::capabilities::{CapabilityBits, GlobScope, PathScope};
+use crate::capabilities::{normalize_path_key, CapabilityBits, GlobScope, PathScope};
 use crate::error::{Error, Result};
 use crate::limits::Limits;
 
@@ -204,8 +204,8 @@ pub fn fs_handlers(service: FsService) -> Vec<(u32, CapabilityBits, crate::dispa
 /// suitable for glob matching. Returns None if `path` is not contained by the
 /// root (should not happen after `scope.allows`, but fail safe to deny).
 fn path_relative_to_root(scope: &PathScope, path: &str) -> Option<String> {
-    let root_key = normalize_for_rel(&scope.root);
-    let path_key = normalize_for_rel(std::path::Path::new(path));
+    let root_key = normalize_path_key(&scope.root);
+    let path_key = normalize_path_key(std::path::Path::new(path));
     if path_key == root_key {
         return Some(String::new());
     }
@@ -213,39 +213,6 @@ fn path_relative_to_root(scope: &PathScope, path: &str) -> Option<String> {
         return Some(rest.to_string());
     }
     None
-}
-
-/// Lightweight normalization for relative computation: forward slashes, collapse
-/// `.`/`..`, macOS /private/var equivalence. Reuses the same spirit as
-/// `normalize_path_key` but preserves case on Windows for display fidelity.
-fn normalize_for_rel(p: &std::path::Path) -> String {
-    let raw = p.as_os_str().to_string_lossy().into_owned();
-    let s = if let Some(rest) = raw.strip_prefix("/private/var/") {
-        format!("/var/{rest}")
-    } else if let Some(rest) = raw.strip_prefix("/private/") {
-        format!("/{rest}")
-    } else {
-        raw
-    };
-    let s = if let Some(rest) = s.strip_prefix("\\?\\UNC\\") {
-        format!("\\{rest}")
-    } else if let Some(rest) = s.strip_prefix("\\?\\") {
-        rest.to_string()
-    } else {
-        s
-    };
-    let s = s.replace('\\', "/");
-    let mut out: Vec<&str> = Vec::new();
-    for comp in s.split('/') {
-        match comp {
-            "" | "." => {}
-            ".." => {
-                out.pop();
-            }
-            other => out.push(other),
-        }
-    }
-    out.join("/")
 }
 
 #[cfg(test)]
