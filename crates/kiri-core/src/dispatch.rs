@@ -59,6 +59,26 @@ pub mod capability_bit {
     pub const APP: u32 = 4;
     /// Authorizes emitting/listening to named events. Bit 5 (R-3).
     pub const EVENT: u32 = 5;
+
+    /// Map a command id to the capability bit it requires. Keeps plugin command
+    /// registration in lockstep with the inline `Router::with_*` definitions so
+    /// a command can only be registered with the authority it is supposed to
+    /// enforce. Unknown ids map to `PING` (harmless liveness-only authority).
+    pub fn for_command(id: u32) -> u32 {
+        match id {
+            crate::dispatch::command_id::PING => PING,
+            crate::dispatch::command_id::DIAGNOSTICS => DIAGNOSTICS,
+            crate::dispatch::command_id::RESOURCES_OPEN
+            | crate::dispatch::command_id::RESOURCES_CLOSE => RESOURCES,
+            crate::dispatch::command_id::PLATFORM_OS
+            | crate::dispatch::command_id::PLATFORM_ARCH => PLATFORM,
+            crate::dispatch::command_id::APP_VERSION => APP,
+            crate::dispatch::command_id::EVENT_EMIT | crate::dispatch::command_id::EVENT_LISTEN => {
+                EVENT
+            }
+            _ => PING,
+        }
+    }
 }
 
 /// A command handler. Receives the authoritative caller, the request id, and

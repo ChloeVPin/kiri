@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use std::borrow::Cow;
@@ -188,15 +189,14 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
-    let router = crate::plugins::PluginHost::build_router_with_plugins()
-        .with_diagnostics(diagnostics.clone())
-        // T011: real resource table. kiri.open/kiri.close mutate this table
-        // and keep the diagnostics open-resource count honest and dynamic.
-        .with_resources(diagnostics.clone(), caller)
-        // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-        .with_platform(events);
-
-    let resources = Rc::new(RefCell::new(ResourceTable::<()>::new()));
+    // Shared generational resource table owned by the host. The resources plugin
+    // binds this exact instance via the ABI context, so kiri.open/kiri.close
+    // mutate it and keep the diagnostics open-resource count honest and dynamic.
+    let resources: Arc<Mutex<ResourceTable<()>>> = Arc::new(Mutex::new(ResourceTable::<()>::new()));
+    let router =
+        crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
+            // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+            .with_platform(events);
 
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -269,7 +269,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     let mut sink = diagnostics.clone();
                     let response = router.dispatch(caller, &caller_caps, &request, &mut sink);
                     // Reflect any resource churn so the panel stays honest.
-                    diagnostics.set_open_resources(resources.borrow().len() as u32);
+                    diagnostics.set_open_resources(resources.lock().unwrap().len() as u32);
                     post_response(&webview_slot, &response);
                     return;
                 }

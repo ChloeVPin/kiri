@@ -191,7 +191,13 @@ mod control_plane_tests {
         let mut caps = CapabilityBits::empty();
         caps.set(kiri_core::dispatch::capability_bit::PING);
         let events = kiri_core::platform::EventBus::new();
-        let router = crate::plugins::PluginHost::build_router_with_plugins().with_platform(events);
+        let diagnostics = kiri_core::diagnostics::Diagnostics::new();
+        let resources = std::sync::Arc::new(std::sync::Mutex::new(
+            kiri_core::resources::ResourceTable::<()>::new(),
+        ));
+        let router =
+            crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
+                .with_platform(events);
         let mut sink = NoopTraceSink;
         router.dispatch(caller, &caps, &request, &mut sink)
     }

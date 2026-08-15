@@ -127,7 +127,7 @@ pub(crate) struct HostRuntime {
     pub caller_caps: CapabilityBits,
     pub router: Router,
     pub diagnostics: Diagnostics,
-    pub resources: ResourceTable<()>,
+    pub resources: std::sync::Arc<std::sync::Mutex<ResourceTable<()>>>,
     pub env: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     pub controller: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Controller,
     pub webview: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
@@ -252,15 +252,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
-    let router = crate::plugins::PluginHost::build_router_with_plugins()
-        .with_diagnostics(diagnostics.clone())
-        // T011: real resource table. kiri.open/kiri.close mutate this table
-        // and keep the diagnostics open-resource count honest and dynamic.
-        .with_resources(diagnostics.clone(), caller)
-        // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-        .with_platform(events);
-
-    let resources = ResourceTable::<()>::new();
+    // Shared generational resource table owned by the host. The resources plugin
+    // binds this exact instance via the ABI context, so kiri.open/kiri.close
+    // mutate it and keep the diagnostics open-resource count honest and dynamic.
+    let resources: std::sync::Arc<std::sync::Mutex<ResourceTable<()>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(ResourceTable::<()>::new()));
+    let router =
+        crate::plugins::PluginHost::build_router_with_plugins(&diagnostics, &resources, caller)
+            // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
+            .with_platform(events);
 
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
@@ -608,7 +608,7 @@ fn handle_web_message(
             Ok(request) => {
                 let mut sink = rt.diagnostics.clone();
                 let response = rt.router.dispatch(rt.caller, &rt.caller_caps, &request, &mut sink);
-                rt.diagnostics.set_open_resources(rt.resources.len() as u32);
+                rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
                 let js = format!(
                     "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
                     serde_json::to_string(&response).unwrap_or_default()
