@@ -110,6 +110,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // SHORTCUT capability bit even though it is granted here; the host allowlist is
     // the second gate, so this still exceeds Tauri's unrestricted global-shortcut plugin.
     caps.set(crate::dispatch::capability_bit::SHORTCUT);
+    // G-4e: the trusted frontend may use the restricted, host-policy-gated autostart
+    // surface (kiri.autostart.set/get). Authorization still flows through the AUTOSTART
+    // capability bit even though it is granted here; the host policy is the second gate,
+    // so this still exceeds Tauri's unrestricted autostart plugin.
+    caps.set(crate::dispatch::capability_bit::AUTOSTART);
     caps
 }
 

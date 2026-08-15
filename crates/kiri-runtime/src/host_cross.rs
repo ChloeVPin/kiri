@@ -273,6 +273,17 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::sync::Arc::new(crate::shortcut_ctl::CrossShortcutRunner::new()),
                 kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-4e: kiri.autostart.set/get surface (audit item 9). Capability-gated
+            // (AUTOSTART) and bounded to a host policy (default-deny). Even when the
+            // policy permits it, the runner only registers the host's own binary, so a
+            // granted capability still cannot persist an arbitrary executable. This
+            // exceeds Tauri's autostart plugin, which lets the frontend enable login
+            // launch freely once the capability is present.
+            .with_autostart(kiri_core::autostart::AutostartService::new(
+                std::sync::Arc::new(crate::autostart_ctl::CrossAutostartRunner::new()),
+                kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
+                kiri_core::limits::Limits::default(),
             ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
@@ -475,6 +486,15 @@ fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
 /// global-shortcut plugin trust model: a granted SHORTCUT capability still cannot
 /// register an arbitrary global hotkey, so a malicious frontend cannot hijack desktop
 /// combos (e.g. Cmd+Q) globally.
+/// Host policy for `kiri.autostart.*` (audit item 9, G-4e). Default-deny: autostart
+/// is disabled unless the host explicitly opts in. The frontend can only toggle
+/// `enabled`; it cannot choose which executable persists (the runner registers only
+/// the host's own binary). Inverts Tauri's autostart plugin trust model, which lets
+/// the frontend enable launch-at-login freely once the capability is present.
+fn autostart_policy() -> bool {
+    false
+}
+
 fn shortcut_bindings() -> Vec<kiri_core::shortcut::ShortcutBinding> {
     vec![
         kiri_core::shortcut::ShortcutBinding {

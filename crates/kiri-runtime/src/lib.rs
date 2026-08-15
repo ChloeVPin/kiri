@@ -11,6 +11,7 @@
 //! ready watchdog.
 
 pub mod assets;
+pub mod autostart_ctl;
 pub mod clipboard_ctl;
 pub mod dialog_ctl;
 pub mod markers;

@@ -127,6 +127,14 @@ pub mod command_id {
     /// register an arbitrary global hotkey, so a malicious frontend cannot hijack desktop
     /// combos (e.g. Cmd+Q) globally.
     pub const SHORTCUT_REGISTER: u32 = 42;
+    /// Capability-scoped, host-policy-gated autostart (kiri.autostart.set/get, audit
+    /// item 9). Exceeds Tauri's autostart plugin on the security axis: the runner only
+    /// ever registers the host's own binary, and the host policy default-denies; the
+    /// frontend can only toggle `enabled` and cannot choose which executable persists.
+    pub const AUTOSTART_SET: u32 = 43;
+    /// Query current launch-at-login state (audit item 9). Same host-policy gate as
+    /// AUTOSTART_SET; meaningless when the host policy denies autostart.
+    pub const AUTOSTART_GET: u32 = 44;
 }
 
 /// Capability bits used by built-in control commands.
@@ -188,6 +196,11 @@ pub mod capability_bit {
     /// a granted capability still cannot register an arbitrary global hotkey; only a
     /// host-approved accelerator mapped to a host-owned action may bind.
     pub const SHORTCUT: u32 = 14;
+    /// Authorizes restricted, host-policy-gated autostart (kiri.autostart.set/get).
+    /// Bit 15 (audit item 9). Exceeds Tauri's autostart plugin on the security axis:
+    /// a granted capability still cannot persist an arbitrary binary; only the host's
+    /// own binary may be toggled, and only when the host policy permits.
+    pub const AUTOSTART: u32 = 15;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -238,6 +251,8 @@ pub mod capability_bit {
             crate::dispatch::command_id::NOTIFY => NOTIFICATION,
             crate::dispatch::command_id::DIALOG_OPEN => DIALOG,
             crate::dispatch::command_id::SHORTCUT_REGISTER => SHORTCUT,
+            crate::dispatch::command_id::AUTOSTART_SET
+            | crate::dispatch::command_id::AUTOSTART_GET => AUTOSTART,
             _ => PING,
         }
     }
@@ -563,6 +578,17 @@ impl Router {
     /// register an arbitrary global hotkey; only pre-approved accelerators may bind.
     pub fn with_shortcut(mut self, service: crate::shortcut::ShortcutService) -> Self {
         for (id, required, handler) in crate::shortcut::shortcut_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.autostart.* command set (audit item 9). Autostart is
+    /// capability-gated (bit AUTOSTART) AND bounded to a host policy that
+    /// default-denies; even when permitted, the runner only registers the host's own
+    /// binary, so a granted capability still cannot persist an arbitrary executable.
+    pub fn with_autostart(mut self, service: crate::autostart::AutostartService) -> Self {
+        for (id, required, handler) in crate::autostart::autostart_handlers(service) {
             self.register(id, required, handler);
         }
         self

@@ -285,6 +285,22 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "io",
         arity: 1,
     },
+    // --- audit item 9: kiri.autostart.set (G-4e) restricted, host-policy-gated autostart
+    // (exceeds Tauri autostart plugin on the security axis) ---
+    CommandSpec {
+        name: "kiri.autostart.set",
+        id: 43,
+        capability: "autostart",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.autostart.get",
+        id: 44,
+        capability: "autostart",
+        execution: "pure",
+        arity: 0,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

@@ -203,6 +203,19 @@ axis (security, latency, or audibility), not just match it.
 
 8. [DONE] kiri.shortcut.register (restricted, host-allowlisted) - Tauri's `global-shortcut` plugin lets the frontend register arbitrary global key combos once the capability is present, a focus/UX-hijack surface (a malicious app could bind Cmd+Q or a password-manager chord globally). Kiri gates `kiri.shortcut.register` behind the SHORTCUT capability bit (14) AND a host allowlist of exact accelerators, each mapped to a host-owned action id; the frontend cannot supply or alter the accelerator or action. The runner only ever receives a host-owned, allowlisted accelerator, so JS can never register an arbitrary global hotkey. Implemented in kiri-core::shortcut (capability bit 14, command id 42) with host seams in crates/kiri-runtime/src/shortcut_ctl.rs (CrossShortcutRunner/WinShortcutRunner, host-owned registry) wired into both backends via `.with_shortcut(...)`. Both paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. Headless tests cover accelerator allow, unknown-accelerator deny, and capability-denied. Exceeds on the security axis (capability authority + host accelerator/action allowlist, server-side); no client expansion.
 
+9. [DONE] kiri.autostart.set/get (restricted, host-policy-gated) - Tauri's `autostart`
+   plugin lets the frontend enable launch-at-login freely once the capability is present,
+   a persistence surface. Kiri gates `kiri.autostart.*` behind the AUTOSTART capability bit
+   (15) AND a host policy that default-denies; even when permitted, the runner only
+   registers the host's own binary (host-owned target), so the frontend cannot choose
+   which executable persists. Implemented in kiri-core::autostart (capability bit 15,
+   command ids 43/44) with host seams in crates/kiri-runtime/src/autostart_ctl.rs
+   (CrossAutostartRunner/WinAutostartRunner, host-owned store) wired into both backends
+   via `.with_autostart(...)`. Both paths cross-checked with cargo clippy --target
+   x86_64-pc-windows-msvc. Headless tests cover permitted-set, policy-denied, and
+   capability-denied. Exceeds on the security axis (capability authority + default-deny
+   host policy + host-owned target); no client choice of binary.
+
 Cross-cutting differentiators to protect and advertise:
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).

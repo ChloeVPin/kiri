@@ -7,6 +7,7 @@
 //! It deliberately contains no platform transport code. Windows, macOS, and
 //! Linux backends map these contracts onto their physical WebView transports.
 
+pub mod autostart;
 pub mod caller;
 pub mod capabilities;
 pub mod clipboard;
@@ -33,6 +34,7 @@ pub mod validate;
 pub mod window;
 pub mod wire;
 
+pub use autostart::{AutostartAllowlist, AutostartService};
 pub use caller::{CallerId, CallerRegistry};
 pub use capabilities::{CapabilityBits, CapabilityId, GlobScope, PathScope, Scope};
 pub use clipboard::{ClipboardController, ClipboardState};

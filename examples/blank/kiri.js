@@ -49,6 +49,8 @@
     "kiri.notification.show": 40,
     "kiri.dialog.open": 41,
     "kiri.shortcut.register": 42,
+    "kiri.autostart.set": 43,
+    "kiri.autostart.get": 44,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -271,6 +273,23 @@
       },
     },
 
+    // Restricted, host-policy-gated autostart (kiri.autostart.set/get). The host owns
+    // the policy (default-deny) and the target binary; the frontend can only toggle
+    // launch-at-login. This exceeds Tauri's autostart plugin, which lets the frontend
+    // enable login launch freely once the capability is present.
+    autostart: {
+      set: function (enabled) {
+        return call("kiri.autostart.set", { enabled: enabled }).then(function (r) {
+          return { enabled: r.enabled, managed: r.managed };
+        });
+      },
+      get: function () {
+        return call("kiri.autostart.get", {}).then(function (r) {
+          return { enabled: r.enabled, managed: r.managed };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -298,5 +317,6 @@
   global.kiri.notification = Kiri.notification;
   global.kiri.dialog = Kiri.dialog;
   global.kiri.shortcut = Kiri.shortcut;
+  global.kiri.autostart = Kiri.autostart;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);
