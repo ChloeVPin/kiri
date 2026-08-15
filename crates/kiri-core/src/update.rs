@@ -527,11 +527,12 @@ mod tests {
     fn signed_asset_verifies_with_correct_key() {
         let signing_key_hex = hex::encode([7u8; 32]);
         let pk = hex::encode(VerifyingKey::from(&SigningKey::from_bytes(&[7u8; 32])).to_bytes());
+        let platform = current_platform_key();
         let bytes = b"fake-installer-bytes";
         let m = UpdateManifestBuilder::new("0.2.0")
             .add_signed_asset(
-                "darwin-aarch64",
-                "https://example.invalid/kiri-0.2.0.dmg",
+                platform.clone(),
+                format!("https://example.invalid/kiri-0.2.0-{platform}.bin"),
                 bytes,
                 &signing_key_hex,
             )
