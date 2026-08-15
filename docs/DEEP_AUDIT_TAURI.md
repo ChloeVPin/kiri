@@ -97,9 +97,14 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
 
 ## 5. Immediate workstream (this loop, headless only)
 
-- [x] Repo state verified: T001-T007, T010 done; T008 + T009-Windows blocked on
-      Windows/perf HW. `cargo test --workspace` green (131 tests: 106 kiri-core +
-      25 kiri-runtime). PUBLIC repo => GitHub-hosted CI is free/unlimited for all
+- [x] Repo state verified: T001-T010 done (T001-T007, T010 earlier; R-1 kiri://
+      content-type/Range/ETag, R-2 real plugin ABI, R-3..R-5 JS surface, R-5 window.*,
+      and audit-6..13 including clipboard/path/os/http/shell/notification/fs-scope/
+      dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
+      shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
+      real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
+      --workspace` green (183 tests: 158 kiri-core + 25 kiri-runtime). All of §6b's 13
+      ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
       assume CI is exhausted.
