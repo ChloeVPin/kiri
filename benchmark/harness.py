@@ -22,6 +22,7 @@ def main():
     parser.add_argument('--name', required=True)
     parser.add_argument('--runs', type=int, default=20)
     parser.add_argument('--warmups', type=int, default=3)
+    parser.add_argument('--timeout-seconds', type=float, default=60.0)
     parser.add_argument('--output', required=True)
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -40,13 +41,39 @@ def main():
     }
 
     for _ in range(args.warmups):
-        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=args.timeout_seconds,
+        )
 
     samples_ms = []
     runs = []
     for i in range(args.runs):
         t0 = time.perf_counter_ns()
-        proc = subprocess.run(command, capture_output=True, text=True)
+        try:
+            proc = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            elapsed_ms = (time.perf_counter_ns() - t0) / 1_000_000
+            runs.append({
+                'index': i,
+                'elapsed_ms': elapsed_ms,
+                'returncode': 124,
+                'stdout': (exc.stdout or '')[-4096:],
+                'stderr': (
+                    (exc.stderr or '') +
+                    f'benchmark command timed out after {args.timeout_seconds:g}s'
+                )[-4096:],
+            })
+            samples_ms.append(elapsed_ms)
+            break
         t1 = time.perf_counter_ns()
         elapsed_ms = (t1 - t0) / 1_000_000
         samples_ms.append(elapsed_ms)

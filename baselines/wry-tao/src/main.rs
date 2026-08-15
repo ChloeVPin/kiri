@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tao::event::{Event, WindowEvent};
@@ -179,7 +179,9 @@ fn main() {
     let mut frame_at: Option<Instant> = None;
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        // Wake periodically so the smoke watchdog and exit timer are checked
+        // even when WebView2 has no native event to dispatch on Windows.
+        *control_flow = ControlFlow::WaitUntil(Instant::now() + Duration::from_millis(25));
         match event {
             Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
                 // Keep the WebView alive for the whole loop; it is destroyed
