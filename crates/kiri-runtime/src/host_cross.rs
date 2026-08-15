@@ -18,9 +18,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Instant;
 
+use std::borrow::Cow;
 use tao::event::{Event, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
 use tao::window::WindowBuilder;
+use wry::http::header;
 use wry::http::Response as WryResponse;
 use wry::{PageLoadEvent, WebViewBuilder};
 
@@ -35,23 +37,52 @@ use crate::markers::{Marker, StartupMarkers};
 use crate::output::write_startup_result;
 use crate::HostOptions;
 
-/// The frontend is served over a custom `kiri://localhost` protocol so the
-/// page loads from a stable application origin. The served file is read from
-/// `HostOptions.frontend_dir` (`index.html`) at runtime; the directory is
-/// required, matching the Windows direct host's virtual-host mapping.
-fn frontend_index_bytes(options: &HostOptions) -> std::borrow::Cow<'static, [u8]> {
-    if let Some(dir) = options.frontend_dir.as_ref() {
-        let path = dir.join("index.html");
-        if let Ok(bytes) = std::fs::read(&path) {
-            return std::borrow::Cow::Owned(bytes);
+/// Serve one `kiri://localhost/<path>` request.
+///
+/// Pure window-free logic lives in `crate::assets`; this wrapper adapts it to
+/// wry's `http::Response`. The frontend directory comes from
+/// `HostOptions.frontend_dir`; if absent, the embedded blank page is served for
+/// the index path (sub-asset requests 404, same as before). `Range` requests are
+/// honored so large assets load incrementally (F-1 in the deep audit).
+fn serve_kiri(
+    options: &HostOptions,
+    request_path: &str,
+    range: Option<&str>,
+) -> WryResponse<Cow<'static, [u8]>> {
+    use crate::assets::{response_headers, serve, status_code, AssetResponse};
+    let root = match options.frontend_dir.as_ref() {
+        Some(d) => d.clone(),
+        None => {
+            // No frontend dir: only the embedded index page is available.
+            if request_path.trim_start_matches('/').is_empty() {
+                const FALLBACK: &str = include_str!("../../../examples/blank/index.html");
+                return WryResponse::builder()
+                    .status(200)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .body(Cow::Borrowed(FALLBACK.as_bytes()))
+                    .unwrap();
+            }
+            return WryResponse::builder()
+                .status(404)
+                .header("Content-Type", "text/plain")
+                .body(Cow::Borrowed(b"not found".as_slice()))
+                .unwrap();
         }
-        eprintln!(
-            "[kiri] frontend index.html not found at {}; serving embedded blank page",
-            path.display()
-        );
+    };
+
+    let resp = serve(&root, request_path, range);
+    let status = status_code(&resp);
+    let mut builder = WryResponse::builder().status(status);
+    for (k, v) in response_headers(&resp) {
+        builder = builder.header(k, v);
     }
-    const FALLBACK: &str = include_str!("../../../examples/blank/index.html");
-    std::borrow::Cow::Borrowed(FALLBACK.as_bytes())
+    let body: Cow<'static, [u8]> = match &resp {
+        AssetResponse::Full { body, .. } | AssetResponse::Partial { body, .. } => {
+            Cow::Owned(body.clone())
+        }
+        _ => Cow::Borrowed(b"".as_slice()),
+    };
+    builder.body(body).unwrap()
 }
 /// Post a control-plane response back to the page via the shared webview
 /// slot. Best-effort: if the webview is not ready yet, the message is dropped
@@ -171,11 +202,14 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let webview = WebViewBuilder::new()
         .with_custom_protocol("kiri".into(), {
             let options = options.clone();
-            move |_id, _request| {
-                WryResponse::builder()
-                    .header("Content-Type", "text/html")
-                    .body(frontend_index_bytes(&options))
-                    .unwrap()
+            move |_id, request| {
+                let path = request.uri().path().to_string();
+                let range = request
+                    .headers()
+                    .get(header::RANGE)
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string());
+                serve_kiri(&options, &path, range.as_deref())
             }
         })
         .with_navigation_handler(|url| is_navigation_allowed(&url))

@@ -10,6 +10,7 @@
 //! clock and exit 0 after `first_animation_frame` (smoke mode) or 2 on the
 //! ready watchdog.
 
+pub mod assets;
 pub mod markers;
 pub mod output;
 
