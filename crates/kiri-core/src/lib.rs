@@ -31,6 +31,7 @@ pub mod notification;
 pub mod opener;
 pub mod path;
 pub mod platform;
+pub mod plugin_inventory;
 pub mod resources;
 pub mod security;
 pub mod shell;

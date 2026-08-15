@@ -220,6 +220,11 @@ pub mod command_id {
     pub const MENU_SET: u32 = 72;
     /// Host-allowlisted application-menu invoke (kiri.menu.invoke, G-12).
     pub const MENU_INVOKE: u32 = 73;
+    /// Host-owned external-plugin inventory (kiri.plugin.list, G-2 capstone).
+    /// Returns the loaded external plugins and their allowlisted commands; the
+    /// surface is host-owned (no raw descriptor pointers), so the frontend can
+    /// discover the vetted plugin surface without widening it.
+    pub const PLUGIN_LIST: u32 = 74;
 }
 
 /// Capability bits used by built-in control commands.
@@ -335,6 +340,11 @@ pub mod capability_bit {
     /// Exceeds it on the security axis: the frontend may only pick host-owned
     /// item ids whose label/action are host-owned (tray allowlist shape).
     pub const MENU: u32 = 26;
+    /// Authorizes kiri.plugin.list (G-2 capstone). Exceeds Tauri's plugin model
+    /// on the security axis: the only plugin-discovery surface is a host-owned
+    /// inventory of allowlisted commands, so the frontend cannot enumerate or
+    /// reach an unvetted plugin command.
+    pub const PLUGIN: u32 = 27;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -418,6 +428,7 @@ pub mod capability_bit {
             crate::dispatch::command_id::MENU_SET | crate::dispatch::command_id::MENU_INVOKE => {
                 MENU
             }
+            crate::dispatch::command_id::PLUGIN_LIST => PLUGIN,
             _ => PING,
         }
     }
@@ -696,6 +707,20 @@ impl Router {
     /// the shared bulk-object ceiling, matching kiri.fs backpressure.
     pub fn with_http(mut self, service: crate::http::HttpService) -> Self {
         for (id, required, handler) in crate::http::http_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the host-owned external-plugin inventory surface
+    /// (`kiri.plugin.list`). The inventory is built by the host from its
+    /// allowlist and discloses only plugin names + allowlisted command names;
+    /// no descriptor pointers cross the bridge. Capability-gated (PLUGIN).
+    pub fn with_plugin_inventory(
+        mut self,
+        inventory: crate::plugin_inventory::PluginInventory,
+    ) -> Self {
+        for (id, required, handler) in crate::plugin_inventory::plugin_list_handlers(inventory) {
             self.register(id, required, handler);
         }
         self

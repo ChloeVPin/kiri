@@ -69,6 +69,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "cli" => crate::dispatch::capability_bit::CLI,
         "ws" => crate::dispatch::capability_bit::WS,
         "menu" => crate::dispatch::capability_bit::MENU,
+        "plugin" => crate::dispatch::capability_bit::PLUGIN,
         _ => 0,
     }
 }
@@ -451,6 +452,14 @@ pub const COMMANDS: &[CommandSpec] = &[
     // allowlist, tray allowlist shape) ---
     CommandSpec { name: "kiri.menu.set", id: 72, capability: "menu", execution: "io", arity: 1 },
     CommandSpec { name: "kiri.menu.invoke", id: 73, capability: "menu", execution: "io", arity: 1 },
+    // --- G-2 capstone: host-owned external-plugin inventory (kiri.plugin.list) ---
+    CommandSpec {
+        name: "kiri.plugin.list",
+        id: 74,
+        capability: "plugin",
+        execution: "pure",
+        arity: 0,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

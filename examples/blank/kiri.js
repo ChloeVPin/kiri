@@ -80,6 +80,7 @@
     "kiri.ws.close": 71,
     "kiri.menu.set": 72,
     "kiri.menu.invoke": 73,
+    "kiri.plugin.list": 74,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -580,6 +581,18 @@
       invoke: function (id) {
         return call("kiri.menu.invoke", { id: id }).then(function (r) {
           return { id: r.id, action: r.action };
+        });
+      },
+    },
+
+    // Host-owned external-plugin inventory (kiri.plugin.list, G-2 capstone).
+    // Returns only plugin names + their allowlisted command names; the raw
+    // descriptors never cross the bridge, so the frontend cannot reach an
+    // unvetted plugin command. Exceeds Tauri's plugin discovery.
+    plugin: {
+      list: function () {
+        return call("kiri.plugin.list", {}).then(function (r) {
+          return { plugins: r.plugins };
         });
       },
     },

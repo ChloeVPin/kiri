@@ -328,6 +328,7 @@ fn full_router() -> Router {
             kiri_core::app_menu::MenuAllowlist::new(vec![]),
             limits.clone(),
         ))
+        .with_plugin_inventory(kiri_core::plugin_inventory::PluginInventory::empty())
 }
 
 #[test]
@@ -336,7 +337,7 @@ fn every_command_denied_without_capabilities() {
     let empty = CapabilityBits::empty();
     let caller = CallerId(1);
 
-    for id in 1u32..=73 {
+    for id in 1u32..=74 {
         let req = WireRequest::new(id, id as u64, 1, json!(null));
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(caller, &empty, &req, &mut sink);

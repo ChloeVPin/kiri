@@ -274,7 +274,13 @@ impl PluginHost {
         // through the host-owned registry, and gated by the per-plugin command
         // allowlist. Unresolved or disallowed entries are skipped (fail-closed).
         host.load_external_from_manifest(manifest, registry);
-        host.router
+        // Disclose only the host-owned inventory (plugin names + allowlisted
+        // command names) through kiri.plugin.list. The descriptors themselves
+        // never cross the bridge, so the frontend cannot reach an unvetted
+        // plugin command. Exceeds Tauri's plugin discovery on the security axis.
+        let inventory =
+            kiri_core::plugin_inventory::PluginInventory::from_allowed(&manifest.allowed_entries());
+        host.router.with_plugin_inventory(inventory)
     }
 
     /// Resolve and load every external plugin named in `manifest`. Unknown plugin
@@ -432,6 +438,12 @@ impl PluginManifest {
         manifest
     }
 
+    /// Host-owned disclosure of the manifest: the (name, commands) pairs the host
+    /// is willing to expose via `kiri.plugin.list`. No descriptor pointers, no
+    /// library paths. This is exactly what the frontend may discover.
+    pub fn allowed_entries(&self) -> Vec<(String, Vec<String>)> {
+        self.entries.iter().map(|e| (e.name.clone(), e.commands.clone())).collect()
+    }
     /// Build the `PluginAllowlist` this manifest implies. Pure projection: every
     /// manifest entry becomes a per-plugin, command-level allowlist entry.
     pub fn to_allowlist(&self) -> PluginAllowlist {
