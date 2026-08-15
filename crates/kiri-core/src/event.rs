@@ -21,7 +21,11 @@ use crate::error::{Error, Result};
 use crate::limits::Limits;
 
 /// Authorizes the `kiri.event.*` commands.
-pub const EVENT_CAPABILITY: u32 = 2;
+/// Reuses the shared `EVENT` capability bit (5) so this restricted surface
+/// stays in lockstep with `capability_bit::EVENT` and `for_command`. A separate
+/// bit here would let the real runtime grant bit 5 while the handler required
+/// bit 2, denying every `kiri.event.*` call.
+pub const EVENT_CAPABILITY: u32 = crate::dispatch::capability_bit::EVENT;
 
 /// One host-approved event channel. The frontend references `channel` only; it
 /// cannot invent a channel name. The host owns the set of valid channels.

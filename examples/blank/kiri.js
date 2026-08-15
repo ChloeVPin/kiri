@@ -65,6 +65,8 @@
     "kiri.event.publish": 56,
     "kiri.event.subscribe": 57,
     "kiri.event.channels": 58,
+    "kiri.config.get": 59,
+    "kiri.config.keys": 60,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -424,6 +426,23 @@
       channels: function () {
         return call("kiri.event.channels", {}).then(function (r) {
           return { channels: r.channels };
+        });
+      },
+    },
+
+    // Restricted, key-allowlisted config (kiri.config.get/keys, audit item 17).
+    // The frontend may only read pre-approved config key paths whose namespace is
+    // host-owned, so it cannot read arbitrary host config. This exceeds Tauri's
+    // unrestricted getConfig() on the security axis.
+    config: {
+      get: function (key) {
+        return call("kiri.config.get", { key: key }).then(function (r) {
+          return { key: r.key, value: r.value };
+        });
+      },
+      keys: function () {
+        return call("kiri.config.keys", {}).then(function (r) {
+          return { keys: r.keys };
         });
       },
     },

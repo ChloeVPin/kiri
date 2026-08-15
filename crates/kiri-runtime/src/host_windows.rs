@@ -479,6 +479,24 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(events.clone()),
                 kiri_core::event::EventAllowlist::new(event_channels()),
                 kiri_core::limits::Limits::default(),
+            ))
+            // audit-17: kiri.config.get/keys (restricted, key-allowlisted). Capability-gated
+            // (CONFIG) and bounded to a host allowlist of exact key paths, so a granted
+            // capability still cannot read arbitrary host config. This exceeds Tauri's
+            // unrestricted getConfig() on the security axis.
+            .with_config(kiri_core::config::ConfigService::new(
+                std::sync::Arc::new(kiri_core::config::MapConfigBackend::new({
+                    let mut m = std::collections::HashMap::new();
+                    m.insert("app.name".to_string(), serde_json::json!("Kiri"));
+                    m.insert(
+                        "app.version".to_string(),
+                        serde_json::json!(env!("CARGO_PKG_VERSION")),
+                    );
+                    m.insert("window.theme".to_string(), serde_json::json!("system"));
+                    m
+                })),
+                kiri_core::config::ConfigAllowlist::new(config_keys()),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
@@ -890,6 +908,18 @@ fn event_channels() -> Vec<kiri_core::event::AllowedChannel> {
         kiri_core::event::AllowedChannel { name: "ping".to_string() },
         kiri_core::event::AllowedChannel { name: "update".to_string() },
         kiri_core::event::AllowedChannel { name: "diag".to_string() },
+    ]
+}
+
+/// Host key allowlist for `kiri.config.get` (audit item 17). Default-deny: only
+/// the exact key paths below may be read by the frontend. Inverts Tauri's
+/// getConfig trust model: a granted CONFIG capability still cannot read arbitrary
+/// host config; only pre-approved key paths may be read.
+fn config_keys() -> Vec<kiri_core::config::AllowedConfigKey> {
+    vec![
+        kiri_core::config::AllowedConfigKey { key: "app.name".to_string() },
+        kiri_core::config::AllowedConfigKey { key: "app.version".to_string() },
+        kiri_core::config::AllowedConfigKey { key: "window.theme".to_string() },
     ]
 }
 

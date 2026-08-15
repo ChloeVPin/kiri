@@ -64,6 +64,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "window_state" => crate::dispatch::capability_bit::WINDOW_STATE,
         "tray" => crate::dispatch::capability_bit::TRAY,
         "sidecar" => crate::dispatch::capability_bit::SIDECAR,
+        "config" => crate::dispatch::capability_bit::CONFIG,
         _ => 0,
     }
 }
@@ -397,6 +398,22 @@ pub const COMMANDS: &[CommandSpec] = &[
         id: 58,
         capability: "event",
         execution: "io",
+        arity: 0,
+    },
+    // --- audit item 17: kiri.config.* (restricted, key-allowlisted) exceeds
+    // Tauri's unrestricted getConfig() on the security axis ---
+    CommandSpec {
+        name: "kiri.config.get",
+        id: 59,
+        capability: "config",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.config.keys",
+        id: 60,
+        capability: "config",
+        execution: "pure",
         arity: 0,
     },
 ];

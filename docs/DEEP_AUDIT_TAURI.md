@@ -103,7 +103,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (199 tests: 174 kiri-core + 25 kiri-runtime). All of §6b's 16
+      --workspace` green (203 tests: 178 kiri-core + 25 kiri-runtime). All of §6b's 17
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
@@ -339,6 +339,20 @@ Cross-cutting differentiators to protect and advertise:
     channels-returns-allowlist-only. Exceeds on the security axis (capability
     authority + host channel allowlist; frontend cannot forge or redirect event
     routing); JS surface in examples/blank/kiri.js (Kiri.event).
+17. [DONE] kiri.config.get/keys (restricted, key-allowlisted config, G-6) -
+    Tauri's getConfig() returns the entire tauri.conf.json object to the frontend by
+    default (bundle endpoints, updater URLs, plugin settings, window geometry) - an
+    information-leak: any granted frontend can read host-intended build/runtime
+    metadata it was never meant to see. Kiri gates kiri.config.* behind the CONFIG
+    capability bit (22) AND a host allowlist of exact config key paths; the frontend
+    may only read pre-approved keys, cannot invent a key path, and never receives the
+    raw config. Implemented in kiri-core::config (capability bit 22, command ids 59/60)
+    with a host-owned MapConfigBackend, wired into both backends via ".with_config(...)".
+    Both paths cross-checked with cargo clippy --target x86_64-pc-windows-msvc. Headless
+    tests cover allowed-get, unknown-key-denied, non-allowlisted-key-denied, and
+    keys-returns-allowlist-only. Exceeds on the security axis (capability authority +
+    host key allowlist; frontend cannot read arbitrary host config); JS surface in
+    examples/blank/kiri.js (Kiri.config).
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw

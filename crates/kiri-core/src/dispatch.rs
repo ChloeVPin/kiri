@@ -174,6 +174,11 @@ pub mod command_id {
     pub const EVENT_PUBLISH: u32 = 56;
     pub const EVENT_SUBSCRIBE: u32 = 57;
     pub const EVENT_CHANNELS: u32 = 58;
+
+    // --- audit item 17: kiri.config.* (restricted, key-allowlisted) exceeds
+    // Tauri's unrestricted getConfig() on the security axis ---
+    pub const CONFIG_GET: u32 = 59;
+    pub const CONFIG_KEYS: u32 = 60;
 }
 
 /// Capability bits used by built-in control commands.
@@ -266,6 +271,11 @@ pub mod capability_bit {
     /// Authorizes kiri.sidecar.* (audit item 15).
     pub const SIDECAR: u32 = 21;
 
+    /// Authorizes kiri.config.* (audit item 17). Exceeds Tauri's unrestricted
+    /// getConfig() on the security axis: a granted capability still cannot read
+    /// an arbitrary config key; only host-allowlisted key paths may be read.
+    pub const CONFIG: u32 = 22;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -332,6 +342,9 @@ pub mod capability_bit {
             crate::dispatch::command_id::EVENT_PUBLISH
             | crate::dispatch::command_id::EVENT_SUBSCRIBE
             | crate::dispatch::command_id::EVENT_CHANNELS => EVENT,
+            crate::dispatch::command_id::CONFIG_GET | crate::dispatch::command_id::CONFIG_KEYS => {
+                CONFIG
+            }
             _ => PING,
         }
     }
@@ -749,6 +762,18 @@ impl Router {
     /// security axis.
     pub fn with_event(mut self, service: crate::event::EventService) -> Self {
         for (id, required, handler) in crate::event::event_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.config.* (restricted) command set (audit item 17).
+    /// Config reads are capability-gated (bit CONFIG) AND bounded to a host
+    /// allowlist of exact key paths, so a granted capability still cannot read
+    /// arbitrary host config. Exceeds Tauri's unrestricted getConfig() on the
+    /// security axis.
+    pub fn with_config(mut self, service: crate::config::ConfigService) -> Self {
+        for (id, required, handler) in crate::config::config_handlers(service) {
             self.register(id, required, handler);
         }
         self
