@@ -143,9 +143,13 @@ axis (security, latency, or audibility), not just match it.
    capability-denied, protocol error). Real backends use arboard on macOS/Linux/Windows.
    Exceeds on the security axis (capability authority + audit); Windows path cross-checked
    with cargo clippy --target x86_64-pc-windows-msvc.
-2. **kiri.path / kiri.os path helpers** — close the rest of Tauri's `path`/
-   `os` surface (dirname, extname, basename, app/config/data dirs) as pure,
-   capability-gated commands. Pure functions => fully Mac-headless-testable.
+2. [DONE] kiri.path / kiri.os path helpers - Tauri's path/os plugins are granted
+   by default. Kiri gates dirname/basename/extname/stem/join/isAbsolute and read-only
+   OS directory discovery (home/temp/app config|data|cache/document/app dir) behind a
+   PATH capability bit (bit 9). Pure path math plus env-backed directory resolution, so
+   the whole surface is headless-testable with no WebView and no FS mutation. Exceeds on
+   the security axis (capability authority + audit); Windows path cross-checked with
+   cargo clippy --target x86_64-pc-windows-msvc. JS surface in examples/blank/kiri.js.
 3. **kiri.http (client, capability-scoped)** — Tauri's `http` plugin allows
    arbitrary fetch. Kiri: `HTTP` capability bit + an allowlist of hosts; responses
    streamed through the same bulk/backpressure path as `kiri.fs`. Headless tests

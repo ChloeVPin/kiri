@@ -31,6 +31,19 @@
     "kiri.window.focus": 22,
     "kiri.clipboard.read": 23,
     "kiri.clipboard.write": 24,
+    "kiri.path.dirname": 25,
+    "kiri.path.basename": 26,
+    "kiri.path.extname": 27,
+    "kiri.path.stem": 28,
+    "kiri.path.join": 29,
+    "kiri.path.isAbsolute": 30,
+    "kiri.os.homedir": 31,
+    "kiri.os.tempdir": 32,
+    "kiri.os.appConfigDir": 33,
+    "kiri.os.appDataDir": 34,
+    "kiri.os.appCacheDir": 35,
+    "kiri.os.documentDir": 36,
+    "kiri.os.appDir": 37,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -169,6 +182,24 @@
       },
     },
 
+    path: {
+      dirname: function (path) { return call("kiri.path.dirname", { path: path }).then(function (r) { return r.dirname; }); },
+      basename: function (path) { return call("kiri.path.basename", { path: path }).then(function (r) { return r.basename; }); },
+      extname: function (path) { return call("kiri.path.extname", { path: path }).then(function (r) { return r.extname; }); },
+      stem: function (path) { return call("kiri.path.stem", { path: path }).then(function (r) { return r.stem; }); },
+      join: function (base, segments) { return call("kiri.path.join", { path: base, segments: segments || [] }).then(function (r) { return r.path; }); },
+      isAbsolute: function (path) { return call("kiri.path.isAbsolute", { path: path }).then(function (r) { return r.isAbsolute; }); },
+    },
+    os: {
+      homedir: function () { return call("kiri.os.homedir").then(function (r) { return r.dir; }); },
+      tempdir: function () { return call("kiri.os.tempdir").then(function (r) { return r.dir; }); },
+      appConfigDir: function () { return call("kiri.os.appConfigDir").then(function (r) { return r.dir; }); },
+      appDataDir: function () { return call("kiri.os.appDataDir").then(function (r) { return r.dir; }); },
+      appCacheDir: function () { return call("kiri.os.appCacheDir").then(function (r) { return r.dir; }); },
+      documentDir: function () { return call("kiri.os.documentDir").then(function (r) { return r.dir; }); },
+      appDir: function () { return call("kiri.os.appDir").then(function (r) { return r.dir; }); },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -189,5 +220,7 @@
   global.kiri.fs = Kiri.fs;
   global.kiri.window = Kiri.window;
   global.kiri.clipboard = Kiri.clipboard;
+  global.kiri.path = Kiri.path;
+  global.kiri.os = Kiri.os;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

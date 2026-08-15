@@ -75,6 +75,33 @@ pub mod command_id {
     pub const CLIPBOARD_READ: u32 = 23;
     /// Write text to the system clipboard (G-6: kiri.clipboard.write).
     pub const CLIPBOARD_WRITE: u32 = 24;
+
+    /// Directory portion of a path (audit item 2: kiri.path.dirname).
+    pub const PATH_DIRNAME: u32 = 25;
+    /// Final path component (kiri.path.basename).
+    pub const PATH_BASENAME: u32 = 26;
+    /// Extension of the final component (kiri.path.extname).
+    pub const PATH_EXTNAME: u32 = 27;
+    /// Final component without extension (kiri.path.stem).
+    pub const PATH_STEM: u32 = 28;
+    /// Join base + segments (kiri.path.join).
+    pub const PATH_JOIN: u32 = 29;
+    /// Whether a path is absolute (kiri.path.isAbsolute).
+    pub const PATH_IS_ABSOLUTE: u32 = 30;
+    /// Host home directory (kiri.os.homedir).
+    pub const OS_HOME_DIR: u32 = 31;
+    /// Host temp directory (kiri.os.tempdir).
+    pub const OS_TEMP_DIR: u32 = 32;
+    /// App config directory (kiri.os.appConfigDir).
+    pub const OS_APP_CONFIG_DIR: u32 = 33;
+    /// App data directory (kiri.os.appDataDir).
+    pub const OS_APP_DATA_DIR: u32 = 34;
+    /// App cache directory (kiri.os.appCacheDir).
+    pub const OS_APP_CACHE_DIR: u32 = 35;
+    /// User documents directory (kiri.os.documentDir).
+    pub const OS_DOCUMENT_DIR: u32 = 36;
+    /// Application directory (kiri.os.appDir).
+    pub const OS_APP_DIR: u32 = 37;
 }
 
 /// Capability bits used by built-in control commands.
@@ -102,6 +129,11 @@ pub mod capability_bit {
     /// surface; exceeds Tauri's unrestricted clipboard plugin on the security
     /// axis: capability authority + audit instead of a blanket grant).
     pub const CLIPBOARD: u32 = 8;
+
+    /// Authorizes path/os helper queries (kiri.path.*, kiri.os.*). Bit 9 (audit
+    /// item 2; exceeds Tauri's path/os plugins on the security axis: each access
+    /// is capability-gated instead of granted by default).
+    pub const PATH: u32 = 9;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -134,6 +166,19 @@ pub mod capability_bit {
             | crate::dispatch::command_id::WINDOW_FOCUS => WINDOW,
             crate::dispatch::command_id::CLIPBOARD_READ
             | crate::dispatch::command_id::CLIPBOARD_WRITE => CLIPBOARD,
+            crate::dispatch::command_id::PATH_DIRNAME
+            | crate::dispatch::command_id::PATH_BASENAME
+            | crate::dispatch::command_id::PATH_EXTNAME
+            | crate::dispatch::command_id::PATH_STEM
+            | crate::dispatch::command_id::PATH_JOIN
+            | crate::dispatch::command_id::PATH_IS_ABSOLUTE
+            | crate::dispatch::command_id::OS_HOME_DIR
+            | crate::dispatch::command_id::OS_TEMP_DIR
+            | crate::dispatch::command_id::OS_APP_CONFIG_DIR
+            | crate::dispatch::command_id::OS_APP_DATA_DIR
+            | crate::dispatch::command_id::OS_APP_CACHE_DIR
+            | crate::dispatch::command_id::OS_DOCUMENT_DIR
+            | crate::dispatch::command_id::OS_APP_DIR => PATH,
             _ => PING,
         }
     }
@@ -386,6 +431,20 @@ impl Router {
         state: std::sync::Arc<std::sync::Mutex<crate::clipboard::ClipboardState>>,
     ) -> Self {
         for (id, required, handler) in crate::clipboard::clipboard_handlers(controller, state) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.path.* and kiri.os.* command set (audit item 2, G-7
+    /// JS surface parity with Tauri's path/os plugins). Every handler is
+    /// capability-gated (bit PATH) and resolves OS directory facts through
+    /// PathState, so JavaScript cannot reach env vars or filesystem-root
+    /// queries except via the explicitly granted helpers. The surface is pure
+    /// path math plus read-only directory discovery, fully exercisable
+    /// headlessly with no WebView and no real filesystem mutation.
+    pub fn with_path(mut self, service: crate::path::PathService) -> Self {
+        for (id, required, handler) in crate::path::path_handlers(service) {
             self.register(id, required, handler);
         }
         self

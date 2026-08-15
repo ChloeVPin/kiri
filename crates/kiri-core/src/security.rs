@@ -77,6 +77,12 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // (kiri.clipboard.read/write). Authorization still flows through the
     // CLIPBOARD capability bit even though it is granted here.
     caps.set(crate::dispatch::capability_bit::CLIPBOARD);
+    // G-7: the trusted frontend may use the capability-gated path/os
+    // surface (kiri.path.* / kiri.os.*). Authorization still flows through
+    // the PATH capability bit even though it is granted here. Tauri grants
+    // its path/os plugins by default; Kiri gates them, exceeding that
+    // security axis by default.
+    caps.set(crate::dispatch::capability_bit::PATH);
     caps
 }
 

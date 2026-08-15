@@ -222,7 +222,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init"),
                 ),
                 Arc::new(Mutex::new(kiri_core::clipboard::ClipboardState::new())),
-            );
+            )
+            // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
+            // math plus read-only OS directory discovery, capability-gated (PATH).
+            .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;

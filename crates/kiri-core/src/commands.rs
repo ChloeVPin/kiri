@@ -54,6 +54,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "fs" => crate::dispatch::capability_bit::FS,
         "window" => crate::dispatch::capability_bit::WINDOW,
         "clipboard" => crate::dispatch::capability_bit::CLIPBOARD,
+        "path" => crate::dispatch::capability_bit::PATH,
         _ => 0,
     }
 }
@@ -177,6 +178,80 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "pure",
         arity: 1,
     },
+    // --- audit item 2: kiri.path.* / kiri.os.* (G-7) ---
+    CommandSpec {
+        name: "kiri.path.dirname",
+        id: 25,
+        capability: "path",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.path.basename",
+        id: 26,
+        capability: "path",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.path.extname",
+        id: 27,
+        capability: "path",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec { name: "kiri.path.stem", id: 28, capability: "path", execution: "pure", arity: 1 },
+    CommandSpec { name: "kiri.path.join", id: 29, capability: "path", execution: "pure", arity: 1 },
+    CommandSpec {
+        name: "kiri.path.isAbsolute",
+        id: 30,
+        capability: "path",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.os.homedir",
+        id: 31,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.os.tempdir",
+        id: 32,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.os.appConfigDir",
+        id: 33,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.os.appDataDir",
+        id: 34,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.os.appCacheDir",
+        id: 35,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.os.documentDir",
+        id: 36,
+        capability: "path",
+        execution: "pure",
+        arity: 0,
+    },
+    CommandSpec { name: "kiri.os.appDir", id: 37, capability: "path", execution: "pure", arity: 0 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

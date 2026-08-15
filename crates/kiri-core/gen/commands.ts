@@ -49,9 +49,35 @@ export interface KiriCommands {
   kiri_clipboard_read(arg: unknown): Promise<unknown>;
   /** kiri_clipboard_write (id=24, capability="clipboard", execution="pure") */
   kiri_clipboard_write(arg: unknown): Promise<unknown>;
+  /** kiri_path_dirname (id=25, capability="path", execution="pure") */
+  kiri_path_dirname(arg: unknown): Promise<unknown>;
+  /** kiri_path_basename (id=26, capability="path", execution="pure") */
+  kiri_path_basename(arg: unknown): Promise<unknown>;
+  /** kiri_path_extname (id=27, capability="path", execution="pure") */
+  kiri_path_extname(arg: unknown): Promise<unknown>;
+  /** kiri_path_stem (id=28, capability="path", execution="pure") */
+  kiri_path_stem(arg: unknown): Promise<unknown>;
+  /** kiri_path_join (id=29, capability="path", execution="pure") */
+  kiri_path_join(arg: unknown): Promise<unknown>;
+  /** kiri_path_isAbsolute (id=30, capability="path", execution="pure") */
+  kiri_path_isAbsolute(arg: unknown): Promise<unknown>;
+  /** kiri_os_homedir (id=31, capability="path", execution="pure") */
+  kiri_os_homedir(arg: unknown): Promise<unknown>;
+  /** kiri_os_tempdir (id=32, capability="path", execution="pure") */
+  kiri_os_tempdir(arg: unknown): Promise<unknown>;
+  /** kiri_os_appConfigDir (id=33, capability="path", execution="pure") */
+  kiri_os_appConfigDir(arg: unknown): Promise<unknown>;
+  /** kiri_os_appDataDir (id=34, capability="path", execution="pure") */
+  kiri_os_appDataDir(arg: unknown): Promise<unknown>;
+  /** kiri_os_appCacheDir (id=35, capability="path", execution="pure") */
+  kiri_os_appCacheDir(arg: unknown): Promise<unknown>;
+  /** kiri_os_documentDir (id=36, capability="path", execution="pure") */
+  kiri_os_documentDir(arg: unknown): Promise<unknown>;
+  /** kiri_os_appDir (id=37, capability="path", execution="pure") */
+  kiri_os_appDir(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -79,6 +105,19 @@ export function commandId(name: string): number | undefined {
     case "kiri.window.focus": return 22;
     case "kiri.clipboard.read": return 23;
     case "kiri.clipboard.write": return 24;
+    case "kiri.path.dirname": return 25;
+    case "kiri.path.basename": return 26;
+    case "kiri.path.extname": return 27;
+    case "kiri.path.stem": return 28;
+    case "kiri.path.join": return 29;
+    case "kiri.path.isAbsolute": return 30;
+    case "kiri.os.homedir": return 31;
+    case "kiri.os.tempdir": return 32;
+    case "kiri.os.appConfigDir": return 33;
+    case "kiri.os.appDataDir": return 34;
+    case "kiri.os.appCacheDir": return 35;
+    case "kiri.os.documentDir": return 36;
+    case "kiri.os.appDir": return 37;
     default: return undefined;
   }
 }

@@ -18,6 +18,7 @@ pub mod fs;
 pub mod header;
 pub mod latency;
 pub mod limits;
+pub mod path;
 pub mod platform;
 pub mod resources;
 pub mod security;
@@ -38,6 +39,7 @@ pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
 pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
+pub use path::{PathService, PathState};
 pub use platform::EventBus;
 pub use resources::{ResourceId, ResourceTable};
 pub use security::{

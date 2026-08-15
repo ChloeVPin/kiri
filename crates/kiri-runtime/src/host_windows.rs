@@ -328,7 +328,10 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(std::sync::Mutex::new(
                     kiri_core::clipboard::ClipboardState::new(),
                 )),
-            );
+            )
+            // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
+            // math plus read-only OS directory discovery, capability-gated (PATH).
+            .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----
     markers.record(Marker::WebViewCreationRequested, qpc_now_ns());

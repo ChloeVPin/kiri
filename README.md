@@ -24,9 +24,9 @@ Tasks T001-T010 are complete and committed. The runtime runs natively on
 every desktop platform from one codebase: the direct Win32 + WebView2 backend
 on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
-identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). The macOS development machine exercises the native wry/tao backend locally; Windows and Linux are exercised by CI.
+identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). All three platforms (Windows, macOS, Linux) are equal targets; the macOS dev machine exercises the native wry/tao backend locally while Windows and Linux are exercised by CI and cross-checks.
 
-- 134 tests pass (cargo test --workspace: 109 kiri-core + 25 kiri-runtime)
+- 140 tests pass (cargo test --workspace: 115 kiri-core + 25 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
@@ -44,6 +44,11 @@ identity and capability authority). All three platforms are equal targets. The w
   backends; clipboard access requires the CLIPBOARD capability bit and flows through a
   host-owned ClipboardController (arboard on macOS/Linux/Windows), so JS never touches
   the OS clipboard directly (exceeds Tauri's clipboard plugin on the security axis)
+- capability-gated `kiri.path.*` / `kiri.os.*` (ids 25-37) implemented across both
+  backends; path math (dirname/basename/extname/stem/join/isAbsolute) and read-only OS
+  directory discovery (home/temp/app config|data|cache/document/app dir) are behind the
+  PATH capability bit and never expose env vars or filesystem roots to JS (exceeds Tauri's
+  path/os plugins on the security axis: Tauri grants them by default)
 - Wry/Tao and Tauri baselines compile clean
 - the direct Win32 + WebView2 host runs natively on real Windows
   (`windows-latest` CI hard gate): native smoke + 100-cycle stress pass (Q-001 closed)
