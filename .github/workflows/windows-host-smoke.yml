@@ -47,6 +47,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p kiri-runtime --bins
       - run: cargo build --release -p kiri-runtime --bin kiri-host-stress
       - name: Stress loop (100 launch-close cycles)
         shell: pwsh
