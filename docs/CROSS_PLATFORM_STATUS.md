@@ -68,9 +68,11 @@ both (id 3 / id 4).
 
 ## What is blocked and why
 
-- Windows + Linux *execution* gates: no local host for either OS; CI minutes
-  exhausted. Re-run the existing workflows (`correctness.yml`,
-  `windows-host-smoke.yml`) once minutes reset or on real hardware.
+- Windows + Linux *execution* gates: no local host for either OS on this Mac. On this
+  PUBLIC repo, GitHub-hosted CI minutes are unlimited and free, so re-runs cost
+  nothing -- the real constraint is hardware, not quota. CI already covers
+  windows-latest (hard native gate) and ubuntu-latest (soft GPU probe) on every
+  push/PR; re-run via `gh run rerun` or just push.
 - `controlled-performance.yml` comparison (T009): needs a self-hosted labeled
   runner `[self-hosted, windows, x64, kiri-perf]`; cannot run on shared CI.
 - T008 WebView2 shared-buffer: needs real Windows to implement + benchmark
