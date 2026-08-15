@@ -11,6 +11,7 @@
 //! ready watchdog.
 
 pub mod assets;
+pub mod clipboard_ctl;
 pub mod markers;
 pub mod output;
 pub mod plugins;

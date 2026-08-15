@@ -53,6 +53,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "event" => crate::dispatch::capability_bit::EVENT,
         "fs" => crate::dispatch::capability_bit::FS,
         "window" => crate::dispatch::capability_bit::WINDOW,
+        "clipboard" => crate::dispatch::capability_bit::CLIPBOARD,
         _ => 0,
     }
 }
@@ -161,6 +162,20 @@ pub const COMMANDS: &[CommandSpec] = &[
         capability: "window",
         execution: "pure",
         arity: 0,
+    },
+    CommandSpec {
+        name: "kiri.clipboard.read",
+        id: 23,
+        capability: "clipboard",
+        execution: "pure",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.clipboard.write",
+        id: 24,
+        capability: "clipboard",
+        execution: "pure",
+        arity: 1,
     },
 ];
 

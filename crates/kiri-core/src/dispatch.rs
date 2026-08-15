@@ -70,6 +70,11 @@ pub mod command_id {
     pub const WINDOW_CLOSE: u32 = 21;
     /// Focus the window (G-5: kiri.window.focus).
     pub const WINDOW_FOCUS: u32 = 22;
+
+    /// Read the system clipboard as text (G-6: kiri.clipboard.read).
+    pub const CLIPBOARD_READ: u32 = 23;
+    /// Write text to the system clipboard (G-6: kiri.clipboard.write).
+    pub const CLIPBOARD_WRITE: u32 = 24;
 }
 
 /// Capability bits used by built-in control commands.
@@ -92,6 +97,11 @@ pub mod capability_bit {
 
     /// Authorizes window control (kiri.window.*). Bit 7 (G-5 JS surface).
     pub const WINDOW: u32 = 7;
+
+    /// Authorizes clipboard read/write (kiri.clipboard.*). Bit 8 (G-6 JS
+    /// surface; exceeds Tauri's unrestricted clipboard plugin on the security
+    /// axis: capability authority + audit instead of a blanket grant).
+    pub const CLIPBOARD: u32 = 8;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -122,6 +132,8 @@ pub mod capability_bit {
             | crate::dispatch::command_id::WINDOW_RESTORE
             | crate::dispatch::command_id::WINDOW_CLOSE
             | crate::dispatch::command_id::WINDOW_FOCUS => WINDOW,
+            crate::dispatch::command_id::CLIPBOARD_READ
+            | crate::dispatch::command_id::CLIPBOARD_WRITE => CLIPBOARD,
             _ => PING,
         }
     }
@@ -361,6 +373,22 @@ impl Router {
     /// Register a command with its required capability and handler.
     pub fn register(&mut self, id: u32, required: CapabilityBits, handler: Handler) {
         self.commands.insert(id, Command { required, handler });
+    }
+    /// Register the kiri.clipboard.* command set (G-6 JS surface parity with
+    /// Tauri's clipboard plugin). Every handler is capability-gated (bit
+    /// CLIPBOARD) and operates on a host-owned ClipboardController + shared
+    /// ClipboardState mirror, so the OS clipboard is never reachable from
+    /// JavaScript. The host supplies the real controller; tests use a stub and
+    /// assert routing/authorization/state without the system clipboard.
+    pub fn with_clipboard(
+        mut self,
+        controller: std::sync::Arc<dyn crate::clipboard::ClipboardController>,
+        state: std::sync::Arc<std::sync::Mutex<crate::clipboard::ClipboardState>>,
+    ) -> Self {
+        for (id, required, handler) in crate::clipboard::clipboard_handlers(controller, state) {
+            self.register(id, required, handler);
+        }
+        self
     }
 
     fn register_ping(&mut self) {

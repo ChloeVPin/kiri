@@ -215,6 +215,13 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             .with_window(
                 Arc::new(crate::window_ctl::TaoWindowController::new(window.clone())),
                 Arc::new(Mutex::new(kiri_core::window::WindowState::new(&options.title))),
+            )
+            // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
+            .with_clipboard(
+                Arc::new(
+                    crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init"),
+                ),
+                Arc::new(Mutex::new(kiri_core::clipboard::ClipboardState::new())),
             );
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();

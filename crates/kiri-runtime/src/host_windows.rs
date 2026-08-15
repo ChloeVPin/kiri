@@ -251,6 +251,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     caller_caps.set(kiri_core::dispatch::capability_bit::PING);
     caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
     caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
+    // G-6: trusted frontend may use the capability-gated clipboard surface.
+    caller_caps.set(kiri_core::dispatch::capability_bit::CLIPBOARD);
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
     // Shared generational resource table owned by the host. The resources plugin
@@ -317,6 +319,15 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new(
                     &options.title,
                 ))),
+            )
+            // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
+            .with_clipboard(
+                std::sync::Arc::new(
+                    crate::clipboard_ctl::WinClipboardController::new().expect("clipboard init"),
+                ),
+                std::sync::Arc::new(std::sync::Mutex::new(
+                    kiri_core::clipboard::ClipboardState::new(),
+                )),
             );
 
     // ---- WebView2 environment (W1: WebView2 shell) ----

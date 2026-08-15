@@ -73,6 +73,10 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     caps.set(crate::dispatch::capability_bit::PLATFORM);
     caps.set(crate::dispatch::capability_bit::APP);
     caps.set(crate::dispatch::capability_bit::EVENT);
+    // G-6: the trusted frontend may use the capability-gated clipboard surface
+    // (kiri.clipboard.read/write). Authorization still flows through the
+    // CLIPBOARD capability bit even though it is granted here.
+    caps.set(crate::dispatch::capability_bit::CLIPBOARD);
     caps
 }
 

@@ -9,6 +9,7 @@
 
 pub mod caller;
 pub mod capabilities;
+pub mod clipboard;
 pub mod commands;
 pub mod diagnostics;
 pub mod dispatch;
@@ -28,6 +29,7 @@ pub mod wire;
 
 pub use caller::{CallerId, CallerRegistry};
 pub use capabilities::{CapabilityBits, CapabilityId, PathScope, Scope};
+pub use clipboard::{ClipboardController, ClipboardState};
 pub use commands::{
     command_name, emit_typescript, required_capabilities, resolve_command, CommandSpec, COMMANDS,
 };

@@ -26,7 +26,7 @@ on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
 identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). The macOS development machine exercises the native wry/tao backend locally; Windows and Linux are exercised by CI.
 
-- 131 tests pass (`cargo test --workspace`: 106 kiri-core + 25 kiri-runtime)
+- 134 tests pass (cargo test --workspace: 109 kiri-core + 25 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
@@ -40,6 +40,10 @@ identity and capability authority). All three platforms are equal targets. The w
   both backends; every window operation is authorized by the central capability
   authority and routed through a host-owned controller, so JS never reaches the
   native handle (exceeds Tauri's window module on the security axis)
+- capability-gated kiri.clipboard read/write (ids 23-24) implemented across both
+  backends; clipboard access requires the CLIPBOARD capability bit and flows through a
+  host-owned ClipboardController (arboard on macOS/Linux/Windows), so JS never touches
+  the OS clipboard directly (exceeds Tauri's clipboard plugin on the security axis)
 - Wry/Tao and Tauri baselines compile clean
 - the direct Win32 + WebView2 host runs natively on real Windows
   (`windows-latest` CI hard gate): native smoke + 100-cycle stress pass (Q-001 closed)

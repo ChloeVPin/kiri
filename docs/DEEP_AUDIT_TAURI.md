@@ -136,11 +136,13 @@ These close remaining Tauri gaps while staying verifiable on the macOS dev host
 (no WebView binary launch, no Windows HW). Each must beat Tauri on a concrete
 axis (security, latency, or audibility), not just match it.
 
-1. **kiri.clipboard (read/write)** — Tauri's `clipboard`/`clipboard-manager`
-   plugin is unrestricted by default. Kiri: gate behind a `CLIPBOARD` capability
-   bit, route through a host-owned `ClipboardController` (same pattern as
-   `WindowController`), mirror last-value in core state. Headless tests via a
-   `StubClipboard`. Exceeds on the security axis (capability authority + audit).
+1. [DONE] kiri.clipboard read/write - Tauri clipboard plugin is unrestricted by default.
+   Kiri gates clipboard behind a CLIPBOARD capability bit (bit 8), routes through a
+   host-owned ClipboardController (same pattern as WindowController), mirrors last-value
+   in core ClipboardState, and ships headless tests via StubClipboard (roundtrip,
+   capability-denied, protocol error). Real backends use arboard on macOS/Linux/Windows.
+   Exceeds on the security axis (capability authority + audit); Windows path cross-checked
+   with cargo clippy --target x86_64-pc-windows-msvc.
 2. **kiri.path / kiri.os path helpers** — close the rest of Tauri's `path`/
    `os` surface (dirname, extname, basename, app/config/data dirs) as pure,
    capability-gated commands. Pure functions => fully Mac-headless-testable.

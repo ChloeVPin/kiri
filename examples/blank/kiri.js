@@ -29,6 +29,8 @@
     "kiri.window.restore": 20,
     "kiri.window.close": 21,
     "kiri.window.focus": 22,
+    "kiri.clipboard.read": 23,
+    "kiri.clipboard.write": 24,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -156,6 +158,17 @@
         return call("kiri.window.focus");
       },
     },
+    clipboard: {
+      read: function () {
+        return call("kiri.clipboard.read").then(function (r) { return r.text; });
+      },
+      write: function (text) {
+        return call("kiri.clipboard.write", { text: text }).then(function (r) {
+          return r.written;
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -175,5 +188,6 @@
   global.kiri.event = Kiri.event;
   global.kiri.fs = Kiri.fs;
   global.kiri.window = Kiri.window;
+  global.kiri.clipboard = Kiri.clipboard;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

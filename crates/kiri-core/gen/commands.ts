@@ -45,9 +45,13 @@ export interface KiriCommands {
   kiri_window_close(arg: unknown): Promise<unknown>;
   /** kiri_window_focus (id=22, capability="window", execution="pure") */
   kiri_window_focus(arg: unknown): Promise<unknown>;
+  /** kiri_clipboard_read (id=23, capability="clipboard", execution="pure") */
+  kiri_clipboard_read(arg: unknown): Promise<unknown>;
+  /** kiri_clipboard_write (id=24, capability="clipboard", execution="pure") */
+  kiri_clipboard_write(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -73,6 +77,8 @@ export function commandId(name: string): number | undefined {
     case "kiri.window.restore": return 20;
     case "kiri.window.close": return 21;
     case "kiri.window.focus": return 22;
+    case "kiri.clipboard.read": return 23;
+    case "kiri.clipboard.write": return 24;
     default: return undefined;
   }
 }
