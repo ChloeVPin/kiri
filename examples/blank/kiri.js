@@ -55,6 +55,8 @@
     "kiri.store.set": 46,
     "kiri.deeplink.register": 47,
     "kiri.opener.open": 48,
+    "kiri.window.state.save": 49,
+    "kiri.window.state.load": 50,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -334,6 +336,25 @@
       },
     },
 
+    // Restricted, host-owned window-state persistence (kiri.window.state.save/load).
+    // The host owns the store namespace; the frontend may only save/load the current
+    // window's own geometry, never an arbitrary location or another window's state.
+    window: (function (prev) {
+      prev.state = {
+        save: function (geometry) {
+          return call("kiri.window.state.save", geometry || {}).then(function (r) {
+            return { geometry: r };
+          });
+        },
+        load: function () {
+          return call("kiri.window.state.load", {}).then(function (r) {
+            return { geometry: r };
+          });
+        },
+      };
+      return prev;
+    })(global.kiri ? global.kiri.window : {}),
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -365,5 +386,6 @@
   global.kiri.store = Kiri.store;
   global.kiri.deeplink = Kiri.deeplink;
   global.kiri.opener = Kiri.opener;
+  global.kiri.window = Kiri.window;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

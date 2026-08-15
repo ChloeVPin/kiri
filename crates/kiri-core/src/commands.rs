@@ -61,6 +61,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "dialog" => crate::dispatch::capability_bit::DIALOG,
         "deeplink" => crate::dispatch::capability_bit::DEEPLINK,
         "opener" => crate::dispatch::capability_bit::OPENER,
+        "window_state" => crate::dispatch::capability_bit::WINDOW_STATE,
         _ => 0,
     }
 }
@@ -324,6 +325,22 @@ pub const COMMANDS: &[CommandSpec] = &[
         capability: "opener",
         execution: "io",
         arity: 1,
+    },
+    // --- audit item 13: kiri.window.state.save/load (G-2d) restricted, host-owned
+    // window-state persistence (exceeds Tauri window-state plugin on the security axis) ---
+    CommandSpec {
+        name: "kiri.window.state.save",
+        id: 49,
+        capability: "window_state",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.window.state.load",
+        id: 50,
+        capability: "window_state",
+        execution: "io",
+        arity: 0,
     },
 ];
 

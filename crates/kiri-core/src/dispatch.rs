@@ -153,6 +153,13 @@ pub mod command_id {
     /// or file extension; only host-allowlisted exact schemes and extensions may open,
     /// inverting Tauri's opener plugin (arbitrary URL/file launch surface).
     pub const OPENER_OPEN: u32 = 48;
+    /// Capability-scoped, host-owned window-state persistence (kiri.window.state.save/
+    /// load, audit item 13). A granted WINDOW_STATE capability still cannot address an
+    /// arbitrary store location; geometry persists only in a fixed, frontend-unaddressable
+    /// namespace behind the host StoreBackend, inverting Tauri's window-state plugin.
+    pub const WINDOW_STATE_SAVE: u32 = 49;
+    /// Load persisted window geometry (kiri.window.state.load, audit item 13).
+    pub const WINDOW_STATE_LOAD: u32 = 50;
 }
 
 /// Capability bits used by built-in control commands.
@@ -233,6 +240,11 @@ pub mod capability_bit {
     /// capability still cannot launch an arbitrary URL scheme or file extension; only a
     /// host-allowlisted exact scheme / extension may open.
     pub const OPENER: u32 = 18;
+    /// Authorizes restricted, host-owned window-state persistence (kiri.window.state.*).
+    /// Bit 19 (audit item 13). Exceeds Tauri's window-state plugin on the security axis:
+    /// a granted capability still cannot address an arbitrary store location or read the
+    /// raw persisted blob; geometry lives in a fixed, host-owned namespace.
+    pub const WINDOW_STATE: u32 = 19;
 
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
@@ -290,6 +302,8 @@ pub mod capability_bit {
             }
             crate::dispatch::command_id::DEEPLINK_REGISTER => DEEPLINK,
             crate::dispatch::command_id::OPENER_OPEN => OPENER,
+            crate::dispatch::command_id::WINDOW_STATE_SAVE
+            | crate::dispatch::command_id::WINDOW_STATE_LOAD => WINDOW_STATE,
             _ => PING,
         }
     }
@@ -659,6 +673,18 @@ impl Router {
     /// arbitrary URL scheme or file. Inverts Tauri's opener plugin trust model.
     pub fn with_opener(mut self, service: crate::opener::OpenerService) -> Self {
         for (id, required, handler) in crate::opener::opener_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.window.state.* command set (audit item 13). Window-state
+    /// persistence is capability-gated (bit WINDOW_STATE) AND confined to a fixed,
+    /// frontend-unaddressable store namespace behind the host `StoreBackend`, so a
+    /// granted capability still cannot read/write arbitrary state. Inverts Tauri's
+    /// window-state plugin (frontend-readable/writable geometry JSON).
+    pub fn with_window_state(mut self, service: crate::window_state::WindowStateService) -> Self {
+        for (id, required, handler) in crate::window_state::window_state_handlers(service) {
             self.register(id, required, handler);
         }
         self

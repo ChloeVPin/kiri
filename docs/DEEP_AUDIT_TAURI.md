@@ -263,6 +263,23 @@ Cross-cutting differentiators to protect and advertise:
     disallowed-scheme-denied, disallowed-extension-denied, and capability-denied-without-bit.
     Exceeds on the security axis (capability authority + exact-scheme/extension allowlist,
     host-owned); no arbitrary scheme/file launch.
+
+13. [DONE] kiri.window.state.save/load (restricted, host-owned window-state
+    persistence) - Tauri's `window-state` plugin auto-persists window geometry to a
+    JSON file the frontend can read and write, and applies it on startup without a
+    second capability gate (a tamper surface: a malicious/buggy frontend can force
+    off-screen/zero-size windows, or forge layout history). Kiri gates
+    `kiri.window.state.save/load` behind the WINDOW_STATE capability bit (19) AND
+    confines persistence to a fixed, frontend-unaddressable store namespace behind the
+    host `StoreBackend`; the frontend may only save/load the current window's own
+    geometry and can never read the raw persisted blob. Implemented in
+    kiri-core::window_state (capability bit 19, command ids 49/50) with host seams in
+    crates/kiri-runtime/src/window_state_ctl.rs (CrossWindowStateBackend/
+    WinWindowStateBackend, host-owned store) wired into both backends via
+    `.with_window_state(...)`. Both paths cross-checked with cargo clippy --target
+    x86_64-pc-windows-msvc. Headless tests cover save/load roundtrip, load-without-save,
+    and capability-denied-without-bit. Exceeds on the security axis (capability authority
+    + fixed host-owned namespace, second gate); no frontend-readable/writable geometry.
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw

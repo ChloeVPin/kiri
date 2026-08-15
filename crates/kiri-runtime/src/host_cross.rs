@@ -313,6 +313,17 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         std::sync::Arc::new(crate::opener_ctl::cross_opener::CrossOpenerRunner::new()),
         kiri_core::opener::OpenerAllowlist::new(opener_url_schemes(), opener_file_extensions()),
         kiri_core::limits::Limits::default(),
+    ))
+    // G-2d: kiri.window.state.save/load surface (audit item 13). Capability-gated
+    // (WINDOW_STATE) and confined to a fixed, frontend-unaddressable host store, so a
+    // granted capability still cannot read/write arbitrary state. This exceeds Tauri's
+    // window-state plugin, which persists to a frontend-readable/writable JSON without a
+    // second capability gate.
+    .with_window_state(kiri_core::window_state::WindowStateService::new(
+        std::sync::Arc::new(
+            crate::window_state_ctl::cross_window_state::CrossWindowStateBackend::new(),
+        ),
+        kiri_core::limits::Limits::default(),
     ));
     let smoke = options.smoke;
     let markers_out = options.markers_out.clone();

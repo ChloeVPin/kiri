@@ -97,9 +97,13 @@ export interface KiriCommands {
   kiri_deeplink_register(arg: unknown): Promise<unknown>;
   /** kiri_opener_open (id=48, capability="opener", execution="io") */
   kiri_opener_open(arg: unknown): Promise<unknown>;
+  /** kiri_window_state_save (id=49, capability="window_state", execution="io") */
+  kiri_window_state_save(arg: unknown): Promise<unknown>;
+  /** kiri_window_state_load (id=50, capability="window_state", execution="io") */
+  kiri_window_state_load(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set", "kiri.deeplink.register", "kiri.opener.open"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set", "kiri.deeplink.register", "kiri.opener.open", "kiri.window.state.save", "kiri.window.state.load"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -151,6 +155,8 @@ export function commandId(name: string): number | undefined {
     case "kiri.store.set": return 46;
     case "kiri.deeplink.register": return 47;
     case "kiri.opener.open": return 48;
+    case "kiri.window.state.save": return 49;
+    case "kiri.window.state.load": return 50;
     default: return undefined;
   }
 }

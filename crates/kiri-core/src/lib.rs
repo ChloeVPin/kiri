@@ -35,6 +35,7 @@ pub mod trace;
 pub mod update;
 pub mod validate;
 pub mod window;
+pub mod window_state;
 pub mod wire;
 
 pub use autostart::{AutostartAllowlist, AutostartService};
@@ -63,7 +64,7 @@ pub use security::{
 };
 pub use shell::{ShellAllowlist, ShellService};
 pub use shortcut::{ShortcutAllowlist, ShortcutBinding, ShortcutService};
-pub use store::{StoreAllowlist, StoreNamespace, StoreService};
+pub use store::{StoreAllowlist, StoreBackend, StoreNamespace, StoreService};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
 pub use wire::{WireRequest, WireResponse};

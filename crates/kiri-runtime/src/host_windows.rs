@@ -422,6 +422,17 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                     opener_file_extensions(),
                 ),
                 kiri_core::limits::Limits::default(),
+            ))
+            // G-2d: kiri.window.state.save/load surface (audit item 13). Capability-gated
+            // (WINDOW_STATE) and confined to a fixed, frontend-unaddressable host store, so a
+            // granted capability still cannot read/write arbitrary state. This exceeds Tauri's
+            // window-state plugin, which persists to a frontend-readable/writable JSON without a
+            // second capability gate.
+            .with_window_state(kiri_core::window_state::WindowStateService::new(
+                std::sync::Arc::new(
+                    crate::window_state_ctl::win_window_state::WinWindowStateBackend::new(),
+                ),
+                kiri_core::limits::Limits::default(),
             ));
 
     // ---- WebView2 environment (W1: WebView2 shell) ----

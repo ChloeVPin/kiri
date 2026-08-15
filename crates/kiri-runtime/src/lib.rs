@@ -24,6 +24,7 @@ pub mod shell_ctl;
 pub mod shortcut_ctl;
 pub mod store_ctl;
 pub mod window_ctl;
+pub mod window_state_ctl;
 
 #[cfg(not(target_os = "windows"))]
 mod host_cross;
