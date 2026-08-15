@@ -248,6 +248,7 @@ mod tests {
         assert!(!scope.allows("relative/path.txt"));
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn path_scope_normalizes_var_symlink() {
         // On macOS /var -> /private/var. A root captured under /var must
