@@ -32,6 +32,7 @@ pub mod shell;
 pub mod shortcut;
 pub mod store;
 pub mod trace;
+pub mod tray;
 pub mod update;
 pub mod validate;
 pub mod window;

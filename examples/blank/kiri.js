@@ -57,6 +57,8 @@
     "kiri.opener.open": 48,
     "kiri.window.state.save": 49,
     "kiri.window.state.load": 50,
+    "kiri.tray.setMenu": 51,
+    "kiri.tray.invoke": 52,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -355,6 +357,24 @@
       return prev;
     })(global.kiri ? global.kiri.window : {}),
 
+    // Restricted, host-allowlisted system tray (kiri.tray.*). The frontend may
+    // only reference pre-approved item ids; the host owns every item's label and
+    // action, so JavaScript can never draw or invoke an arbitrary native menu.
+    // This exceeds Tauri's tray on the security axis (frontend cannot forge menu
+    // items or redirect actions once the capability is present).
+    tray: {
+      setMenu: function (ids) {
+        return call("kiri.tray.setMenu", { ids: ids || [] }).then(function (r) {
+          return { items: r.items };
+        });
+      },
+      invoke: function (id) {
+        return call("kiri.tray.invoke", { id: id }).then(function (r) {
+          return { id: r.id, action: r.action };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -387,5 +407,6 @@
   global.kiri.deeplink = Kiri.deeplink;
   global.kiri.opener = Kiri.opener;
   global.kiri.window = Kiri.window;
+  global.kiri.tray = Kiri.tray;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

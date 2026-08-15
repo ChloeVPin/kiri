@@ -164,6 +164,23 @@ fn record(markers: &Rc<RefCell<StartupMarkers>>, marker: Marker) {
     markers.borrow_mut().record(marker, now_ns());
 }
 
+/// Host allowlist of tray menu item ids for the native tray (audit item 14).
+/// Only these ids may appear in the native menu; labels and actions are host-owned.
+fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
+    vec![
+        kiri_core::tray::TrayItem {
+            id: "show".to_string(),
+            label: "Show Window".to_string(),
+            action: "show".to_string(),
+        },
+        kiri_core::tray::TrayItem {
+            id: "quit".to_string(),
+            label: "Quit".to_string(),
+            action: "quit".to_string(),
+        },
+    ]
+}
+
 fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let markers = Rc::new(RefCell::new(StartupMarkers::new()));
     record(&markers, Marker::ProcessSpawnRequested);
@@ -323,6 +340,15 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         std::sync::Arc::new(
             crate::window_state_ctl::cross_window_state::CrossWindowStateBackend::new(),
         ),
+        kiri_core::limits::Limits::default(),
+    ))
+    // G-6: kiri.tray.setMenu/invoke surface (audit item 14). Capability-gated
+    // (TRAY) and bounded to a host allowlist of item ids, so a granted capability
+    // still cannot draw an arbitrary native menu. This exceeds Tauri's tray, which
+    // lets the frontend build the native menu freely once the capability is present.
+    .with_tray(kiri_core::tray::TrayService::new(
+        std::sync::Arc::new(crate::tray_ctl::cross_tray::CrossTrayBackend::new()),
+        kiri_core::tray::TrayAllowlist::new(tray_items()),
         kiri_core::limits::Limits::default(),
     ));
     let smoke = options.smoke;

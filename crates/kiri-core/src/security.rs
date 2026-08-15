@@ -130,6 +130,9 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // capability bit even though it is granted here; the scheme/extension allowlist is
     // the second gate, so this still exceeds Tauri's unscoped opener plugin.
     caps.set(crate::dispatch::capability_bit::OPENER);
+    // WINDOW_STATE + TRAY capability bits are granted to the trusted frontend;
+    // the real authority for both is the host-owned store/allowlist (audit items
+    // 13 and 14). A granted bit cannot escape the host-owned boundary.
     caps
 }
 

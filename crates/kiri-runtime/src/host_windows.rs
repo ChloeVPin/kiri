@@ -227,6 +227,23 @@ impl WindowsHost {
     }
 }
 
+/// Host allowlist of tray menu item ids for the native tray (audit item 14).
+/// Only these ids may appear in the native menu; labels and actions are host-owned.
+fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
+    vec![
+        kiri_core::tray::TrayItem {
+            id: "show".to_string(),
+            label: "Show Window".to_string(),
+            action: "show".to_string(),
+        },
+        kiri_core::tray::TrayItem {
+            id: "quit".to_string(),
+            label: "Quit".to_string(),
+            action: "quit".to_string(),
+        },
+    ]
+}
+
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
@@ -432,6 +449,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 std::sync::Arc::new(
                     crate::window_state_ctl::win_window_state::WinWindowStateBackend::new(),
                 ),
+                kiri_core::limits::Limits::default(),
+            ))
+            // G-6: kiri.tray.setMenu/invoke surface (audit item 14). Capability-gated
+            // (TRAY) and bounded to a host allowlist of item ids, so a granted capability
+            // still cannot draw an arbitrary native menu. This exceeds Tauri's tray.
+            .with_tray(kiri_core::tray::TrayService::new(
+                std::sync::Arc::new(crate::tray_ctl::win_tray::WinTrayBackend::new()),
+                kiri_core::tray::TrayAllowlist::new(tray_items()),
                 kiri_core::limits::Limits::default(),
             ));
 

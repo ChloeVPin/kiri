@@ -160,6 +160,10 @@ pub mod command_id {
     pub const WINDOW_STATE_SAVE: u32 = 49;
     /// Load persisted window geometry (kiri.window.state.load, audit item 13).
     pub const WINDOW_STATE_LOAD: u32 = 50;
+
+    // --- audit item 14: kiri.tray (G-6) restricted, host-allowlisted tray ---
+    pub const TRAY_SET_MENU: u32 = 51;
+    pub const TRAY_INVOKE: u32 = 52;
 }
 
 /// Capability bits used by built-in control commands.
@@ -246,6 +250,9 @@ pub mod capability_bit {
     /// raw persisted blob; geometry lives in a fixed, host-owned namespace.
     pub const WINDOW_STATE: u32 = 19;
 
+    /// Authorizes kiri.tray.* (audit item 14).
+    pub const TRAY: u32 = 20;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -304,6 +311,8 @@ pub mod capability_bit {
             crate::dispatch::command_id::OPENER_OPEN => OPENER,
             crate::dispatch::command_id::WINDOW_STATE_SAVE
             | crate::dispatch::command_id::WINDOW_STATE_LOAD => WINDOW_STATE,
+            crate::dispatch::command_id::TRAY_SET_MENU
+            | crate::dispatch::command_id::TRAY_INVOKE => TRAY,
             _ => PING,
         }
     }
@@ -685,6 +694,18 @@ impl Router {
     /// window-state plugin (frontend-readable/writable geometry JSON).
     pub fn with_window_state(mut self, service: crate::window_state::WindowStateService) -> Self {
         for (id, required, handler) in crate::window_state::window_state_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.tray.* command set (audit item 14). Tray menu items are
+    /// capability-gated (bit TRAY) AND bounded to a host allowlist of item ids,
+    /// so a granted capability still cannot draw an arbitrary native menu; only
+    /// pre-approved item ids with host-owned labels/actions may show. Exceeds
+    /// Tauri's tray on the security axis.
+    pub fn with_tray(mut self, service: crate::tray::TrayService) -> Self {
+        for (id, required, handler) in crate::tray::tray_handlers(service) {
             self.register(id, required, handler);
         }
         self

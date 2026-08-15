@@ -62,6 +62,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "deeplink" => crate::dispatch::capability_bit::DEEPLINK,
         "opener" => crate::dispatch::capability_bit::OPENER,
         "window_state" => crate::dispatch::capability_bit::WINDOW_STATE,
+        "tray" => crate::dispatch::capability_bit::TRAY,
         _ => 0,
     }
 }
@@ -341,7 +342,16 @@ pub const COMMANDS: &[CommandSpec] = &[
         capability: "window_state",
         execution: "io",
         arity: 0,
+    }, // --- audit item 14: kiri.tray (G-6) restricted, host-allowlisted tray
+    // (exceeds Tauri tray on the security axis) ---
+    CommandSpec {
+        name: "kiri.tray.setMenu",
+        id: 51,
+        capability: "tray",
+        execution: "io",
+        arity: 1,
     },
+    CommandSpec { name: "kiri.tray.invoke", id: 52, capability: "tray", execution: "io", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

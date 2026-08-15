@@ -103,7 +103,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (183 tests: 158 kiri-core + 25 kiri-runtime). All of §6b's 13
+      --workspace` green (189 tests: 164 kiri-core + 25 kiri-runtime). All of §6b's 14
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
@@ -285,6 +285,25 @@ Cross-cutting differentiators to protect and advertise:
     x86_64-pc-windows-msvc. Headless tests cover save/load roundtrip, load-without-save,
     and capability-denied-without-bit. Exceeds on the security axis (capability authority
     + fixed host-owned namespace, second gate); no frontend-readable/writable geometry.
+
+14. [DONE] kiri.tray.setMenu/invoke (restricted, host-allowlisted tray, G-6) -
+    Tauri's tray API, once the capability is granted, lets the frontend build an
+    arbitrary native menu: arbitrary item labels, arbitrary actions, even items
+    that shell out (a spoofing/phishing + UX-hijack surface: a malicious frontend
+    could forge a "Sign out" / "Quit and wipe cache" item drawn in host chrome).
+    Kiri gates kiri.tray.* behind the TRAY capability bit (20) AND a host allowlist
+    of item ids; the frontend may only reference a pre-approved id whose label and
+    action are host-owned, so it cannot invent a label or redirect an action. A
+    granted capability addressing an unknown id is refused; menu-change events
+    return to the frontend only as host-owned action ids, never free-form text.
+    Implemented in kiri-core::tray (capability bit 20, command ids 51/52) with host
+    seams in crates/kiri-runtime/src/tray_ctl.rs (CrossTrayBackend/WinTrayBackend)
+    wired into both backends via ".with_tray(...)". Both paths cross-checked with
+    cargo clippy --target x86_64-pc-windows-msvc. Headless tests cover allowed
+    set-menu, unknown-item-denied, allowed-invoke-returns-host-action,
+    unknown-invoke-denied, and frontend-supplied-label-ignored. Exceeds on the
+    security axis (capability authority + host allowlist, frontend cannot forge or
+    redirect native menu items); JS surface in examples/blank/kiri.js (Kiri.tray).
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw
