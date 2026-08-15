@@ -161,15 +161,27 @@ impl PathScope {
 // separators to "/", case-folds on Windows, and lexically collapses "."/".."
 // so an escape like root/../etc cannot satisfy containment.
 fn normalize_path_key(p: &std::path::Path) -> String {
-    let raw = p.as_os_str().to_string_lossy();
-    let s: String = if let Some(rest) = raw.strip_prefix("/private/var/") {
+    let raw = p.as_os_str().to_string_lossy().into_owned();
+    // macOS: /private/var <-> /var equivalence (symlink).
+    let s = if let Some(rest) = raw.strip_prefix("/private/var/") {
         format!("/var/{rest}")
     } else if let Some(rest) = raw.strip_prefix("/private/") {
         format!("/{rest}")
     } else {
-        raw.into_owned()
+        raw
     };
-    let s = s.replace("\\\\?\\\\UNC\\\\", "\\\\").replace("\\\\?\\\\", "");
+    // Windows verbatim prefixes emitted by canonicalize() on Windows. UNC is
+    // checked before the bare form because it is a prefix of it. strip_prefix
+    // is used deliberately: a previous hand-escaped replace miscounted
+    // backslashes and silently failed to strip the prefix, leaving the root
+    // prefixed while candidates were not, which denied in-scope writes.
+    let s = if let Some(rest) = s.strip_prefix("\\\\?\\UNC\\") {
+        format!("\\\\{rest}")
+    } else if let Some(rest) = s.strip_prefix("\\\\?\\") {
+        rest.to_string()
+    } else {
+        s
+    };
     let s = s.replace('\\', "/");
     let s = if cfg!(target_os = "windows") { s.to_lowercase() } else { s };
     let mut out: Vec<&str> = Vec::new();
