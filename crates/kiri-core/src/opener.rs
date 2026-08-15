@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn capability_denied_without_opener_bit() {
         let r = router();
-        let mut granted = CapabilityBits::empty(); // no OPENER bit
+        let granted = CapabilityBits::empty(); // no OPENER bit
         let req = WireRequest::new(
             command_id::OPENER_OPEN,
             1,

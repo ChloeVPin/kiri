@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn capability_denied_without_tray_bit() {
         let r = router();
-        let mut granted = CapabilityBits::empty(); // no TRAY bit
+        let granted = CapabilityBits::empty(); // no TRAY bit
         let req =
             WireRequest::new(command_id::TRAY_INVOKE, 1, 1, serde_json::json!({ "id": "quit" }));
         let resp = r.dispatch(CallerId(1), &granted, &req, &mut NoopTraceSink);

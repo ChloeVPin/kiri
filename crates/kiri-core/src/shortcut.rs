@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn capability_denied_without_shortcut_bit() {
         let r = router();
-        let mut granted = CapabilityBits::empty(); // no SHORTCUT bit
+        let granted = CapabilityBits::empty(); // no SHORTCUT bit
         let req = WireRequest::new(
             command_id::SHORTCUT_REGISTER,
             1,

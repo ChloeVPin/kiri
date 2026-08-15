@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn capability_denied_without_autostart_bit() {
         let r = router(true);
-        let mut granted = CapabilityBits::empty(); // no AUTOSTART bit
+        let granted = CapabilityBits::empty(); // no AUTOSTART bit
         let req = WireRequest::new(
             command_id::AUTOSTART_SET,
             1,

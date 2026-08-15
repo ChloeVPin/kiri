@@ -573,3 +573,68 @@ mod tests {
         );
     }
 }
+
+/// The frontend command catalog in `examples/blank/kiri.js` (`IDS` map) must
+/// stay in lockstep with the backend `COMMANDS` catalog: every user-facing
+/// command (id >= 5; ids 1..4 are host-only ping/diag/resources) must be
+/// exposed on the frontend with the correct numeric id, and the frontend
+/// must not bind any id/name that is not in `COMMANDS`. A drift here means a
+/// capability Kiri claims to expose (the exceed-Tauri surface) is silently
+/// unusable from JavaScript. This is a headless contract check: it parses the
+/// committed JS, no WebView is launched.
+#[test]
+fn frontend_js_catalog_matches_backend_commands() {
+    let js_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/blank/kiri.js");
+    let js = std::fs::read_to_string(&js_path)
+        .expect("examples/blank/kiri.js must exist and be committed");
+
+    // Parse the `IDS = { "kiri.x.y": N, ... }` object.
+    let start = js.find("var IDS = {").expect("kiri.js must define var IDS");
+    let open = js[start..].find('{').unwrap() + start;
+    let close = js[open..].find('}').unwrap() + open;
+    let block = &js[open + 1..close];
+
+    let mut frontend: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for entry in block.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (name, val) =
+            entry.split_once(':').unwrap_or_else(|| panic!("malformed IDS entry: {entry}"));
+        let name = name.trim().trim_matches('"').to_string();
+        let val: u32 =
+            val.trim().parse().unwrap_or_else(|e| panic!("malformed IDS value for {name}: {e}"));
+        assert!(frontend.insert(name.clone(), val).is_none(), "duplicate frontend id for {name}");
+    }
+
+    // Every user-facing backend command must be bound on the frontend.
+    for cmd in COMMANDS {
+        if cmd.id < 5 {
+            continue; // host-only liveness/diagnostics/resource commands
+        }
+        let expected = frontend.get(cmd.name).copied();
+        assert_eq!(
+            expected,
+            Some(cmd.id),
+            "frontend binding for {} must equal backend id {} (got {:?})",
+            cmd.name,
+            cmd.id,
+            expected
+        );
+    }
+
+    // No frontend binding may point at a backend command that does not exist.
+    let backend_names: std::collections::HashSet<&str> = COMMANDS.iter().map(|c| c.name).collect();
+    for (name, id) in &frontend {
+        assert!(
+            backend_names.contains(name.as_str()),
+            "frontend binds {name} which is not a backend command"
+        );
+        assert!(
+            COMMANDS.iter().any(|c| c.id == *id),
+            "frontend binds {name} -> id {id} which is not a backend command id"
+        );
+    }
+}

@@ -207,3 +207,31 @@ measured wins on startup (macOS, 18-25% on engine-independent phases) and IPC th
 double-gated control plane: a granted capability can never by itself reach an unapproved
 host, command, template, channel, or scheme. The remaining work to take Tauri customers is
 product surface (mobile, bundling/signing, community) - not engine quality.
+
+
+## Headless catalog-lockstep guarantee (added this session)
+
+The exceed-Tauri surface claim depends on every backend capability being
+callable from the frontend. We now enforce that contract with a headless test
+(`kiri_core::commands::frontend_js_catalog_matches_backend_commands`):
+
+- It parses the committed `examples/blank/kiri.js` `IDS` map (no WebView launch).
+- Asserts every user-facing backend command (id >= 5; ids 1-4 are host-only
+  ping/diag/resources) is exposed on the frontend with the **exact** numeric id.
+- Asserts the frontend binds no id/name that is not in the backend `COMMANDS`
+  catalog (no orphan/collision).
+
+This complements the existing `generated_typescript_matches_committed_artifact`
+gate that keeps `gen/commands.ts` in lockstep with `COMMANDS`. Together they
+make the backend<->frontend<->typescript command catalog self-validating, so a
+silent drift (a capability that exists server-side but is unusable from JS)
+cannot land undetected. Verified this session: all 57 user commands exposed,
+ids 1:1, no orphans, no collisions.
+
+## Repo hygiene (this session)
+
+Removed 6 pre-existing compiler warnings in kiri-core test builds (one unused
+`Signer` import, five needless `mut` on capability masks that are never set in
+the negative-path tests). Remaining: one spurious `Read` import warning in
+http.rs where `read_to_end` requires the trait; left as-is because removing it
+breaks the test build. Does not affect `cargo clippy -D warnings`.

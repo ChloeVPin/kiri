@@ -152,7 +152,7 @@ mod tests {
     use crate::dispatch::{command_id, Router};
     use crate::trace::NoopTraceSink;
     use crate::wire::WireRequest;
-    use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+    use ed25519_dalek::{SigningKey, VerifyingKey};
     use serde_json::json;
 
     const RELEASE_KEY_HEX: &str =
