@@ -26,7 +26,7 @@ on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
 identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). The macOS development machine exercises the native wry/tao backend locally; Windows and Linux are exercised by CI.
 
-- 124 tests pass (`cargo test --workspace`: 99 kiri-core + 25 kiri-runtime)
+- 131 tests pass (`cargo test --workspace`: 106 kiri-core + 25 kiri-runtime)
 - control-plane ping + trace (T003) and caller/capability authority (T004)
   implemented; 10k-ping latency distribution emitted
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
@@ -36,6 +36,10 @@ identity and capability authority). All three platforms are equal targets. The w
 - developer diagnostics panel (T010) ships: a `kiri.diag` command returns a
   privacy-safe runtime snapshot (backend, runtime version, open-resource count,
   recent-request latency waterfall); the `examples/panel` frontend renders it
+- capability-gated `kiri.window.*` control surface (ids 14-22) implemented across
+  both backends; every window operation is authorized by the central capability
+  authority and routed through a host-owned controller, so JS never reaches the
+  native handle (exceeds Tauri's window module on the security axis)
 - Wry/Tao and Tauri baselines compile clean
 - the direct Win32 + WebView2 host runs natively on real Windows
   (`windows-latest` CI hard gate): native smoke + 100-cycle stress pass (Q-001 closed)
