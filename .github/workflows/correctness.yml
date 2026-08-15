@@ -145,4 +145,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Verify signed update manifest (headless, all OSes)
-        run: cargo test -p kiri-core update:: -- --nocapture
+        run: "cargo test -p kiri-core update:: -- --nocapture"
