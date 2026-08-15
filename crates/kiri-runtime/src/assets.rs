@@ -290,15 +290,14 @@ mod tests {
     fn tmp_root() -> (PathBuf, PathBuf) {
         // Manual temp dir (no external crate): unique subdir under the system
         // temp dir, removed at the end of the test via Drop below.
-        let base = std::env::temp_dir().join(format!(
-            "kiri-assets-test-{}-{}",
-            std::process::id(),
-            // cheap unique-ish suffix
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        ));
+        // Monotonic sequence (not wall-clock) so parallel tests never share a
+        // temp dir; two tests created within the same SystemTime granule on
+        // macOS would otherwise collide and one's cleanup would delete the
+        // other's files, causing non-deterministic panics.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("kiri-assets-test-{}-{}", std::process::id(), seq));
         std::fs::create_dir_all(&base).unwrap();
         let root = base.clone();
         let mut f = std::fs::File::create(root.join("index.html")).unwrap();
