@@ -1,32 +1,97 @@
+# Controlled startup-benchmark comparison: Kiri vs Wry/Tao vs Tauri.
+#
+# The repository is PUBLIC, so GitHub-hosted runners (ubuntu/windows/macos)
+# are FREE and unlimited. This workflow therefore runs the three-way startup
+# benchmark on hosted runners at $0 cost -- the previous version required a
+# nonexistent [self-hosted, windows, x64, kiri-perf] runner.
+#
+# What runs where:
+#   - macOS and Windows: native host + both baselines run their real startup
+#     smoke (real GPU), benchmarked over N runs by benchmark/harness.py.
+#   - Linux: baselines compile; the native WebView run is a SOFT probe
+#     (headless WebKit2GTK has no GPU on runners), so no benchmark numbers
+#     are emitted for Linux native here.
+#
+# To get a pinned, low-noise perf machine later, uncomment the self-hosted
+# job below and register a runner with those labels. Self-hosted is also free
+# on a public repo.
+
 name: controlled-performance
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
-  windows-perf:
-    runs-on: [self-hosted, windows, x64, kiri-perf]
-    concurrency:
-      group: kiri-windows-perf
-      cancel-in-progress: false
+  # Hosted, free on public repo. Real GPU on macOS + Windows.
+  hosted-comparison:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release -p kiri-runtime --bin kiri-host
-      - run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
-      - run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
-      - name: Startup benchmark (direct host)
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: Build Kiri host (release)
+        run: cargo build --release -p kiri-runtime --bin kiri-host
+      - name: Build Wry/Tao baseline (release)
+        run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
+      - name: Build Tauri baseline (release)
+        run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
+
+      - name: Startup benchmark (Kiri host)
         shell: pwsh
-        run: |
-          python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples/blank
+        if: runner.os == 'Windows'
+        run: python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+      - name: Startup benchmark (Kiri host)
+        if: runner.os == 'macOS'
+        run: python3 benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
+
       - name: Startup benchmark (Wry/Tao baseline)
         shell: pwsh
-        run: |
-          python benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
+        if: runner.os == 'Windows'
+        run: python benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
+      - name: Startup benchmark (Wry/Tao baseline)
+        if: runner.os == 'macOS'
+        run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
+
       - name: Startup benchmark (Tauri baseline)
         shell: pwsh
-        run: |
-          python benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+        if: runner.os == 'Windows'
+        run: python benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+      - name: Startup benchmark (Tauri baseline)
+        if: runner.os == 'macOS'
+        run: python3 benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- ./baselines/tauri/target/release/tauri-baseline --smoke
+
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-perf-results
+          name: perf-${{ matrix.os }}
           path: artifacts/
+
+  # Optional: pin to a dedicated low-noise machine. Free on public repos.
+  # Register a runner with labels [self-hosted, windows, x64, kiri-perf].
+  # self-hosted-perf:
+  #   runs-on: [self-hosted, windows, x64, kiri-perf]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - run: cargo build --release -p kiri-runtime --bin kiri-host
+  #     - run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
+  #     - run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
+  #     - name: Startup benchmark (direct host)
+  #       shell: pwsh
+  #       run: python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+  #     - name: Startup benchmark (Wry/Tao baseline)
+  #       shell: pwsh
+  #       run: python benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
+  #     - name: Startup benchmark (Tauri baseline)
+  #       shell: pwsh
+  #       run: python benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: windows-perf-results
+  #         path: artifacts/

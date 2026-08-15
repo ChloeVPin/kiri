@@ -1,3 +1,21 @@
+# Unified correctness + native-runtime gate for all three desktop OSes.
+#
+# The repository is PUBLIC, so GitHub-hosted Linux/Windows/macOS runners are
+# free and unlimited. That lets every OS run the SAME gate on the SAME path:
+#   - kiri-core / kiri-runtime tests
+#   - cargo fmt --check
+#   - cross-check the Win32+WebView2 backend against x86_64-pc-windows-msvc
+#     (on non-Windows runners; it only COMPILES there, never executes)
+#   - native host smoke + stress on the real backend for the OS
+#
+# Note on execution vs cross-check:
+#   - macOS: real GPU -> native smoke + stress are a HARD gate.
+#   - Windows: real GPU -> native smoke + stress are a HARD gate.
+#   - Linux: headless WebKit2GTK cannot finish compositor init without a GPU
+#     on GitHub runners, so the native run is a SOFT probe (reported, never
+#     fails). The identical code path is the hard gate on macOS/Windows.
+#     This is a platform limitation, not a code defect.
+
 name: correctness
 on:
   push:
@@ -13,39 +31,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      # The wry/tao backend builds and runs natively on Linux and needs the
-      # system WebKit/GTK libraries to compile. A real WebView render also
-      # needs a GPU/compositor; on GitHub's headless Linux runners WebKit2GTK
-      # cannot finish compositor init under xvfb (no GPU), so the native
-      # smoke/stress run times out there. That run is therefore a *soft gate*
-      # on Linux (reported, not failing) while the same code path is validated
-      # on a real GPU on macOS (native run) and Windows (windows-host-smoke CI).
+
       - if: runner.os == 'Linux'
         name: Install Linux system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev xvfb libgl1-mesa-dri libglu1-mesa libglib2.0-0 libegl1
+
       - run: cargo fmt --all -- --check
+
       # The direct Win32 + WebView2 backend only compiles on Windows. On
-      # macOS/Linux we cross-check it against the windows-msvc target and
-      # also build + exercise the native wry/tao backend.
+      # macOS/Linux we cross-check it against the windows-msvc target.
       - if: runner.os != 'Windows'
         run: rustup target add x86_64-pc-windows-msvc
       - if: runner.os != 'Windows'
         run: cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
       - if: runner.os != 'Windows'
         run: cargo clippy --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets -- -D warnings
+
+      # Core + runtime tests (every OS).
       - if: runner.os != 'Windows'
         run: cargo test -p kiri-core
       - if: runner.os != 'Windows'
         name: Run kiri-runtime unit tests
         run: cargo test -p kiri-runtime
+      - if: runner.os == 'Windows'
+        run: cargo test --workspace
+      - if: runner.os == 'Windows'
+        run: cargo clippy -p kiri-runtime --all-targets -- -D warnings
+
       - if: runner.os != 'Windows'
         run: cargo build -p kiri-runtime --bins
-      # Native smoke + stress are a HARD gate on macOS (real GPU) and a SOFT
-      # probe on Linux (headless WebKit cannot finish compositor init without a
-      # GPU; reported, never failing). Both paths share the event-loop-
-      # independent watchdog in host_cross.rs so they cannot wedge the job.
+
+      # Native smoke + stress are HARD gates on macOS and Windows (real GPU).
       - if: runner.os == 'macOS'
         name: Native smoke run (wry/tao backend, real GPU)
         run: |
@@ -55,6 +73,25 @@ jobs:
       - if: runner.os == 'macOS'
         name: Native stress run (wry/tao backend, real GPU)
         run: ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
+
+      - if: runner.os == 'Windows'
+        name: Native smoke run (Win32 + WebView2 backend, real GPU)
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:GITHUB_WORKSPACE 'artifacts'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          .\target\debug\kiri-host.exe --smoke --frontend examples/blank --markers-out artifacts\startup.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Content artifacts\startup.json
+          python -c "import json; d=json.load(open('artifacts/startup.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('startup markers OK:', sorted(names))"
+      - if: runner.os == 'Windows'
+        name: Native stress run (Win32 + WebView2 backend, real GPU)
+        shell: pwsh
+        run: |
+          .\target\debug\kiri-host-stress.exe --cycles 100 --frontend examples/blank --exit-after-ready-ms 250 --watchdog-ms 30000
+          exit $LASTEXITCODE
+
+      # Linux: native run is a SOFT probe (headless WebKit has no GPU).
       - if: runner.os == 'Linux'
         name: Headless WebView probe (soft gate, no GPU on runner)
         run: |
@@ -71,13 +108,9 @@ jobs:
           else
             echo "[soft-gate] native WebView did not reach startup markers on this headless Linux runner (exit=$rc)."
             echo "[soft-gate] This is a known WebKit2GTK-no-GPU limitation, not a code defect."
-            echo "[soft-gate] The same code path is the hard gate on macOS (native) and is exercised by windows-host-smoke CI."
+            echo "[soft-gate] The same code path is the hard gate on macOS (native) and Windows (native)."
             echo "[soft-gate] Treating as PASS for CI purposes."
           fi
-      - if: runner.os == 'Windows'
-        run: cargo test --workspace
-      - if: runner.os == 'Windows'
-        run: cargo clippy -p kiri-runtime --all-targets -- -D warnings
 
   # Both baselines are standalone projects on purpose; make sure they still
   # compile on every OS (Tauri/wry need their platform libs on Linux).
@@ -92,6 +125,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
-      - run: cargo check --manifest-path baselines/wry-tao/Cargo.toml
-      - run: cargo check --manifest-path baselines/tauri/Cargo.toml
-
+      - run: cargo build --manifest-path baselines/wry-tao/Cargo.toml
+      - run: cargo build --manifest-path baselines/tauri/Cargo.toml
