@@ -8,7 +8,7 @@
 
 # Kiri
 
-Cross-platform native desktop app runtime · wry/tao host on macOS and Linux · direct WebView2 host on Windows · platform-neutral control-plane core · Tauri and Wry baselines measured on a shared startup-marker schema
+Cross-platform native desktop app runtime for Windows, macOS, and Linux · direct WebView2 host on Windows, wry/tao host on macOS and Linux · platform-neutral control-plane core · Tauri and Wry baselines measured on a shared startup-marker schema
 
 </div>
 

@@ -409,9 +409,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             post: function (o) { window.chrome.webview.postMessage(o); },
             send: function (req) { window.chrome.webview.postMessage({ type: 'cmd', request: req }); }
           };
-          window.addEventListener('DOMContentLoaded', function () {
+          function postDom() {
             window.kiri.post({ type: 'ready', phase: 'dom' });
-          });
+          }
+          if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', postDom);
+          } else {
+            postDom();
+          }
           requestAnimationFrame(function () {
             window.kiri.post({ type: 'ready', phase: 'frame' });
           });
