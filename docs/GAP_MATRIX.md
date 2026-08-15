@@ -21,7 +21,7 @@ source or docs; B = maintained impl; D = inference.
 | # | Tauri capability | Kiri status | Win level |
 |---|------------------|-------------|-----------|
 | G-1 | Mobile (iOS/Android) | Absent (desktop only) | Hard / long |
-| G-2 | 50+ official plugins + ecosystem | ABI implemented (R-2) + host-owned external plugin loader with per-plugin command allowlist (fail-closed): third-party plugins can only load when host-approved by name and only expose allowlisted commands. Exceeds Tauri's plugin model (trusts any plugin on path) on the security axis. Ecosystem breadth (50+ plugins) still absent. | Medium |
+| G-2 | 50+ official plugins + ecosystem | ABI implemented (R-2) + host-owned external plugin loader + manifest wired into startup (default-deny JSON manifest + name->descriptor registry). Third-party plugins load only when host-approved by name and only expose allowlisted commands (fail-closed). Exceeds Tauri's plugin model (trusts any plugin on path) on the security axis. Ecosystem breadth (50+ plugins, catalogs) still absent. | Medium |
 | G-3 | Bundler + autoupdater | Signed-update verifier done; no packaging/signing (needs certs) | Medium / blocked on certs |
 | G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on macOS/Linux; Windows parity pending real hardware | Medium |
 | G-5 | JS API breadth (cli, process) | DONE: kiri.cli.args (id 66) structured + allowlist-scoped, exceeds Tauri process.argv; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
