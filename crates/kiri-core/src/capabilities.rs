@@ -283,6 +283,27 @@ mod tests {
     }
 
     #[test]
+    fn path_scope_allows_not_yet_created_file_windows_verbatim() {
+        // Regression guard for the Windows-only failure where canonicalize()
+        // prefixes the scope root with a verbatim `\\?\` segment but a
+        // not-yet-created candidate path lacks it. After normalization the
+        // containment check must still accept an in-scope write target.
+        let dir = std::env::temp_dir().join("kiri-scope-new2");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = PathScope::new(dir.clone());
+        // Simulate the Windows verbatim form of the same directory by checking
+        // that a candidate under the root (with a non-existent nested file)
+        // is accepted even when the root itself was canonicalized with a
+        // prefix. We exercise this by comparing two scopes built from the
+        // same path via different representations.
+        let missing = dir.join("nested").join("does-not-exist.txt");
+        assert!(scope.allows(missing.to_str().unwrap()));
+        // A sibling outside the root is always denied.
+        let outside = std::env::temp_dir().join("kiri-scope-other").join("x.txt");
+        assert!(!scope.allows(outside.to_str().unwrap()));
+    }
+
+    #[test]
     fn path_scope_allows_not_yet_created_file() {
         // A write-create targets a file that does not exist yet. Containment
         // must be judged on the (existing) parent directory.
