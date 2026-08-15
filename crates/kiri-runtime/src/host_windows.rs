@@ -270,6 +270,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
     // G-6: trusted frontend may use the capability-gated clipboard surface.
     caller_caps.set(kiri_core::dispatch::capability_bit::CLIPBOARD);
+    // audit-18: trusted frontend may use the host-pinned-key updater check.
+    caller_caps.set(kiri_core::dispatch::capability_bit::UPDATER);
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
     // Shared generational resource table owned by the host. The resources plugin
@@ -496,6 +498,12 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                     m
                 })),
                 kiri_core::config::ConfigAllowlist::new(config_keys()),
+                kiri_core::limits::Limits::default(),
+            ))
+            .with_updater(kiri_core::updater_surface::UpdaterService::new(
+                HOST_PINNED_UPDATE_PUBLIC_KEY,
+                kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
+                    .expect("valid package version"),
                 kiri_core::limits::Limits::default(),
             ));
 
@@ -915,6 +923,13 @@ fn event_channels() -> Vec<kiri_core::event::AllowedChannel> {
 /// the exact key paths below may be read by the frontend. Inverts Tauri's
 /// getConfig trust model: a granted CONFIG capability still cannot read arbitrary
 /// host config; only pre-approved key paths may be read.
+/// Host-pinned Ed25519 public key for the signed-update verifier (audit-18).
+/// NEVER sourced from the frontend: a malicious or phished page cannot substitute
+/// a key and accept an attacker-signed release. The matching secret signs release
+/// assets at build time. Rotate only via a new pinned build.
+const HOST_PINNED_UPDATE_PUBLIC_KEY: &str =
+    "7d4b3f2a9c1e8b6d5f0a3c2e9b7d4f1a6c8e0b3d5f7a9c2e4b6d8f0a1c3e5b7d";
+
 fn config_keys() -> Vec<kiri_core::config::AllowedConfigKey> {
     vec![
         kiri_core::config::AllowedConfigKey { key: "app.name".to_string() },

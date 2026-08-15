@@ -179,6 +179,9 @@ pub mod command_id {
     // Tauri's unrestricted getConfig() on the security axis ---
     pub const CONFIG_GET: u32 = 59;
     pub const CONFIG_KEYS: u32 = 60;
+
+    // --- audit item 18: kiri.updater.check (restricted, host-pinned-key) ---
+    pub const UPDATER_CHECK: u32 = 61;
 }
 
 /// Capability bits used by built-in control commands.
@@ -276,6 +279,12 @@ pub mod capability_bit {
     /// an arbitrary config key; only host-allowlisted key paths may be read.
     pub const CONFIG: u32 = 22;
 
+    /// Authorizes kiri.updater.check (audit item 18). Exceeds Tauri's updater on
+    /// the security axis: the Ed25519 public key is host-pinned and never
+    /// supplied by the frontend, so a malicious or phished frontend cannot
+    /// substitute a key and accept an attacker-signed release.
+    pub const UPDATER: u32 = 23;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -345,6 +354,7 @@ pub mod capability_bit {
             crate::dispatch::command_id::CONFIG_GET | crate::dispatch::command_id::CONFIG_KEYS => {
                 CONFIG
             }
+            crate::dispatch::command_id::UPDATER_CHECK => UPDATER,
             _ => PING,
         }
     }
@@ -774,6 +784,19 @@ impl Router {
     /// security axis.
     pub fn with_config(mut self, service: crate::config::ConfigService) -> Self {
         for (id, required, handler) in crate::config::config_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.updater.check (restricted) command set (audit item 18).
+    /// The updater is capability-gated (bit UPDATER) AND bound to a host-pinned
+    /// Ed25519 public key, so a granted capability still cannot apply an update
+    /// or substitute the signing key; JavaScript only learns whether a newer,
+    /// correctly-signed release exists for this OS. Exceeds Tauri's updater on
+    /// the security axis by construction.
+    pub fn with_updater(mut self, service: crate::updater_surface::UpdaterService) -> Self {
+        for (id, required, handler) in crate::updater_surface::updater_handlers(service) {
             self.register(id, required, handler);
         }
         self

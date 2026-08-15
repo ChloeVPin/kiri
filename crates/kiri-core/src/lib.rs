@@ -37,6 +37,7 @@ pub mod store;
 pub mod trace;
 pub mod tray;
 pub mod update;
+pub mod updater_surface;
 pub mod validate;
 pub mod window;
 pub mod window_state;
@@ -72,6 +73,7 @@ pub use shortcut::{ShortcutAllowlist, ShortcutBinding, ShortcutService};
 pub use store::{StoreAllowlist, StoreBackend, StoreNamespace, StoreService};
 pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
+pub use updater_surface::{UpdaterService, UPDATER_CAPABILITY};
 pub use wire::{WireRequest, WireResponse};
 
 /// Protocol constants shared by all Kiri transports.

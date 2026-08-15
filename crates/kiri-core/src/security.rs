@@ -138,6 +138,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // CONFIG capability bit even though it is granted here; the key allowlist is
     // the second gate, so this still exceeds Tauri's unrestricted getConfig().
     caps.set(crate::dispatch::capability_bit::CONFIG);
+    // audit-18: the trusted frontend may use the restricted, host-pinned-key
+    // updater check (kiri.updater.check). Authorization still flows through the
+    // UPDATER capability bit even though it is granted here; the pinned key is
+    // the second gate, so this still exceeds Tauri's frontend-keyed updater.
+    caps.set(crate::dispatch::capability_bit::UPDATER);
     caps
 }
 

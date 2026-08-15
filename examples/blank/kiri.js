@@ -67,6 +67,7 @@
     "kiri.event.channels": 58,
     "kiri.config.get": 59,
     "kiri.config.keys": 60,
+    "kiri.updater.check": 61,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -447,6 +448,24 @@
       },
     },
 
+    // Restricted, host-pinned-key signed-update check (kiri.updater.check, audit
+    // item 18). The frontend submits a manifest and learns only whether a newer,
+    // correctly-signed release exists for this OS; the signing key is host-pinned
+    // and never visible to JavaScript, so this exceeds Tauri's frontend-keyed
+    // updater on the security axis.
+    updater: {
+      check: function (manifest) {
+        return call("kiri.updater.check", { manifest: manifest }).then(function (r) {
+          return {
+            available: r.available,
+            version: r.version,
+            platform: r.platform,
+            notes: r.notes,
+          };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -481,6 +500,7 @@
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
   global.kiri.sidecar = Kiri.sidecar;
+  global.kiri.updater = Kiri.updater;
   global.kiri.event = Kiri.event;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

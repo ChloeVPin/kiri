@@ -65,6 +65,7 @@ fn capability_bit_for(name: &str) -> u32 {
         "tray" => crate::dispatch::capability_bit::TRAY,
         "sidecar" => crate::dispatch::capability_bit::SIDECAR,
         "config" => crate::dispatch::capability_bit::CONFIG,
+        "updater" => crate::dispatch::capability_bit::UPDATER,
         _ => 0,
     }
 }
@@ -415,6 +416,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         capability: "config",
         execution: "pure",
         arity: 0,
+    },
+    // --- audit item 18: kiri.updater.check (G-3) restricted, host-pinned-key
+    // updater (exceeds Tauri's updater on the security axis) ---
+    CommandSpec {
+        name: "kiri.updater.check",
+        id: 61,
+        capability: "updater",
+        execution: "pure",
+        arity: 1,
     },
 ];
 

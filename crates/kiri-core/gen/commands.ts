@@ -121,9 +121,11 @@ export interface KiriCommands {
   kiri_config_get(arg: unknown): Promise<unknown>;
   /** kiri_config_keys (id=60, capability="config", execution="pure") */
   kiri_config_keys(arg: unknown): Promise<unknown>;
+  /** kiri_updater_check (id=61, capability="updater", execution="pure") */
+  kiri_updater_check(arg: unknown): Promise<unknown>;
 }
 
-export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set", "kiri.deeplink.register", "kiri.opener.open", "kiri.window.state.save", "kiri.window.state.load", "kiri.tray.setMenu", "kiri.tray.invoke", "kiri.sidecar.spawn", "kiri.sidecar.stop", "kiri.sidecar.list", "kiri.event.publish", "kiri.event.subscribe", "kiri.event.channels", "kiri.config.get", "kiri.config.keys"] as const;
+export const KIRI_COMMAND_NAMES = ["kiri.ping", "kiri.diag", "kiri.open", "kiri.close", "kiri.platform.os", "kiri.platform.arch", "kiri.app.version", "kiri.event.emit", "kiri.event.listen", "kiri.fs.read", "kiri.fs.write", "kiri.fs.exists", "kiri.fs.remove", "kiri.window.title.get", "kiri.window.title.set", "kiri.window.show", "kiri.window.hide", "kiri.window.minimize", "kiri.window.maximize", "kiri.window.restore", "kiri.window.close", "kiri.window.focus", "kiri.clipboard.read", "kiri.clipboard.write", "kiri.path.dirname", "kiri.path.basename", "kiri.path.extname", "kiri.path.stem", "kiri.path.join", "kiri.path.isAbsolute", "kiri.os.homedir", "kiri.os.tempdir", "kiri.os.appConfigDir", "kiri.os.appDataDir", "kiri.os.appCacheDir", "kiri.os.documentDir", "kiri.os.appDir", "kiri.http.get", "kiri.shell.run", "kiri.notification.show", "kiri.dialog.open", "kiri.shortcut.register", "kiri.autostart.set", "kiri.autostart.get", "kiri.store.get", "kiri.store.set", "kiri.deeplink.register", "kiri.opener.open", "kiri.window.state.save", "kiri.window.state.load", "kiri.tray.setMenu", "kiri.tray.invoke", "kiri.sidecar.spawn", "kiri.sidecar.stop", "kiri.sidecar.list", "kiri.event.publish", "kiri.event.subscribe", "kiri.event.channels", "kiri.config.get", "kiri.config.keys", "kiri.updater.check"] as const;
 
 export function commandId(name: string): number | undefined {
   switch (name) {
@@ -187,6 +189,7 @@ export function commandId(name: string): number | undefined {
     case "kiri.event.channels": return 58;
     case "kiri.config.get": return 59;
     case "kiri.config.keys": return 60;
+    case "kiri.updater.check": return 61;
     default: return undefined;
   }
 }
