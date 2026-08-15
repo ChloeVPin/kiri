@@ -105,6 +105,17 @@ pub mod command_id {
     /// Capability-scoped HTTP GET (kiri.http.get, audit item 3). Allows a
     /// host-allowlisted fetch only; exceeds Tauri's unrestricted http plugin.
     pub const HTTP_GET: u32 = 38;
+    /// Capability-scoped, host-allowlisted HTTP POST (G-9 extension of audit
+    /// item 3). Exceeds Tauri's http plugin by also binding the HTTP method to
+    /// a host allowlist, so a granted capability still cannot issue an
+    /// unapproved verb.
+    pub const HTTP_POST: u32 = 62;
+    /// HTTP PUT (G-9).
+    pub const HTTP_PUT: u32 = 63;
+    /// HTTP PATCH (G-9).
+    pub const HTTP_PATCH: u32 = 64;
+    /// HTTP DELETE (G-9).
+    pub const HTTP_DELETE: u32 = 65;
     /// Capability-scoped, host-allowlisted command execution
     /// (kiri.shell.run, audit item 4, G-4 JS surface parity with Tauri's shell
     /// plugin). Exceeds Tauri's shell plugin on the security axis: a granted
@@ -329,7 +340,11 @@ pub mod capability_bit {
             | crate::dispatch::command_id::OS_APP_CACHE_DIR
             | crate::dispatch::command_id::OS_DOCUMENT_DIR
             | crate::dispatch::command_id::OS_APP_DIR => PATH,
-            crate::dispatch::command_id::HTTP_GET => HTTP,
+            crate::dispatch::command_id::HTTP_GET
+            | crate::dispatch::command_id::HTTP_POST
+            | crate::dispatch::command_id::HTTP_PUT
+            | crate::dispatch::command_id::HTTP_PATCH
+            | crate::dispatch::command_id::HTTP_DELETE => HTTP,
             crate::dispatch::command_id::SHELL_RUN => SHELL,
             crate::dispatch::command_id::NOTIFY => NOTIFICATION,
             crate::dispatch::command_id::DIALOG_OPEN => DIALOG,

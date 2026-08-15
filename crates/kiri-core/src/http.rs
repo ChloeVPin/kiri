@@ -31,6 +31,8 @@ pub const HTTP_CAPABILITY: u32 = 10;
 pub struct HttpRequest {
     pub method: String,
     pub url: String,
+    /// Request body (already decoded from the control-plane base64), if any.
+    pub body: Option<Vec<u8>>,
     /// Maximum response body bytes the service will accept.
     pub max_bytes: u64,
 }
@@ -80,6 +82,32 @@ impl HostAllowlist {
     }
 }
 
+/// Host-configured set of permitted HTTP methods. Default-deny: Kiri only
+/// issues verbs explicitly listed by the native host, so a granted HTTP
+/// capability cannot be escalated into an unapproved verb (for example a POST
+/// used as a pivot). This is the second gate that makes kiri.http exceed
+/// Tauri's http plugin, which allows any method once the capability is present.
+#[derive(Debug, Clone, Default)]
+pub struct MethodAllowlist {
+    methods: Vec<String>,
+}
+
+impl MethodAllowlist {
+    pub fn new(methods: Vec<String>) -> Self {
+        Self { methods }
+    }
+
+    /// Whether `method` (case-insensitive) is permitted.
+    pub fn allows(&self, method: &str) -> bool {
+        let m = method.to_ascii_uppercase();
+        self.methods.iter().any(|x| x.to_ascii_uppercase() == m)
+    }
+
+    pub fn methods(&self) -> &[String] {
+        &self.methods
+    }
+}
+
 /// Extract the authority (host[:port]) from an `http`/`https` URL without a URL
 /// crate. Returns `None` for malformed input so the service can reject it.
 fn authority_of(url: &str) -> Option<String> {
@@ -99,29 +127,70 @@ pub struct HttpService {
     client: Arc<dyn HttpClient>,
     allowlist: Arc<HostAllowlist>,
     limits: Arc<Limits>,
+    methods: Arc<MethodAllowlist>,
 }
 
 impl HttpService {
     pub fn new(client: Arc<dyn HttpClient>, allowlist: HostAllowlist, limits: Limits) -> Self {
-        Self { client, allowlist: Arc::new(allowlist), limits: Arc::new(limits) }
+        Self {
+            client,
+            allowlist: Arc::new(allowlist),
+            limits: Arc::new(limits),
+            // Default verbs: GET/POST/PUT/PATCH/DELETE. The native host may
+            // tighten this with `with_methods` to drop verbs it will not sign.
+            methods: Arc::new(MethodAllowlist::new(vec![
+                "GET".to_string(),
+                "POST".to_string(),
+                "PUT".to_string(),
+                "PATCH".to_string(),
+                "DELETE".to_string(),
+            ])),
+        }
     }
 
-    /// Issue a GET and return the response bounded by `max_bytes` (or the bulk
-    /// ceiling when omitted). Rejects hosts outside the allowlist and responses
-    /// that exceed the configured body cap.
-    pub fn get(&self, req_url: &str, max_bytes: Option<u64>) -> Result<Value> {
+    /// Override the permitted HTTP methods (default: GET/POST/PUT/PATCH/DELETE).
+    pub fn with_methods(mut self, methods: MethodAllowlist) -> Self {
+        self.methods = Arc::new(methods);
+        self
+    }
+
+    /// Shared executor for every verb. Applies the two gates in order: the
+    /// method allowlist (verb escalation), then the host allowlist (exfil
+    /// destination), then the bulk-object ceiling. A body is base64 on the
+    /// control plane; it is decoded here before transport.
+    fn execute(
+        &self,
+        method: &str,
+        req_url: &str,
+        body: Option<&[u8]>,
+        max_bytes: Option<u64>,
+    ) -> Result<Value> {
+        let verb = method.to_ascii_uppercase();
+        if !self.methods.allows(&verb) {
+            return Err(Error::scope_denied(format!(
+                "kiri.http.{}: method not on allowlist",
+                verb.to_ascii_lowercase()
+            )));
+        }
         let authority = authority_of(req_url).ok_or_else(|| {
-            Error::invalid_argument(format!("kiri.http.get: malformed url: {req_url}"))
+            Error::invalid_argument(format!(
+                "kiri.http.{}: malformed url: {}",
+                verb.to_ascii_lowercase(),
+                req_url
+            ))
         })?;
         if !self.allowlist.allows(&authority) {
             return Err(Error::scope_denied(format!(
-                "kiri.http.get: host not on allowlist: {authority}"
+                "kiri.http.{}: host not on allowlist: {}",
+                verb.to_ascii_lowercase(),
+                authority
             )));
         }
         let cap = max_bytes.unwrap_or(self.limits.max_single_bulk_bytes);
         let resp = self.client.fetch(HttpRequest {
-            method: "GET".to_string(),
+            method: verb.clone(),
             url: req_url.to_string(),
+            body: body.map(|b| b.to_vec()),
             max_bytes: cap,
         })?;
         // Enforce the bulk-object ceiling even though the client was told the
@@ -137,10 +206,51 @@ impl HttpService {
             "bytes": resp.body.len(),
         }))
     }
+
+    /// Issue a GET and return the response bounded by `max_bytes` (or the bulk
+    /// ceiling when omitted). Rejects hosts/methods outside the allowlists and
+    /// responses that exceed the configured body cap.
+    pub fn get(&self, req_url: &str, max_bytes: Option<u64>) -> Result<Value> {
+        self.execute("GET", req_url, None, max_bytes)
+    }
+
+    /// Issue a POST with an optional request body (raw bytes). Same gates as
+    /// `get` plus the method allowlist.
+    pub fn post(
+        &self,
+        req_url: &str,
+        body: Option<&[u8]>,
+        max_bytes: Option<u64>,
+    ) -> Result<Value> {
+        self.execute("POST", req_url, body, max_bytes)
+    }
+
+    /// Issue a PUT with an optional request body.
+    pub fn put(&self, req_url: &str, body: Option<&[u8]>, max_bytes: Option<u64>) -> Result<Value> {
+        self.execute("PUT", req_url, body, max_bytes)
+    }
+
+    /// Issue a PATCH with an optional request body.
+    pub fn patch(
+        &self,
+        req_url: &str,
+        body: Option<&[u8]>,
+        max_bytes: Option<u64>,
+    ) -> Result<Value> {
+        self.execute("PATCH", req_url, body, max_bytes)
+    }
+
+    /// Issue a DELETE.
+    pub fn delete(&self, req_url: &str, max_bytes: Option<u64>) -> Result<Value> {
+        self.execute("DELETE", req_url, None, max_bytes)
+    }
 }
 
 /// Build the `kiri.http.*` handlers bound to one HttpService. Reused by the
 /// router builder and any plugin path so authority is identical either way.
+/// Every verb is capability-gated (bit HTTP) AND constrained to the method +
+/// host allowlists, so a granted capability still cannot issue an unapproved
+/// verb or fetch an unapproved origin (exceeds Tauri's http plugin).
 pub fn http_handlers(
     service: HttpService,
 ) -> Vec<(u32, crate::capabilities::CapabilityBits, crate::dispatch::Handler)> {
@@ -151,22 +261,54 @@ pub fn http_handlers(
     let mut required = CapabilityBits::empty();
     required.set(HTTP_CAPABILITY);
 
-    let svc = service.clone();
-    vec![(
-        command_id::HTTP_GET,
-        required,
-        Arc::new(move |_c, _rid, p: &Value| {
-            let url = p
-                .get("url")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| Error::invalid_argument("kiri.http.get requires string url"))?;
-            let max_bytes = p
-                .get("maxBytes")
-                .and_then(|v| v.as_u64())
-                .or_else(|| p.get("max_bytes").and_then(|v| v.as_u64()));
-            svc.get(url, max_bytes)
-        }) as Handler,
-    )]
+    let mk = |id: u32, verb: &'static str| {
+        let svc = service.clone();
+        let verb = verb.to_string();
+        (
+            id,
+            required,
+            Arc::new(move |_c, _rid, p: &Value| {
+                let url = p.get("url").and_then(|v| v.as_str()).ok_or_else(|| {
+                    Error::invalid_argument(format!(
+                        "kiri.http.{} requires string url",
+                        verb.to_ascii_lowercase()
+                    ))
+                })?;
+                let body = p
+                    .get("body")
+                    .and_then(|v| v.as_str())
+                    .map(|b| base64::engine::general_purpose::STANDARD.decode(b))
+                    .transpose()
+                    .map_err(|e| {
+                        Error::invalid_argument(format!(
+                            "kiri.http.{}: body must be base64: {}",
+                            verb.to_ascii_lowercase(),
+                            e
+                        ))
+                    })?;
+                let max_bytes = p
+                    .get("maxBytes")
+                    .and_then(|v| v.as_u64())
+                    .or_else(|| p.get("max_bytes").and_then(|v| v.as_u64()));
+                match verb.as_str() {
+                    "GET" => svc.get(url, max_bytes),
+                    "POST" => svc.post(url, body.as_deref(), max_bytes),
+                    "PUT" => svc.put(url, body.as_deref(), max_bytes),
+                    "PATCH" => svc.patch(url, body.as_deref(), max_bytes),
+                    "DELETE" => svc.delete(url, max_bytes),
+                    _ => Err(Error::command_error("kiri.http: unknown method")),
+                }
+            }) as Handler,
+        )
+    };
+
+    vec![
+        mk(command_id::HTTP_GET, "GET"),
+        mk(command_id::HTTP_POST, "POST"),
+        mk(command_id::HTTP_PUT, "PUT"),
+        mk(command_id::HTTP_PATCH, "PATCH"),
+        mk(command_id::HTTP_DELETE, "DELETE"),
+    ]
 }
 
 /// Minimal blocking HTTP/1.1 GET client over std TCP. Intentionally TLS-free:
@@ -201,9 +343,17 @@ impl HttpClient for StdHttpClient {
         use std::net::TcpStream;
         let mut stream = TcpStream::connect((host.as_str(), port))
             .map_err(|e| Error::resource_not_found(format!("http connect {authority}: {e}")))?;
-        let request = format!(
-            "GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\nAccept: */*\r\n\r\n"
+        let mut request = format!(
+            "{} {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\nAccept: */*\r\n",
+            req.method
         );
+        if let Some(body) = &req.body {
+            request.push_str(&format!("Content-Length: {}\r\n", body.len()));
+        }
+        request.push_str("\r\n");
+        if let Some(body) = &req.body {
+            request.push_str(std::str::from_utf8(body).unwrap_or(""));
+        }
         stream
             .write_all(request.as_bytes())
             .map_err(|e| Error::command_error(format!("http write: {e}")))?;
@@ -404,5 +554,45 @@ mod tests {
         let payload = resp.payload.unwrap();
         assert_eq!(payload["status"], 200);
         assert_eq!(payload["bytes"], body.len());
+    }
+
+    #[test]
+    fn post_requires_method_on_allowlist() {
+        // Service that only permits GET (POST is NOT on the method allowlist).
+        let svc = HttpService::new(
+            Arc::new(StubHttpClient { status: 200, body: b"ok".to_vec() }),
+            HostAllowlist::new(vec!["api.example.com".to_string()]),
+            Limits::default(),
+        )
+        .with_methods(MethodAllowlist::new(vec!["GET".to_string()]));
+        let r = Router::new_with_limits(Limits::default()).with_http(svc);
+        let mut granted = CapabilityBits::empty();
+        granted.set(HTTP_CAPABILITY);
+        // POST must be denied by the method allowlist even with the HTTP cap.
+        let denied = r.dispatch(
+            CallerId(1),
+            &granted,
+            &WireRequest::new(
+                command_id::HTTP_POST,
+                1,
+                1,
+                serde_json::json!({ "url": "http://api.example.com/x" }),
+            ),
+            &mut NoopTraceSink,
+        );
+        assert!(denied.error.is_some(), "POST must be denied when method not on allowlist");
+        // GET still works: the host allowlist is the only other gate.
+        let ok = r.dispatch(
+            CallerId(1),
+            &granted,
+            &WireRequest::new(
+                command_id::HTTP_GET,
+                2,
+                1,
+                serde_json::json!({ "url": "http://api.example.com/x" }),
+            ),
+            &mut NoopTraceSink,
+        );
+        assert!(ok.error.is_none(), "GET must still work: {:?}", ok.error);
     }
 }

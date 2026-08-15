@@ -68,6 +68,10 @@
     "kiri.config.get": 59,
     "kiri.config.keys": 60,
     "kiri.updater.check": 61,
+    "kiri.http.post": 62,
+    "kiri.http.put": 63,
+    "kiri.http.patch": 64,
+    "kiri.http.delete": 65,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -224,11 +228,25 @@
       appDir: function () { return call("kiri.os.appDir").then(function (r) { return r.dir; }); },
     },
 
+    function httpResult(r) {
+      return { status: r.status, headers: r.headers, base64: r.base64, bytes: r.bytes };
+    }
+
     http: {
       get: function (url, maxBytes) {
-        return call("kiri.http.get", { url: url, maxBytes: maxBytes || null }).then(function (r) {
-          return { status: r.status, headers: r.headers, base64: r.base64, bytes: r.bytes };
-        });
+        return call("kiri.http.get", { url: url, maxBytes: maxBytes || null }).then(httpResult);
+      },
+      post: function (url, body, maxBytes) {
+        return call("kiri.http.post", { url: url, body: body || null, maxBytes: maxBytes || null }).then(httpResult);
+      },
+      put: function (url, body, maxBytes) {
+        return call("kiri.http.put", { url: url, body: body || null, maxBytes: maxBytes || null }).then(httpResult);
+      },
+      patch: function (url, body, maxBytes) {
+        return call("kiri.http.patch", { url: url, body: body || null, maxBytes: maxBytes || null }).then(httpResult);
+      },
+      del: function (url, maxBytes) {
+        return call("kiri.http.delete", { url: url, maxBytes: maxBytes || null }).then(httpResult);
       },
     },
 

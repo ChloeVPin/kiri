@@ -25,7 +25,7 @@ source or docs; B = maintained impl; D = inference.
 | G-3 | Bundler + autoupdater | Signed-update verifier done; no packaging/signing (needs certs) | Medium / blocked on certs |
 | G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on macOS/Linux; Windows parity pending real hardware | Medium |
 | G-5 | JS API breadth (cli, process) | cli absent; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
-| G-9 | HTTP verbs beyond GET | Only kiri.http.get; no POST/PUT/PATCH/DELETE/body/form | Easy/Medium |
+| G-9 | HTTP verbs beyond GET | DONE: kiri.http.post/put/patch/delete with body + method allowlist (exceeds Tauri) | Easy/Medium |
 | G-10 | fs watch | Absent | Medium |
 | G-11 | WebSocket / protocol upgrade | Absent | Medium |
 | G-12 | App menu (not just tray) | Absent; only tray menu | Medium |
@@ -44,7 +44,7 @@ source or docs; B = maintained impl; D = inference.
 
 ## Ranked exceed roadmap (next concrete work)
 
-1. G-9 HTTP verbs - add kiri.http.post/put/patch/delete with body + method
+1. ~~G-9 HTTP verbs~~ DONE: kiri.http.post/put/patch/delete with body + method
    allowlist. Highest ROI, fully headless-testable.
 2. G-13 Updater JS binding - expose existing UpdaterService as kiri.updater.check.
 3. G-5 cli - argv parsing into a typed struct, capability-gated.

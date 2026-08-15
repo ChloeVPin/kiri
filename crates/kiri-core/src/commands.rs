@@ -426,6 +426,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "pure",
         arity: 1,
     },
+    // --- G-9: HTTP verbs beyond GET (exceeds Tauri http plugin: method
+    // allowlist + host allowlist + bulk ceiling on every verb) ---
+    CommandSpec { name: "kiri.http.post", id: 62, capability: "http", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.http.put", id: 63, capability: "http", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.http.patch", id: 64, capability: "http", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.http.delete", id: 65, capability: "http", execution: "io", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).
