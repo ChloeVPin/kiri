@@ -149,6 +149,45 @@ impl kiri_core::config::ConfigBackend for StubConfigBackend {
     }
 }
 
+struct StubFsWatch;
+impl kiri_core::fs_watch::FsWatchBackend for StubFsWatch {
+    fn watch(&self, _t: &kiri_core::fs_watch::WatchTarget) -> kiri_core::error::Result<u64> {
+        Ok(1)
+    }
+    fn unwatch(&self, _id: u64) -> kiri_core::error::Result<()> {
+        Ok(())
+    }
+    fn drain(&self, _id: u64) -> Vec<kiri_core::fs_watch::WatchEvent> {
+        vec![]
+    }
+}
+
+struct StubWs;
+impl kiri_core::websocket::WsBackend for StubWs {
+    fn open(&self, _url: &str) -> kiri_core::error::Result<u64> {
+        Ok(1)
+    }
+    fn send(&self, _id: u64, _m: &str) -> kiri_core::error::Result<()> {
+        Ok(())
+    }
+    fn close(&self, _id: u64) -> kiri_core::error::Result<()> {
+        Ok(())
+    }
+    fn drain(&self, _id: u64) -> Vec<kiri_core::websocket::WsMessage> {
+        vec![]
+    }
+}
+
+struct StubMenu;
+impl kiri_core::app_menu::MenuRunner for StubMenu {
+    fn set_menu(&self, _i: &[kiri_core::app_menu::MenuItem]) -> kiri_core::error::Result<()> {
+        Ok(())
+    }
+    fn invoke(&self, _id: &str, _a: &str) -> kiri_core::error::Result<()> {
+        Ok(())
+    }
+}
+
 struct StubStoreBackend;
 impl kiri_core::store::StoreBackend for StubStoreBackend {
     fn get(&self, _ns: &str, _k: &str) -> kiri_core::error::Result<Option<serde_json::Value>> {
@@ -274,6 +313,21 @@ fn full_router() -> Router {
             limits.clone(),
         ))
         .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
+        .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
+            Arc::new(StubFsWatch),
+            kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+            limits.clone(),
+        ))
+        .with_ws(kiri_core::websocket::WsService::new(
+            Arc::new(StubWs),
+            kiri_core::websocket::WsAllowlist::new(vec![]),
+            limits.clone(),
+        ))
+        .with_menu(kiri_core::app_menu::MenuService::new(
+            Arc::new(StubMenu),
+            kiri_core::app_menu::MenuAllowlist::new(vec![]),
+            limits.clone(),
+        ))
 }
 
 #[test]
@@ -282,7 +336,7 @@ fn every_command_denied_without_capabilities() {
     let empty = CapabilityBits::empty();
     let caller = CallerId(1);
 
-    for id in 1u32..=66 {
+    for id in 1u32..=73 {
         let req = WireRequest::new(id, id as u64, 1, json!(null));
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(caller, &empty, &req, &mut sink);

@@ -67,6 +67,8 @@ fn capability_bit_for(name: &str) -> u32 {
         "config" => crate::dispatch::capability_bit::CONFIG,
         "updater" => crate::dispatch::capability_bit::UPDATER,
         "cli" => crate::dispatch::capability_bit::CLI,
+        "ws" => crate::dispatch::capability_bit::WS,
+        "menu" => crate::dispatch::capability_bit::MENU,
         _ => 0,
     }
 }
@@ -436,6 +438,19 @@ pub const COMMANDS: &[CommandSpec] = &[
     // --- G-5: kiri.cli.args (exceeds Tauri process.argv: structured + allowlist
     // scoped command-line surface) ---
     CommandSpec { name: "kiri.cli.args", id: 66, capability: "cli", execution: "pure", arity: 0 },
+    // --- G-10: kiri.fs.watch/unwatch (exceeds Tauri fs watch: path allowlist
+    // inside PathScope) ---
+    CommandSpec { name: "kiri.fs.watch", id: 67, capability: "fs", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.fs.unwatch", id: 68, capability: "fs", execution: "io", arity: 1 },
+    // --- G-11: kiri.ws.connect/send/close (exceeds Tauri websocket: URL
+    // allowlist) ---
+    CommandSpec { name: "kiri.ws.connect", id: 69, capability: "ws", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.ws.send", id: 70, capability: "ws", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.ws.close", id: 71, capability: "ws", execution: "io", arity: 1 },
+    // --- G-12: kiri.menu.set/invoke (exceeds Tauri app menu: host-owned item
+    // allowlist, tray allowlist shape) ---
+    CommandSpec { name: "kiri.menu.set", id: 72, capability: "menu", execution: "io", arity: 1 },
+    CommandSpec { name: "kiri.menu.invoke", id: 73, capability: "menu", execution: "io", arity: 1 },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

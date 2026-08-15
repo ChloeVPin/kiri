@@ -7,6 +7,7 @@
 //! It deliberately contains no platform transport code. Windows, macOS, and
 //! Linux backends map these contracts onto their physical WebView transports.
 
+pub mod app_menu;
 pub mod autostart;
 pub mod caller;
 pub mod capabilities;
@@ -21,6 +22,7 @@ pub mod dispatch;
 pub mod error;
 pub mod event;
 pub mod fs;
+pub mod fs_watch;
 pub mod header;
 pub mod http;
 pub mod latency;
@@ -40,6 +42,7 @@ pub mod tray;
 pub mod update;
 pub mod updater_surface;
 pub mod validate;
+pub mod websocket;
 pub mod window;
 pub mod window_state;
 pub mod wire;

@@ -73,6 +73,13 @@
     "kiri.http.patch": 64,
     "kiri.http.delete": 65,
     "kiri.cli.args": 66,
+    "kiri.fs.watch": 67,
+    "kiri.fs.unwatch": 68,
+    "kiri.ws.connect": 69,
+    "kiri.ws.send": 70,
+    "kiri.ws.close": 71,
+    "kiri.menu.set": 72,
+    "kiri.menu.invoke": 73,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -508,6 +515,9 @@
   global.kiri.path = Kiri.path;
   global.kiri.os = Kiri.os;
   global.kiri.cli = Kiri.cli;
+  global.kiri.menu = Kiri.menu;
+  global.kiri.ws = Kiri.ws;
+  global.kiri.fsWatch = Kiri.fsWatch;
 
   global.kiri.http = Kiri.http;
   global.kiri.shell = Kiri.shell;
@@ -521,6 +531,59 @@
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
   global.kiri.sidecar = Kiri.sidecar;
+    // Host-allowlisted filesystem watcher (kiri.fs.watch / kiri.fs.unwatch, G-10).
+    // The watched path must be host-allowlisted inside the fs scope, so the
+    // frontend cannot pivot a granted FS capability into arbitrary surveillance.
+    fsWatch: {
+      watch: function (path, kind) {
+        return call("kiri.fs.watch", { path: path, kind: kind || "all" }).then(function (r) {
+          return { watchId: r.watchId, path: r.path };
+        });
+      },
+      unwatch: function (watchId) {
+        return call("kiri.fs.unwatch", { watchId: watchId }).then(function (r) {
+          return { unwatched: r.unwatched, watchId: r.watchId };
+        });
+      },
+    },
+
+    // Host-allowlisted WebSocket (kiri.ws.connect / send / close, G-11). The
+    // URL must be on the host allowlist, so a granted capability cannot reach
+    // an unapproved origin (exceeds Tauri's websocket on the security axis).
+    ws: {
+      connect: function (url) {
+        return call("kiri.ws.connect", { url: url }).then(function (r) {
+          return { connId: r.connId, url: r.url };
+        });
+      },
+      send: function (connId, message) {
+        return call("kiri.ws.send", { connId: connId, message: message }).then(function (r) {
+          return { sent: r.sent, connId: r.connId };
+        });
+      },
+      close: function (connId) {
+        return call("kiri.ws.close", { connId: connId }).then(function (r) {
+          return { closed: r.closed, connId: r.connId };
+        });
+      },
+    },
+
+    // Host-owned application menu (kiri.menu.set / invoke, G-12). The frontend
+    // may only pick host-owned item ids whose label/action are host-owned, so
+    // it cannot forge a native menu (exceeds Tauri's app menu).
+    menu: {
+      set: function (ids) {
+        return call("kiri.menu.set", { ids: ids }).then(function (r) {
+          return { items: r.items };
+        });
+      },
+      invoke: function (id) {
+        return call("kiri.menu.invoke", { id: id }).then(function (r) {
+          return { id: r.id, action: r.action };
+        });
+      },
+    },
+
     // Structured, allowlist-scoped command-line surface (kiri.cli.args, G-5).
     // Exceeds Tauri's process.argv: the host parses argv into positionals +
     // flags + options and only reveals the host-allowlisted subset.

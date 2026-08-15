@@ -26,9 +26,9 @@ source or docs; B = maintained impl; D = inference.
 | G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on macOS/Linux; Windows parity pending real hardware | Medium |
 | G-5 | JS API breadth (cli, process) | DONE: kiri.cli.args (id 66) structured + allowlist-scoped, exceeds Tauri process.argv; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
 | G-9 | HTTP verbs beyond GET | DONE: kiri.http.post/put/patch/delete with body + method allowlist (exceeds Tauri) | Easy/Medium |
-| G-10 | fs watch | Absent | Medium |
-| G-11 | WebSocket / protocol upgrade | Absent | Medium |
-| G-12 | App menu (not just tray) | Absent; only tray menu | Medium |
+| G-10 | fs watch | DONE: kiri.fs.watch/unwatch (ids 67/68) host-allowlisted path inside PathScope (exceeds Tauri) | Medium |
+| G-11 | WebSocket / protocol upgrade | DONE: kiri.ws.connect/send/close (ids 69/70/71) host-allowlisted URL (exceeds Tauri) | Medium |
+| G-12 | App menu (not just tray) | DONE: kiri.menu.set/invoke (ids 72/73) host-owned item allowlist (tray shape, exceeds Tauri) | Medium |
 | G-13 | Updater JS binding | DONE: kiri.updater.check (id 61) wired backend + JS binding + tests (audit-18) | Easy |
 | G-7 | Docs, templates, community, brand | Early-stage, tiny | Process |
 
@@ -48,9 +48,9 @@ source or docs; B = maintained impl; D = inference.
    allowlist. Highest ROI, fully headless-testable.
 2. ~~G-13 Updater JS binding~~ DONE: kiri.updater.check (id 61) already wired (audit-18).
 3. ~~G-5 cli~~ DONE: kiri.cli.args structured + allowlist-scoped (exceeds Tauri).
-4. G-10 fs watch - host-owned watcher with event allowlist.
-5. G-11 WebSocket - protocol-upgrade path behind capability.
-6. G-12 App menu - host-owned menu model (reuse tray allowlist shape).
+4. ~~G-10 fs watch~~ DONE: kiri.fs.watch host-allowlisted (exceeds Tauri).
+5. ~~G-11 WebSocket~~ DONE: kiri.ws host-allowlisted URL (exceeds Tauri).
+6. ~~G-12 App menu~~ DONE: kiri.menu host-owned item allowlist (exceeds Tauri).
 7. G-3 Packaging - once signing certs exist, build MSI/dmg/AppImage and wire the
    signed-update verifier into release.
 8. G-1 Mobile - out of scope until desktop dominant; record as hypothesis.
@@ -60,5 +60,5 @@ source or docs; B = maintained impl; D = inference.
 Kiri cannot beat Tauri on ecosystem, docs, mobile, or community short term. It
 CAN and DOES beat Tauri on the security axis, startup-contract rigor, and
 control-plane auditability. Fastest path to exceed on every winnable dimension:
-close G-9, G-13, G-5(cli), then G-10/G-11/G-12 - all headless-runnable on this
+All headless-runnable surface gaps (G-9, G-13, G-5, G-10, G-11, G-12) are DONE; remaining: G-3 packaging (certs) and G-1 mobile (out of scope)
 Mac and all preserve the security model.

@@ -198,6 +198,28 @@ pub mod command_id {
     /// G-5). Exceeds Tauri's process.argv by parsing argv into a typed view and
     /// restricting which flags/options the frontend may observe.
     pub const CLI_ARGS: u32 = 66;
+
+    /// Host-allowlisted fs-watch start (kiri.fs.watch, G-10). Exceeds Tauri's
+    /// fs watch on the security axis: the watched path must be on a host
+    /// allowlist inside the PathScope, so a granted FS capability cannot be
+    /// pivoted into surveillance of arbitrary locations.
+    pub const FS_WATCH: u32 = 67;
+    /// Host-allowlisted fs-watch stop (kiri.fs.unwatch, G-10).
+    pub const FS_UNWATCH: u32 = 68;
+    /// Host-allowlisted WebSocket connect (kiri.ws.connect, G-11). Exceeds
+    /// Tauri's websocket on the security axis: the URL must be on a host
+    /// allowlist, so a granted WS capability cannot be pivoted into exfil/SSRF.
+    pub const WS_CONNECT: u32 = 69;
+    /// Host-allowlisted WebSocket send (kiri.ws.send, G-11).
+    pub const WS_SEND: u32 = 70;
+    /// Host-allowlisted WebSocket close (kiri.ws.close, G-11).
+    pub const WS_CLOSE: u32 = 71;
+    /// Host-allowlisted application-menu set/invoke (kiri.menu.set/invoke, G-12).
+    /// Reuses the tray allowlist shape on the security axis: the frontend may
+    /// only pick known, host-owned item ids, never forge a native menu.
+    pub const MENU_SET: u32 = 72;
+    /// Host-allowlisted application-menu invoke (kiri.menu.invoke, G-12).
+    pub const MENU_INVOKE: u32 = 73;
 }
 
 /// Capability bits used by built-in control commands.
@@ -305,6 +327,15 @@ pub mod capability_bit {
     /// exceeded: structured, allowlist-scoped argv instead of a raw array).
     pub const CLI: u32 = 24;
 
+    /// Authorizes kiri.ws.* (G-11 JS surface parity with Tauri's websocket).
+    /// Exceeds it on the security axis: the connected URL must be on a host
+    /// allowlist, so a granted capability cannot reach an unapproved origin.
+    pub const WS: u32 = 25;
+    /// Authorizes kiri.menu.* (G-12 JS surface parity with Tauri's app menu).
+    /// Exceeds it on the security axis: the frontend may only pick host-owned
+    /// item ids whose label/action are host-owned (tray allowlist shape).
+    pub const MENU: u32 = 26;
+
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
@@ -380,6 +411,13 @@ pub mod capability_bit {
             }
             crate::dispatch::command_id::UPDATER_CHECK => UPDATER,
             crate::dispatch::command_id::CLI_ARGS => CLI,
+            crate::dispatch::command_id::FS_WATCH | crate::dispatch::command_id::FS_UNWATCH => FS,
+            crate::dispatch::command_id::WS_CONNECT
+            | crate::dispatch::command_id::WS_SEND
+            | crate::dispatch::command_id::WS_CLOSE => WS,
+            crate::dispatch::command_id::MENU_SET | crate::dispatch::command_id::MENU_INVOKE => {
+                MENU
+            }
             _ => PING,
         }
     }
@@ -833,6 +871,39 @@ impl Router {
     /// which flags/options the frontend may read.
     pub fn with_cli(mut self, service: crate::cli::CliService) -> Self {
         for (id, required, handler) in crate::cli::cli_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.fs.watch command set (G-10). Every watch is
+    /// capability-gated (bit FS) AND constrained to the host-owned path
+    /// allowlist, so a granted capability still cannot watch an unapproved
+    /// location. Exceeds Tauri's fs watch on the security axis.
+    pub fn with_fs_watch(mut self, service: crate::fs_watch::FsWatchService) -> Self {
+        for (id, required, handler) in crate::fs_watch::fs_watch_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.ws.* command set (G-11). Every connection is
+    /// capability-gated (bit WS) AND constrained to the host-owned URL
+    /// allowlist, so a granted capability still cannot reach an unapproved
+    /// origin. Exceeds Tauri's websocket on the security axis.
+    pub fn with_ws(mut self, service: crate::websocket::WsService) -> Self {
+        for (id, required, handler) in crate::websocket::ws_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.menu.* command set (G-12). Every action is
+    /// capability-gated (bit MENU) AND constrained to the host-owned item
+    /// allowlist (tray allowlist shape), so a granted capability still cannot
+    /// forge a native menu. Exceeds Tauri's app menu on the security axis.
+    pub fn with_menu(mut self, service: crate::app_menu::MenuService) -> Self {
+        for (id, required, handler) in crate::app_menu::menu_handlers(service) {
             self.register(id, required, handler);
         }
         self
