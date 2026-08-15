@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use ed25519_dalek::Verifier;
+use ed25519_dalek::{Signer, Verifier};
 use serde::{Deserialize, Serialize};
 
 /// A parsed semantic version: major.minor.patch[-pre][+build].
@@ -173,11 +173,7 @@ impl UpdateManifest {
         public_key_hex: &str,
         file_bytes: &[u8],
     ) -> Result<VerifiedAsset<'_>> {
-        let asset = self.asset_for_current_os()?;
-        let version = self.version()?;
-        let sig = asset.signature.as_ref().ok_or(Error::SignatureMissing)?;
-        Ed25519Verifier::verify(public_key_hex, file_bytes, sig)?;
-        Ok(VerifiedAsset { version, asset })
+        self.verify_asset_for(&current_platform_key(), public_key_hex, file_bytes)
     }
 }
 
@@ -258,10 +254,173 @@ impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Build-side counterpart to `verify_asset`: sign each platform's installer
+/// bytes with the release Ed25519 key and emit the `RELEASES.json` the runtime
+/// consumes. Headless and testable on every OS with no certificate and no
+/// network, so the producer is exercised end to end without launching anything.
+pub struct Ed25519Signer;
+
+impl Ed25519Signer {
+    /// Sign `message` with a hex-encoded 32-byte Ed25519 seed and return a
+    /// hex-encoded signature, matching the verifier's `public_key_hex`.
+    pub fn sign(signing_key_hex: &str, message: &[u8]) -> Result<String> {
+        let raw = hex::decode(signing_key_hex).map_err(|_| Error::SignatureInvalid)?;
+        if raw.len() != 32 {
+            return Err(Error::SignatureInvalid);
+        }
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&raw);
+        let sk = ed25519_dalek::SigningKey::from_bytes(&seed);
+        let sig = sk.sign(message);
+        Ok(hex::encode(sig.to_bytes()))
+    }
+}
+
+/// Builder for a `RELEASES.json`-style `UpdateManifest`. Each platform's
+/// installer is signed at build time with the same key the shipping runtime
+/// pins, closing the producer side of G-3 (Tauri's signed updater).
+pub struct UpdateManifestBuilder {
+    version: String,
+    notes: String,
+    pub_date: Option<String>,
+    platforms: HashMap<String, PlatformAsset>,
+}
+
+impl UpdateManifestBuilder {
+    pub fn new(version: impl Into<String>) -> Self {
+        Self {
+            version: version.into(),
+            notes: String::new(),
+            pub_date: None,
+            platforms: HashMap::new(),
+        }
+    }
+
+    pub fn notes(mut self, notes: impl Into<String>) -> Self {
+        self.notes = notes.into();
+        self
+    }
+
+    pub fn pub_date(mut self, date: impl Into<String>) -> Self {
+        self.pub_date = Some(date.into());
+        self
+    }
+
+    /// Sign `installer_bytes` for `platform_key` (e.g. `darwin-aarch64`) and
+    /// record the asset URL + signature. The same `signing_key_hex` must be
+    /// pinned in the shipping runtime, or `verify_asset` rejects the update.
+    pub fn add_signed_asset(
+        mut self,
+        platform_key: impl Into<String>,
+        url: impl Into<String>,
+        installer_bytes: &[u8],
+        signing_key_hex: &str,
+    ) -> Result<Self> {
+        let signature = Ed25519Signer::sign(signing_key_hex, installer_bytes)?;
+        self.platforms.insert(
+            platform_key.into(),
+            PlatformAsset { url: url.into(), signature: Some(signature) },
+        );
+        Ok(self)
+    }
+
+    pub fn build(self) -> UpdateManifest {
+        UpdateManifest {
+            version: self.version,
+            notes: self.notes,
+            pub_date: self.pub_date,
+            platforms: self.platforms,
+        }
+    }
+
+    pub fn to_json(self) -> Result<String> {
+        serde_json::to_string_pretty(&self.build()).map_err(|_| Error::InvalidManifest)
+    }
+}
+
+impl UpdateManifest {
+    /// Verify a specific platform's downloaded installer against the pinned
+    /// public key. Unlike `verify_asset`, this checks `platform_key` directly,
+    /// so producer round-trip tests can prove every OS asset on any host.
+    pub fn verify_asset_for(
+        &self,
+        platform_key: &str,
+        public_key_hex: &str,
+        file_bytes: &[u8],
+    ) -> Result<VerifiedAsset<'_>> {
+        let asset = self.asset_for(platform_key)?;
+        let version = self.version()?;
+        let sig = asset.signature.as_ref().ok_or(Error::SignatureMissing)?;
+        Ed25519Verifier::verify(public_key_hex, file_bytes, sig)?;
+        Ok(VerifiedAsset { version, asset })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
+
+    #[test]
+    fn producer_builds_signed_manifest_verifiable_on_every_platform() {
+        // Release key shared by the build pipeline and the pinned runtime key.
+        let signing_key_hex = hex::encode([7u8; 32]);
+        let pk = hex::encode(
+            ed25519_dalek::VerifyingKey::from(&ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]))
+                .to_bytes(),
+        );
+        let darwin = b"kiri-0.3.0-darwin.dmg";
+        let windows = b"kiri-0.3.0-windows.msi";
+        let linux = b"kiri-0.3.0-linux.AppImage";
+        let json = UpdateManifestBuilder::new("0.3.0")
+            .notes("producer round-trip")
+            .add_signed_asset(
+                "darwin-aarch64",
+                "https://example.invalid/kiri-0.3.0.dmg",
+                darwin,
+                &signing_key_hex,
+            )
+            .unwrap()
+            .add_signed_asset(
+                "windows-x86_64",
+                "https://example.invalid/kiri-0.3.0.msi",
+                windows,
+                &signing_key_hex,
+            )
+            .unwrap()
+            .add_signed_asset(
+                "linux-x86_64",
+                "https://example.invalid/kiri-0.3.0.AppImage",
+                linux,
+                &signing_key_hex,
+            )
+            .unwrap()
+            .to_json()
+            .unwrap();
+        let m = UpdateManifest::parse_json(&json).unwrap();
+        // Prove each platform's asset verifies with the pinned key, on any host.
+        assert!(m.verify_asset_for("darwin-aarch64", &pk, darwin).is_ok());
+        assert!(m.verify_asset_for("windows-x86_64", &pk, windows).is_ok());
+        assert!(m.verify_asset_for("linux-x86_64", &pk, linux).is_ok());
+        // A wrong key is still rejected through the producer-built manifest.
+        let bad_pk = hex::encode(
+            ed25519_dalek::VerifyingKey::from(&ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]))
+                .to_bytes(),
+        );
+        assert_eq!(
+            m.verify_asset_for("darwin-aarch64", &bad_pk, darwin),
+            Err(Error::SignatureInvalid)
+        );
+    }
+
+    #[test]
+    fn producer_rejects_malformed_signing_key() {
+        let err = UpdateManifestBuilder::new("0.3.0")
+            .add_signed_asset("darwin-aarch64", "https://example.invalid/x", b"bytes", "zz")
+            .err()
+            .expect("malformed key must error");
+        assert_eq!(err, Error::SignatureInvalid);
+    }
 
     fn keypair() -> (String, SigningKey) {
         let sk = SigningKey::from_bytes(&[7u8; 32]);
