@@ -229,7 +229,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         caller,
     )
     // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-    .with_platform(events)
+    .with_platform(events.clone())
     .with_fs_service(
         kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
             .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
@@ -360,6 +360,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         std::sync::Arc::new(crate::sidecar_ctl::cross_sidecar::CrossSidecarRunner::new()),
         kiri_core::sidecar::SidecarAllowlist::new(sidecar_allow()),
         kiri_core::sidecar::SidecarTable::new(),
+        kiri_core::limits::Limits::default(),
+    ))
+    // audit-16: kiri.event.publish/subscribe/channels (restricted,
+    // channel-allowlisted). Capability-gated (EVENT) and bounded to a host
+    // allowlist of exact channel names, so a granted capability still cannot
+    // forge or snoop cross-module events. This exceeds Tauri's unrestricted
+    // event module on the security axis.
+    .with_event(kiri_core::event::EventService::new(
+        std::sync::Arc::new(events.clone()),
+        kiri_core::event::EventAllowlist::new(event_channels()),
         kiri_core::limits::Limits::default(),
     ));
     let smoke = options.smoke;
@@ -555,6 +565,18 @@ fn sidecar_allow() -> Vec<kiri_core::sidecar::AllowedSidecar> {
         name: "kiri-helper".to_string(),
         args: vec!["--mode".to_string(), "fast".to_string()],
     }]
+}
+
+/// Host allowlist of event channel names (audit item 16). Only these exact
+/// channel names may be published/subscribed by the frontend; the host owns the
+/// channel namespace. Never lets the frontend forge or snoop cross-module
+/// events. Inverts Tauri's unrestricted event module.
+fn event_channels() -> Vec<kiri_core::event::AllowedChannel> {
+    vec![
+        kiri_core::event::AllowedChannel { name: "ping".to_string() },
+        kiri_core::event::AllowedChannel { name: "update".to_string() },
+        kiri_core::event::AllowedChannel { name: "diag".to_string() },
+    ]
 }
 
 /// Host template allowlist for `kiri.notification.show` (audit item 5, G-4b).

@@ -376,6 +376,29 @@ pub const COMMANDS: &[CommandSpec] = &[
         execution: "io",
         arity: 0,
     },
+    // --- audit item 16: kiri.event.* (restricted, channel-allowlisted) exceeds
+    // Tauri's unrestricted event module on the security axis ---
+    CommandSpec {
+        name: "kiri.event.publish",
+        id: 56,
+        capability: "event",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.event.subscribe",
+        id: 57,
+        capability: "event",
+        execution: "io",
+        arity: 1,
+    },
+    CommandSpec {
+        name: "kiri.event.channels",
+        id: 58,
+        capability: "event",
+        execution: "io",
+        arity: 0,
+    },
 ];
 
 /// Resolve a command name to its numeric ID (deterministic lookup).

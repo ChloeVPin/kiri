@@ -103,7 +103,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
       shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
       real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
-      --workspace` green (194 tests: 169 kiri-core + 25 kiri-runtime). All of §6b's 15
+      --workspace` green (199 tests: 174 kiri-core + 25 kiri-runtime). All of §6b's 16
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
@@ -304,7 +304,7 @@ Cross-cutting differentiators to protect and advertise:
     unknown-invoke-denied, and frontend-supplied-label-ignored. Exceeds on the
     security axis (capability authority + host allowlist, frontend cannot forge or
     redirect native menu items); JS surface in examples/blank/kiri.js (Kiri.tray).
-14. [DONE] kiri.sidecar.spawn/stop/list (restricted, host-allowlisted sidecar, G-6) -
+15. [DONE] kiri.sidecar.spawn/stop/list (restricted, host-allowlisted sidecar, G-6) -
     Tauri's sidecar API, once the capability is granted, launches an arbitrary
     companion executable the frontend names (a tamper / supply-chain surface: a
     malicious or buggy frontend can fork any binary, or one smuggled into an
@@ -322,6 +322,23 @@ Cross-cutting differentiators to protect and advertise:
     returns-names-only. Exceeds on the security axis (capability authority + host
     allowlist + argv confinement); JS surface in examples/blank/kiri.js
     (Kiri.sidecar).
+16. [DONE] kiri.event.publish/subscribe/channels (restricted, channel-allowlisted event bus, G-6) -
+    Tauri's event system is a global, unrestricted pub/sub: any frontend code can
+    emit any event on any channel and any listener subscribed by string name
+    receives it, so a malicious or buggy plugin can spoof system events
+    (`tauri://` lifecycle, update, or custom control channels) or exhaust the bus.
+    Kiri gates kiri.event.* behind the EVENT capability bit (5) AND a host allowlist
+    of exact channel names; the frontend may only publish/subscribe on a pre-approved
+    channel, cannot invent a channel or a topic outside the allowlist, and never
+    receives raw `tauri://`-style lifecycle events. Implemented in kiri-core::event
+    (capability bit 5, command ids 56/57/58) with a host-owned EventBusBackend that
+    reuses the existing platform event bus, wired into both backends via
+    ".with_event(...)". Both paths cross-checked with cargo clippy --target
+    x86_64-pc-windows-msvc. Headless tests cover publish-on-allowed-channel,
+    publish-on-unknown-channel-denied, subscribe-allow, subscribe-deny, and
+    channels-returns-allowlist-only. Exceeds on the security axis (capability
+    authority + host channel allowlist; frontend cannot forge or redirect event
+    routing); JS surface in examples/blank/kiri.js (Kiri.event).
 - Numeric, build-time command routing with one validation pipeline + server-side
   capability bits (auditable, no per-plugin ACL drift).
 - Generational resource handles (stale/wrong-owner rejected) — Tauri returns raw

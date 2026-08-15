@@ -17,6 +17,7 @@ pub mod diagnostics;
 pub mod dialog;
 pub mod dispatch;
 pub mod error;
+pub mod event;
 pub mod fs;
 pub mod header;
 pub mod http;

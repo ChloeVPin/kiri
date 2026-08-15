@@ -62,6 +62,9 @@
     "kiri.sidecar.spawn": 53,
     "kiri.sidecar.stop": 54,
     "kiri.sidecar.list": 55,
+    "kiri.event.publish": 56,
+    "kiri.event.subscribe": 57,
+    "kiri.event.channels": 58,
   };
 
   // Resolve the host bridge. The direct Kiri host injects window.kiri with an
@@ -402,6 +405,29 @@
       },
     },
 
+    // Restricted, channel-allowlisted events (kiri.event.publish/subscribe/
+    // channels, audit item 16). The frontend may only publish/subscribe
+    // pre-approved channel names whose namespace is host-owned, so it cannot
+    // forge or snoop cross-module events. This exceeds Tauri's unrestricted
+    // event module on the security axis.
+    event: {
+      publish: function (channel, payload) {
+        return call("kiri.event.publish", { event: channel, payload: payload || null }).then(function (r) {
+          return { emitted: r.emitted };
+        });
+      },
+      subscribe: function (channel) {
+        return call("kiri.event.subscribe", { event: channel }).then(function (r) {
+          return { listenerId: r.listener_id, channel: r.channel };
+        });
+      },
+      channels: function () {
+        return call("kiri.event.channels", {}).then(function (r) {
+          return { channels: r.channels };
+        });
+      },
+    },
+
     // Expose raw command ids for tooling/debugging parity with the catalog.
     commandIds: IDS,
   };
@@ -436,5 +462,6 @@
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
   global.kiri.sidecar = Kiri.sidecar;
+  global.kiri.event = Kiri.event;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

@@ -169,6 +169,11 @@ pub mod command_id {
     pub const SIDECAR_SPAWN: u32 = 53;
     pub const SIDECAR_STOP: u32 = 54;
     pub const SIDECAR_LIST: u32 = 55;
+
+    // --- audit item 16: kiri.event.* (restricted, channel-allowlisted) ---
+    pub const EVENT_PUBLISH: u32 = 56;
+    pub const EVENT_SUBSCRIBE: u32 = 57;
+    pub const EVENT_CHANNELS: u32 = 58;
 }
 
 /// Capability bits used by built-in control commands.
@@ -324,6 +329,9 @@ pub mod capability_bit {
             crate::dispatch::command_id::SIDECAR_SPAWN
             | crate::dispatch::command_id::SIDECAR_STOP
             | crate::dispatch::command_id::SIDECAR_LIST => SIDECAR,
+            crate::dispatch::command_id::EVENT_PUBLISH
+            | crate::dispatch::command_id::EVENT_SUBSCRIBE
+            | crate::dispatch::command_id::EVENT_CHANNELS => EVENT,
             _ => PING,
         }
     }
@@ -729,6 +737,18 @@ impl Router {
     /// Tauri's sidecar on the security axis.
     pub fn with_sidecar(mut self, service: crate::sidecar::SidecarService) -> Self {
         for (id, required, handler) in crate::sidecar::sidecar_handlers(service) {
+            self.register(id, required, handler);
+        }
+        self
+    }
+
+    /// Register the kiri.event.* (restricted) command set (audit item 16).
+    /// Events are capability-gated (bit EVENT) AND bounded to a host allowlist of
+    /// exact channel names, so a granted capability still cannot forge or snoop
+    /// cross-module events. Exceeds Tauri's unrestricted event module on the
+    /// security axis.
+    pub fn with_event(mut self, service: crate::event::EventService) -> Self {
+        for (id, required, handler) in crate::event::event_handlers(service) {
             self.register(id, required, handler);
         }
         self
