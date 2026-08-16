@@ -4,6 +4,12 @@
   <h1>Kiri</h1>
 
   <p>A native desktop app runtime for Windows, macOS, and Linux.</p>
+
+  <p>
+    <a href="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml"><img src="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml/badge.svg" alt="CI" /></a>
+    <a href="https://github.com/ChloeVPin/kiri/releases/latest"><img src="https://img.shields.io/github/v/release/ChloeVPin/kiri?label=latest%20release" alt="Latest release" /></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Windows | macOS | Linux" />
+  </p>
 </div>
 
 Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
