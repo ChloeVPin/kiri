@@ -50,15 +50,34 @@ fn pwstr_to_string(ptr: windows::core::PWSTR) -> String {
     let slice = unsafe { std::slice::from_raw_parts(ptr.0, len) };
     String::from_utf16_lossy(slice)
 }
+fn to_wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
 /// Run a script in the WebView and ignore its result. `webview2-com`
-/// `ExecuteScript` needs a wide-string script and a completion handler.
+/// `ExecuteScript` needs a NUL-terminated wide-string script and a
+/// completion handler.
 fn exec_script(webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2, js: &str) {
-    let wide: Vec<u16> = js.encode_utf16().collect();
+    let wide = to_wide(js);
     let handler = webview2_com::ExecuteScriptCompletedHandler::create(Box::new(
         |_result: windows::core::Result<()>, _output: String| Ok(()),
     ));
     let _ =
         unsafe { webview.ExecuteScript(windows::core::PCWSTR::from_raw(wide.as_ptr()), &handler) };
+}
+
+/// Reply to a control-plane request without `ExecuteScript`. Calling
+/// `ExecuteScript` from inside `WebMessageReceived` can stall on WebView2
+/// (the through-webview IPC bench timed out on the first ping on
+/// windows-latest). `PostWebMessageAsJson` is the documented reply path.
+fn post_wire_response(
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    response: &WireResponse,
+) {
+    if let Ok(json) = serde_json::to_string(response) {
+        let wide = to_wide(&json);
+        let _ = unsafe { webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
+    }
 }
 
 /// The Windows native host: window, WebView2 lifecycle, and message loop.
@@ -149,10 +168,7 @@ impl HostRuntime {
         let error = KiriError::protocol_error("command not implemented by this host slice")
             .with_command(command.unwrap_or("").to_string());
         let envelope = WireResponse::err(request_id.unwrap_or(0), error);
-        if let Ok(json) = serde_json::to_string(&envelope) {
-            let wide: Vec<u16> = json.encode_utf16().collect();
-            let _ = unsafe { self.webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
-        }
+        post_wire_response(&self.webview, &envelope);
     }
 }
 
@@ -619,6 +635,17 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               }
             }
           };
+          if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
+            window.chrome.webview.addEventListener('message', function (e) {
+              var d = e.data;
+              if (typeof d === 'string') {
+                try { d = JSON.parse(d); } catch (err) { return; }
+              }
+              if (d && d.request_id !== undefined) {
+                window.kiri.onResponse(d);
+              }
+            });
+          }
           function postDom() {
             window.kiri.post({ type: 'ready', phase: 'dom' });
           }
@@ -855,20 +882,12 @@ fn handle_web_message(
                 let mut sink = rt.diagnostics.clone();
                 let response = rt.router.dispatch(rt.caller, &rt.caller_caps, &request, &mut sink);
                 rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
-                let js = format!(
-                    "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
-                    serde_json::to_string(&response).unwrap_or_default()
-                );
-                exec_script(&rt.webview, &js);
+                post_wire_response(&rt.webview, &response);
             }
             Err(_) => {
                 let err =
                     WireResponse::err(0, KiriError::protocol_error("malformed command request"));
-                let js = format!(
-                    "window.kiri && window.kiri.onResponse && window.kiri.onResponse({});",
-                    serde_json::to_string(&err).unwrap_or_default()
-                );
-                exec_script(&rt.webview, &js);
+                post_wire_response(&rt.webview, &err);
             }
         }
         return;

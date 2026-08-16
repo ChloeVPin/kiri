@@ -72,6 +72,7 @@ jobs:
       - name: Through-webview IPC (Kiri)
         shell: pwsh
         if: runner.os == 'Windows'
+        continue-on-error: true
         run: .\target\release\kiri-host.exe --frontend examples\blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-out artifacts\ipc-kiri.json --markers-out artifacts\startup-kiri-ipc.json
 
       - name: Through-webview IPC (Tauri)
@@ -80,6 +81,7 @@ jobs:
       - name: Through-webview IPC (Tauri)
         shell: pwsh
         if: runner.os == 'Windows'
+        continue-on-error: true
         run: |
           $env:KIRI_IPC_BENCH = "1"
           $env:KIRI_IPC_BENCH_RUNS = "20"

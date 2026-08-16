@@ -39,6 +39,18 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
   var SIZES = {sizes_json};
   var TIMEOUT = {timeout};
   window.__kiriIpcSeq = window.__kiriIpcSeq || 1;
+  if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener && !window.__kiriWebMessageHooked) {{
+    window.__kiriWebMessageHooked = true;
+    window.chrome.webview.addEventListener("message", function (e) {{
+      var d = e.data;
+      if (typeof d === "string") {{
+        try {{ d = JSON.parse(d); }} catch (err) {{ return; }}
+      }}
+      if (d && d.request_id !== undefined && window.kiri && window.kiri.onResponse) {{
+        window.kiri.onResponse(d);
+      }}
+    }});
+  }}
   function post(o) {{
     var s = JSON.stringify(o);
     if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {{
