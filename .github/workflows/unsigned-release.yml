@@ -165,9 +165,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p publish
-          find dist -type f \( -name 'kiri-*.zip' -o -name 'kiri-*.tar.gz' \) -exec cp {} publish/ \;
+          find dist -type f \( -name 'kiri-*.zip' -o -name 'kiri-*.tar.gz' -o -name 'kiri-*.dmg' \) -exec cp {} publish/ \;
           cp dist/release-manifest/RELEASES.json publish/RELEASES.json
-          test "$(find publish -maxdepth 1 -type f | wc -l | tr -d ' ')" -eq 4
+          count="$(find publish -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          test "$count" -ge 4
           ls -lh publish
 
       - name: Publish unsigned GitHub Release
@@ -176,7 +177,12 @@ jobs:
           tag_name: ${{ github.ref_name }}
           generate_release_notes: true
           body: |
-            Kiri desktop artifacts are intentionally unsigned at the OS level.
-            RELEASES.json contains Kiri's Ed25519 application-level signatures and
-            SHA-256 digests for the exact artifacts published here.
+            A native desktop host. The UI is packed in the binary.
+
+            macOS: open the `.dmg` or `.app` zip. First launch is right-click
+            → Open (unsigned on purpose).
+            Windows / Linux: unzip and run `kiri-host`.
+
+            RELEASES.json is Kiri's Ed25519 signature over these exact bytes.
+            There is no Apple or Authenticode signature.
           files: publish/*

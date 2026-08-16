@@ -227,6 +227,11 @@ exits the smoke path in ~0.8 s vs Kiri's ~2.8 s. Do not mix those two
 claims. Artifacts: `perf-windows-latest` / `perf-macos-latest` on the
 `1ed43c6` Actions run.
 
+From 0.1.3 the same workflow also records `startup-kiri-embed.json`:
+`kiri-host --smoke` with **no** `--frontend`, so the packed UI is what
+starts. That is the number to compare with Tauri's embedded `frontendDist`.
+The `--frontend examples/blank` row remains a disk-serve diagnostic.
+
 The hosted `c0a9120` artifact predates async `kiri://` and measured Kiri
 losing end-to-end process time to Tauri's embedded frontend. It remains a
 valid pre-fix diagnostic, not a current claim.

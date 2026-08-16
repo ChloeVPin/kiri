@@ -54,6 +54,14 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
 
+      - name: Startup benchmark (Kiri embedded)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: python benchmark/harness.py --name startup-kiri-embed --runs 20 --output artifacts/startup-kiri-embed.json -- .\target\release\kiri-host.exe --smoke
+      - name: Startup benchmark (Kiri embedded)
+        if: runner.os == 'macOS'
+        run: python3 benchmark/harness.py --name startup-kiri-embed --runs 20 --output artifacts/startup-kiri-embed.json -- ./target/release/kiri-host --smoke
+
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke

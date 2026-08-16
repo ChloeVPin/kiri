@@ -10,7 +10,7 @@
 # This script is headless and never launches kiri-host or a baseline binary.
 #
 # Outputs in OUT_DIR (default: artifacts):
-#   macOS:   kiri-<version>-darwin-<arch>.zip containing unsigned Kiri.app
+#   macOS:   kiri-<version>-darwin-<arch>.zip + .dmg containing unsigned Kiri.app
 #   Windows: kiri-<version>-windows-<arch>.zip containing kiri-host.exe
 #   Linux:   kiri-<version>-linux-<arch>.tar.gz containing kiri-host
 #   all OS:  RELEASES.json with a pinned-key signature over the artifact bytes
@@ -110,26 +110,35 @@ KIRI_EMBED_FRONTEND="$EMBED" cargo build --release -p kiri-runtime --bin "$BIN"
 # ---------------------------------------------------------------------------
 case "$PLATFORM_OS" in
   darwin)
-    APP_DIR="$OUT_DIR/$ARTIFACT_STEM.app"
+    APP_DIR="$OUT_DIR/Kiri.app"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
-    rm -rf "$APP_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources/frontend"
+    DMG_PATH="$OUT_DIR/$ARTIFACT_STEM.dmg"
+    rm -rf "$APP_DIR" "$ARTIFACT_PATH" "$DMG_PATH"
+    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
     cp "$BIN_FILE" "$APP_DIR/Contents/MacOS/$BIN"
-    cp -R examples/blank/. "$APP_DIR/Contents/Resources/frontend/"
-    if [ -f assets/kiri.icns ]; then
+    if [ -f assets/kiri.png ] && command -v sips >/dev/null && command -v iconutil >/dev/null; then
+      ICONSET="$(mktemp -d)/kiri.iconset"
+      mkdir -p "$ICONSET"
+      for size in 16 32 64 128 256 512; do
+        sips -z "$size" "$size" assets/kiri.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+        sips -z $((size * 2)) $((size * 2)) assets/kiri.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+      done
+      iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/kiri.icns"
+      rm -rf "$(dirname "$ICONSET")"
+    elif [ -f assets/kiri.icns ]; then
       cp assets/kiri.icns "$APP_DIR/Contents/Resources/kiri.icns"
     fi
     sed "s/@KIRI_VERSION@/$PKG_VERSION/g" tools/packaging/Info.plist \
       > "$APP_DIR/Contents/Info.plist"
     ditto -c -k --keepParent "$APP_DIR" "$ARTIFACT_PATH"
+    hdiutil create -volname Kiri -srcfolder "$APP_DIR" -ov -format UDZO "$DMG_PATH"
     ;;
   windows)
     STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$STAGE_DIR/frontend"
+    mkdir -p "$STAGE_DIR"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN.exe"
-    cp -R examples/blank/. "$STAGE_DIR/frontend/"
     if command -v powershell.exe >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
       WIN_STAGE_DIR="$(cygpath -w "$STAGE_DIR")"
       WIN_ARTIFACT_PATH="$(cygpath -w "$ARTIFACT_PATH")"
@@ -146,10 +155,9 @@ case "$PLATFORM_OS" in
     STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.tar.gz"
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$STAGE_DIR/frontend"
+    mkdir -p "$STAGE_DIR"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN"
-    cp -R examples/blank/. "$STAGE_DIR/frontend/"
-    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN" frontend
+    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN"
     ;;
 esac
 

@@ -176,6 +176,14 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
   -- ./target/release/kiri-host --smoke --frontend examples/blank
 ```
 
+## Download
+
+Unsigned builds: [latest release](https://github.com/ChloeVPin/kiri/releases/latest).
+
+macOS: open the `.dmg`. First launch is right-click → Open. There is no
+Apple signature. Windows and Linux zips are the same host with the UI packed
+in; run `kiri-host`.
+
 ## Run a complete app
 
 The host packs a frontend at compile time (same idea as Tauri `frontendDist`).
@@ -206,7 +214,7 @@ binary. Rebuild with `KIRI_EMBED_FRONTEND=/path/to/ui` to change what is packed.
   runtime is cross-checked on non-Windows runners
 - `controlled-performance`: hosted macOS (Kiri + wry/tao + Tauri) and Windows
   (Kiri vs Tauri only; wry/tao hangs on windows-latest and is skipped);
-  through-webview IPC artifacts uploaded
+  through-webview IPC plus embedded `kiri-host --smoke` (no `--frontend`)
 - `unsigned-release`: tag/manual packaging on macOS, Windows, and Linux from
   one script; artifacts are intentionally unsigned at the OS level, while
   `RELEASES.json` signs and verifies their exact bytes with Kiri's Ed25519 key.
