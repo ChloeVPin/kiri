@@ -94,7 +94,9 @@ and is mirrored in `README.md`. Handoff notes are written to
 Next work: Windows T009 numbers come from hosted `windows-latest` (no local
 Windows box required); wry/tao is skipped there because it hangs. T008
 (WebView2 shared-buffer) still needs real Windows to implement. Local macOS
-can ship an unsigned `.app` via `tools/packaging/make-app.sh`. G-1 mobile
+can ship an unsigned `.app` / `.dmg` via `tools/packaging/make-app.sh` and
+`make-dmg.sh` (frontend is compile-time packed). `./tools/create-kiri-app.sh DIR`
+copies the starter UI. G-1 mobile
 and G-2 ecosystem breadth remain larger roadmap items. A fresh update public key is now pinned
 in the runtime; its private half must be supplied to GitHub as
 `KIRI_UPDATE_SIGNING_KEY_HEX` before the first public release tag. The

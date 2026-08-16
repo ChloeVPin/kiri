@@ -176,18 +176,29 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
   -- ./target/release/kiri-host --smoke --frontend examples/blank
 ```
 
-## Run the app (macOS)
+## Run a complete app
 
-Unsigned, no Apple Developer account. The bundle copies `kiri-host` and
-`examples/blank` so a double-click finds the frontend without `--frontend`.
+The host packs a frontend at compile time (same idea as Tauri `frontendDist`).
+`--frontend DIR` still wins for benches. With no flag, `kiri-host` serves the
+packed UI.
 
 ```sh
-./tools/packaging/make-app.sh
+# default packed UI is examples/blank (smoke/bench stable)
+cargo build -p kiri-runtime --bin kiri-host
+./target/debug/kiri-host --smoke
+
+# ship the starter as a double-clickable Mac app + dmg (unsigned)
+./tools/packaging/make-app.sh --frontend examples/starter
+./tools/packaging/make-dmg.sh
 open artifacts/Kiri.app
+
+# start a new frontend
+./tools/create-kiri-app.sh ~/Desktop/my-kiri-app
+./tools/packaging/make-app.sh --frontend ~/Desktop/my-kiri-app/frontend
 ```
 
-`kiri-host` also looks at `KIRI_FRONTEND`, `Contents/Resources/frontend`, or
-a `frontend/` folder next to the binary. `--frontend DIR` still wins.
+`kiri-host` also looks at `KIRI_FRONTEND` and a `frontend/` folder next to the
+binary. Rebuild with `KIRI_EMBED_FRONTEND=/path/to/ui` to change what is packed.
 
 ## CI
 

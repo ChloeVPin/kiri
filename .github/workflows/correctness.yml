@@ -74,6 +74,8 @@ jobs:
           MARKERS=/tmp/kiri-startup.json
           ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out "$MARKERS"
           python -c "import json; d=json.load(open('$MARKERS')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('startup markers OK:', sorted(names))"
+          ./target/debug/kiri-host --smoke --markers-out /tmp/kiri-embed.json
+          python -c "import json; d=json.load(open('/tmp/kiri-embed.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('embedded frontend smoke OK:', sorted(names))"
       - if: runner.os == 'macOS'
         name: Native stress run (wry/tao backend, real GPU)
         run: ./target/debug/kiri-host-stress --frontend examples/blank --cycles 100 --exit-after-ready-ms 250 --watchdog-ms 30000
@@ -88,6 +90,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-Content artifacts\startup.json
           python -c "import json; d=json.load(open('artifacts/startup.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('startup markers OK:', sorted(names))"
+          .\target\debug\kiri-host.exe --smoke --markers-out artifacts\startup-embed.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import json; d=json.load(open('artifacts/startup-embed.json')); names={m['name'] for m in d['markers']}; req={'webview_ready','bridge_ready','dom_ready','first_animation_frame'}; miss=req-names; assert not miss, f'missing markers: {miss}'; print('embedded frontend smoke OK:', sorted(names))"
       - if: runner.os == 'Windows'
         name: Native stress run (Win32 + WebView2 backend, real GPU)
         shell: pwsh

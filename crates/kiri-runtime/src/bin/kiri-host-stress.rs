@@ -52,7 +52,7 @@ fn main() {
             "--help" | "-h" => {
                 println!(
                     "kiri-host-stress: launch-close stress driver\n\
-                     usage: kiri-host-stress --frontend DIR [--cycles N]\n\
+                     usage: kiri-host-stress [--frontend DIR] [--cycles N]\n\
                      \x20  [--exit-after-ready-ms N] [--watchdog-ms N]"
                 );
                 std::process::exit(0);
@@ -65,13 +65,7 @@ fn main() {
         i += 1;
     }
 
-    let frontend_dir = match frontend_dir {
-        Some(dir) => dir,
-        None => {
-            eprintln!("kiri-host-stress: --frontend DIR is required");
-            std::process::exit(2);
-        }
-    };
+    // --frontend is optional: omit it to exercise the compile-time embed.
 
     // Discover the sibling kiri-host binary. `CARGO_BIN_EXE_kiri-host` is set
     // when built/tested by cargo; otherwise probe the current exe's directory.
@@ -98,10 +92,11 @@ fn main() {
         let markers_path =
             tmpdir.join(format!("kiri-stress-{}-{}.json", std::process::id(), cycle));
         let mut cmd = Command::new(&kiri_host);
-        cmd.arg("--smoke")
-            .arg("--frontend")
-            .arg(&frontend_dir)
-            .arg("--markers-out")
+        cmd.arg("--smoke");
+        if let Some(dir) = frontend_dir.as_ref() {
+            cmd.arg("--frontend").arg(dir);
+        }
+        cmd.arg("--markers-out")
             .arg(&markers_path)
             .arg("--exit-after-ready-ms")
             .arg(exit_after_ready_ms.to_string())

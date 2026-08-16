@@ -164,10 +164,16 @@ pub fn serve_checked(root: &Path, request_path: &str, opts: &ServeOptions) -> As
         Ok(b) => b,
         Err(_) => return AssetResponse::NotFound,
     };
+    serve_from_bytes(&path, &bytes, opts)
+}
+
+/// Serve already-loaded bytes (disk or compile-time embed) with the same
+/// Range / ETag / allowlist policy as [`serve_checked`].
+pub fn serve_from_bytes(path: &Path, bytes: &[u8], opts: &ServeOptions) -> AssetResponse {
     let total = bytes.len() as u64;
-    let content_type = content_type_for(&path);
+    let content_type = content_type_for(path);
     if let Some(client_etag) = opts.if_none_match {
-        if client_etag == etag_for(&bytes) {
+        if client_etag == etag_for(bytes) {
             return AssetResponse::NotModified;
         }
     }
@@ -193,7 +199,29 @@ pub fn serve_checked(root: &Path, request_path: &str, opts: &ServeOptions) -> As
         let body = bytes[start as usize..=end_usize].to_vec();
         return AssetResponse::Partial { body, content_type, start, end, total };
     }
-    AssetResponse::Full { body: bytes, content_type }
+    AssetResponse::Full { body: bytes.to_vec(), content_type }
+}
+
+/// Serve a request from the compile-time packed frontend.
+pub fn serve_embedded(request_path: &str, opts: &ServeOptions) -> AssetResponse {
+    if !opts.allow.is_empty() {
+        let sub = request_path.trim_start_matches('/');
+        let allowed = opts.allow.iter().any(|prefix| {
+            sub == *prefix || sub.starts_with(&format!("{prefix}/", prefix = prefix))
+        });
+        if !allowed && !sub.is_empty() {
+            return AssetResponse::NotFound;
+        }
+    }
+    let key = match crate::embed::normalize_key(request_path) {
+        Some(k) => k,
+        None => return AssetResponse::NotFound,
+    };
+    let bytes = match crate::embed::get(&key) {
+        Some(b) => b,
+        None => return AssetResponse::NotFound,
+    };
+    serve_from_bytes(Path::new(&key), bytes, opts)
 }
 
 /// `Range` request header. This is the single entry point used by both the
@@ -450,6 +478,29 @@ mod tests {
     // kiri:// protocol with the correct JavaScript mime type and expose the
     // platform/app/event API. This exercises the real examples/blank asset so
     // the shipped surface is verified, not a synthetic copy.
+    #[test]
+    fn embedded_index_and_js_match_blank_frontend() {
+        let index = serve_embedded("/", &ServeOptions::default());
+        match index {
+            AssetResponse::Full { content_type, body } => {
+                assert!(content_type.starts_with("text/html"));
+                assert!(!body.is_empty());
+            }
+            other => panic!("expected Full index, got {:?}", other),
+        }
+        let js = serve_embedded("kiri.js", &ServeOptions::default());
+        match js {
+            AssetResponse::Full { content_type, .. } => {
+                assert_eq!(content_type, "text/javascript; charset=utf-8");
+            }
+            other => panic!("expected Full kiri.js, got {:?}", other),
+        }
+        assert!(matches!(
+            serve_embedded("../secret", &ServeOptions::default()),
+            AssetResponse::NotFound
+        ));
+    }
+
     #[test]
     fn blank_frontend_serves_kiri_js_with_javascript_mime() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/blank");

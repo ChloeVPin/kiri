@@ -96,7 +96,14 @@ cargo test --workspace --quiet
 # 1. Build the release binary.
 # ---------------------------------------------------------------------------
 echo "==> build release binary"
-cargo build --release -p kiri-runtime --bin "$BIN"
+EMBED="${KIRI_EMBED_FRONTEND:-$ROOT/examples/starter}"
+if [ ! -f "$EMBED/index.html" ]; then
+  echo "KIRI_EMBED_FRONTEND has no index.html: $EMBED" >&2
+  exit 2
+fi
+EMBED="$(cd "$EMBED" && pwd)"
+echo "==> packing frontend $EMBED"
+KIRI_EMBED_FRONTEND="$EMBED" cargo build --release -p kiri-runtime --bin "$BIN"
 
 # ---------------------------------------------------------------------------
 # 2. Assemble an unsigned, runnable archive for the current OS.

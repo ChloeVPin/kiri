@@ -15,6 +15,7 @@ pub mod autostart_ctl;
 pub mod clipboard_ctl;
 pub mod deeplink_ctl;
 pub mod dialog_ctl;
+pub mod embed;
 pub mod frontend;
 pub mod ipc_bench;
 pub mod markers;

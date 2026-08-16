@@ -107,8 +107,9 @@ fn main() {
     let frontend_dir = {
         let env_frontend = std::env::var_os("KIRI_FRONTEND").map(PathBuf::from);
         let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kiri-host"));
-        match kiri_runtime::frontend::resolve_frontend_dir(frontend_dir, env_frontend, &exe) {
-            Ok(dir) => Some(dir),
+        match kiri_runtime::frontend::resolve_frontend_source(frontend_dir, env_frontend, &exe) {
+            Ok(kiri_runtime::frontend::FrontendSource::Directory(dir)) => Some(dir),
+            Ok(kiri_runtime::frontend::FrontendSource::Embedded) => None,
             Err(e) => {
                 eprintln!("{e}");
                 std::process::exit(2);

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiri</title>
+  <style>
+    :root {
+      --ink: #1a1410;
+      --soot: #2c241c;
+      --bone: #e8dcc8;
+      --rust: #c45c26;
+      --ash: #8a7a68;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ink);
+      color: var(--bone);
+      font: 16px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+      display: grid;
+      place-items: center;
+    }
+    main {
+      width: min(28rem, calc(100vw - 3rem));
+      text-align: center;
+    }
+    img {
+      width: 88px;
+      height: 88px;
+      display: block;
+      margin: 0 auto 1.25rem;
+    }
+    h1 {
+      font-family: Palatino, "Iowan Old Style", "Times New Roman", serif;
+      font-weight: 600;
+      font-size: 2.25rem;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.35rem;
+    }
+    p { margin: 0; color: var(--ash); }
+    #frame {
+      margin-top: 1.5rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--rust);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="kiri.svg" alt="">
+    <h1>Kiri</h1>
+    <p>Native host. The UI is packed in the binary.</p>
+    <p id="frame">waiting for animation frame…</p>
+  </main>
+  <script src="kiri.js"></script>
+  <script>
+    (function () {
+      if (window.kiri && !window.kiri.send && !window.ipc) { /* keep host bridge */ }
+      function post(o) {
+        var s = JSON.stringify(o);
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+          window.chrome.webview.postMessage(s);
+        } else if (window.ipc && window.ipc.postMessage) {
+          window.ipc.postMessage(s);
+        }
+      }
+      window.addEventListener('DOMContentLoaded', function () {
+        post({ type: 'ready', phase: 'dom' });
+        var el = document.getElementById('frame');
+        if (el) el.textContent = 'ready';
+      });
+      requestAnimationFrame(function () {
+        post({ type: 'ready', phase: 'frame' });
+      });
+    })();
+  </script>
+</body>
+</html>

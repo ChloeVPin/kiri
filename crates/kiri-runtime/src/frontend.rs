@@ -32,25 +32,35 @@ pub fn bundled_frontend_candidates(exe_path: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Pick the frontend directory.
+/// Where the host should load the application UI from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrontendSource {
+    /// A real directory (`--frontend`, env, or next to the binary).
+    Directory(PathBuf),
+    /// Compile-time packed assets (`KIRI_EMBED_FRONTEND` / `examples/blank`).
+    Embedded,
+}
+
+/// Pick the frontend source.
 ///
 /// 1. explicit `--frontend`
 /// 2. `KIRI_FRONTEND`
 /// 3. first bundled candidate that contains `index.html`
-pub fn resolve_frontend_dir(
+/// 4. compile-time embed, if it contains `index.html`
+pub fn resolve_frontend_source(
     explicit: Option<PathBuf>,
     env_frontend: Option<PathBuf>,
     exe_path: &Path,
-) -> Result<PathBuf, String> {
+) -> Result<FrontendSource, String> {
     if let Some(dir) = explicit {
         if frontend_has_index(&dir) {
-            return Ok(dir);
+            return Ok(FrontendSource::Directory(dir));
         }
         return Err(format!("kiri-host: --frontend {} does not contain index.html", dir.display()));
     }
     if let Some(dir) = env_frontend {
         if frontend_has_index(&dir) {
-            return Ok(dir);
+            return Ok(FrontendSource::Directory(dir));
         }
         return Err(format!(
             "kiri-host: KIRI_FRONTEND={} does not contain index.html",
@@ -59,13 +69,30 @@ pub fn resolve_frontend_dir(
     }
     for candidate in bundled_frontend_candidates(exe_path) {
         if frontend_has_index(&candidate) {
-            return Ok(candidate);
+            return Ok(FrontendSource::Directory(candidate));
         }
     }
+    if crate::embed::has_index() {
+        return Ok(FrontendSource::Embedded);
+    }
     Err("kiri-host: no frontend found. Pass --frontend DIR, set KIRI_FRONTEND, \
-         or place index.html in Resources/frontend (macOS app) or ./frontend \
-         next to the binary."
+         place index.html next to the binary, or rebuild with KIRI_EMBED_FRONTEND."
         .into())
+}
+
+/// Directory-only resolver kept for callers that cannot use the embed path.
+pub fn resolve_frontend_dir(
+    explicit: Option<PathBuf>,
+    env_frontend: Option<PathBuf>,
+    exe_path: &Path,
+) -> Result<PathBuf, String> {
+    match resolve_frontend_source(explicit, env_frontend, exe_path)? {
+        FrontendSource::Directory(dir) => Ok(dir),
+        FrontendSource::Embedded => Err(
+            "kiri-host: only the compile-time embed is available; this caller needs a directory"
+                .into(),
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -128,5 +155,12 @@ mod tests {
         let got = resolve_frontend_dir(None, None, &exe).unwrap();
         assert_eq!(got, front);
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn no_disk_falls_back_to_compile_time_embed() {
+        let exe = PathBuf::from("/tmp/no-such-kiri-host-bin");
+        let src = resolve_frontend_source(None, None, &exe).unwrap();
+        assert_eq!(src, FrontendSource::Embedded);
     }
 }

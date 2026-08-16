@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build an unsigned, double-clickable Kiri.app on this Mac.
 #
-# No signing key, no cargo test gate. The host binary plus examples/blank
-# go in the standard bundle layout so kiri-host finds the frontend without
-# --frontend. Native codesign/notarization is intentionally absent.
+# The frontend is compiled into kiri-host (KIRI_EMBED_FRONTEND). The .app
+# is just the binary + Info.plist + icon. No sidecar UI folder.
+# Native codesign/notarization is intentionally absent.
 
 set -euo pipefail
 
@@ -15,17 +15,44 @@ if [ "$(uname -s)" != "Darwin" ]; then
   exit 2
 fi
 
-PKG_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
-APP="${1:-$ROOT/artifacts/Kiri.app}"
+FRONTEND="$ROOT/examples/starter"
+APP="$ROOT/artifacts/Kiri.app"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --frontend)
+      FRONTEND="$2"
+      shift 2
+      ;;
+    --out)
+      APP="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "usage: make-app.sh [--frontend DIR] [--out PATH.app]"
+      exit 0
+      ;;
+    *)
+      echo "unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
 
-echo "==> build release kiri-host"
-cargo build --release -p kiri-runtime --bin kiri-host
+if [ ! -f "$FRONTEND/index.html" ]; then
+  echo "frontend has no index.html: $FRONTEND" >&2
+  exit 2
+fi
+FRONTEND="$(cd "$FRONTEND" && pwd)"
+
+PKG_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)".*/\1/')"
+
+echo "==> embed $FRONTEND"
+KIRI_EMBED_FRONTEND="$FRONTEND" cargo build --release -p kiri-runtime --bin kiri-host
 
 echo "==> assemble $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/frontend"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/kiri-host "$APP/Contents/MacOS/kiri-host"
-cp -R examples/blank/. "$APP/Contents/Resources/frontend/"
 
 if [ -f assets/kiri.png ] && command -v sips >/dev/null && command -v iconutil >/dev/null; then
   ICONSET="$(mktemp -d)/kiri.iconset"

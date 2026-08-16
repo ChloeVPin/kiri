@@ -683,11 +683,21 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         .cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
         .map_err(|e| format!("cast to ICoreWebView2_3: {e}"))?;
     let host_name = windows::core::HSTRING::from(VIRTUAL_HOST_NAME);
-    let frontend_dir = options.frontend_dir.as_ref().ok_or("frontend_dir is required")?;
-    let frontend_dir = absolute_lexical(frontend_dir);
-    if !frontend_dir.is_dir() {
-        return Err(format!("frontend directory does not exist: {}", frontend_dir.display()));
-    }
+    let frontend_dir = match options.frontend_dir.as_ref() {
+        Some(dir) => {
+            let dir = absolute_lexical(dir);
+            if !dir.is_dir() {
+                return Err(format!("frontend directory does not exist: {}", dir.display()));
+            }
+            dir
+        }
+        None => {
+            let dest = std::env::temp_dir().join(format!("kiri-embed-{}", std::process::id()));
+            crate::embed::materialize(&dest)
+                .map_err(|e| format!("materialize embedded frontend: {e}"))?;
+            dest
+        }
+    };
     let folder = windows::core::HSTRING::from(frontend_dir.as_os_str());
     webview3
         .SetVirtualHostNameToFolderMapping(

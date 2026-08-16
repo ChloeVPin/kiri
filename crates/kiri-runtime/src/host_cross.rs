@@ -41,8 +41,8 @@ use crate::HostOptions;
 ///
 /// Pure window-free logic lives in `crate::assets`; this wrapper adapts it to
 /// wry's `http::Response`. The frontend directory comes from
-/// `HostOptions.frontend_dir`; if absent, the embedded blank page is served for
-/// the index path (sub-asset requests 404, same as before). `Range` requests are
+/// `HostOptions.frontend_dir`; if absent, the compile-time packed frontend
+/// is served (including sub-assets). `Range` requests are
 /// honored so large assets load incrementally (F-1 in the deep audit).
 fn serve_kiri(
     options: &HostOptions,
@@ -53,28 +53,11 @@ fn serve_kiri(
     use crate::assets::{
         response_headers, serve_checked, status_code, AssetResponse, ServeOptions,
     };
-    let root = match options.frontend_dir.as_ref() {
-        Some(d) => d.clone(),
-        None => {
-            // No frontend dir: only the embedded index page is available.
-            if request_path.trim_start_matches('/').is_empty() {
-                const FALLBACK: &str = include_str!("../../../examples/blank/index.html");
-                return WryResponse::builder()
-                    .status(200)
-                    .header("Content-Type", "text/html; charset=utf-8")
-                    .body(Cow::Borrowed(FALLBACK.as_bytes()))
-                    .unwrap();
-            }
-            return WryResponse::builder()
-                .status(404)
-                .header("Content-Type", "text/plain")
-                .body(Cow::Borrowed(b"not found".as_slice()))
-                .unwrap();
-        }
+    let opts = ServeOptions { range, if_none_match, allow: &[] };
+    let resp = match options.frontend_dir.as_ref() {
+        Some(root) => serve_checked(root, request_path, &opts),
+        None => crate::assets::serve_embedded(request_path, &opts),
     };
-
-    let resp =
-        serve_checked(&root, request_path, &ServeOptions { range, if_none_match, allow: &[] });
     let status = status_code(&resp);
     let mut builder = WryResponse::builder().status(status);
     for (k, v) in response_headers(&resp) {
