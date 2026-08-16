@@ -83,7 +83,7 @@ impl Default for HostOptions {
         Self {
             frontend_dir: None,
             markers_out: None,
-            title: "Kiri host".into(),
+            title: "Kiri".into(),
             width: 1024,
             height: 768,
             smoke: false,

@@ -14,7 +14,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut frontend_dir: Option<PathBuf> = None;
     let mut markers_out: Option<PathBuf> = None;
-    let mut title = "Kiri host".to_string();
+    let mut title = "Kiri".to_string();
     let mut width = 1024u32;
     let mut height = 768u32;
     let mut smoke = false;
