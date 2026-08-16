@@ -12,12 +12,13 @@
   </p>
 </div>
 
-Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
-control protocol can improve the control plane, IPC latency, and memory profile
-of general-purpose wrappers (Tauri, Wry), while keeping the same security
-boundaries. Startup performance remains measured work, not a product claim.
-The corpus rule is explicit: keep direct platform ownership as a hypothesis. If
-Wry or Tao is as fast and simpler, record that result and switch.
+Kiri is the desktop runtime you use when a granted capability must not be
+enough. Same OS webview as Tauri; a smaller host; every native call
+double-gated (capability **and** host allowlist). The product goal and the
+definition of done live in [`docs/PRODUCT.md`](docs/PRODUCT.md).
+
+Startup and IPC numbers are measured, not assumed. If wry/tao is as fast
+and simpler than this host, we record that and switch.
 
 ## Status
 

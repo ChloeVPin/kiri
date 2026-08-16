@@ -6,7 +6,8 @@ this summary.
 
 ## Project
 
-Kiri is a cross-platform native desktop app runtime. A direct Win32 plus
+Kiri is a cross-platform native desktop app runtime. The product goal is
+`docs/PRODUCT.md`. A direct Win32 plus
 WebView2 host on Windows and a wry/tao host on macOS and Linux are compared
 against Tauri and Wry/Tao baselines on a shared startup-marker schema and a
 control-plane protocol defined in the corpus
@@ -77,7 +78,7 @@ depend on `kiri-core`.
 
 ## Current state and next work
 
-Status: T001 through T007 and T010 are complete and committed. The runtime
+Product goal: `docs/PRODUCT.md`. Status: T001 through T007 and T010 are complete and committed. The runtime
 runs natively on every desktop platform from one codebase (direct Win32 +
 WebView2 on Windows, wry/tao on macOS and Linux), and the Mac-headless gates
 are green. The Windows direct backend is cross-checked locally and exercised
