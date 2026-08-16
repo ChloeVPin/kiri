@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Baseline capability: allow the kiri_marker custom command used by the blank frontend bridge.",
+  "description": "Baseline capability: startup markers plus through-webview echo bench.",
   "windows": ["main"],
-  "permissions": ["allow-kiri-marker"]
+  "permissions": ["allow-kiri-marker", "allow-kiri-echo", "allow-kiri-ipc-bench-done"]
 }

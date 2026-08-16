@@ -17,7 +17,7 @@ result; B = maintained implementation source; D = inference.
 |---|------------------|----------------|----------|
 | G-1 | Mobile targets (iOS, Android) via `tauri::mobile_entry_point` | Absent. Desktop only (Windows/macOS/Linux). | AGENTS.md env facts; `host_windows.rs`/`host_cross.rs` are the only backends. (A) |
 | G-2 | Plugin ecosystem + ABI. Tauri ships 50+ official plugins. | Plugin ABI is IMPLEMENTED (R-2): `kiri-agent-execution-corpus/examples/plugin_abi.h` is mirrored in `crates/kiri-runtime/src/plugins.rs` (Rust-native `KiriPluginV1`/`KiriHostV1` with `init`/`register_command`/`shutdown`), and built-in commands `kiri.ping`/`kiri.diag`/`kiri.open`/`kiri.close` are REGISTERED AS PLUGINS through that ABI with end-to-end dispatch tests. ADDITIONALLY the host-owned external plugin loader is implemented, headless-tested, AND wired into runtime startup: `build_router_with_plugins` now takes a host-owned `PluginManifest` (default-deny JSON) and a `PluginRegistry` (name -> descriptor). External plugins load only when named in the manifest, resolved through the registry, and gated by a per-plugin command allowlist; unknown or unallowed entries are skipped (fail-closed). This EXCEEDS Tauri's plugin model on the security axis: Tauri trusts any plugin present on the configured path, while Kiri refuses an unknown plugin before `init` and drops unvetted commands. The in-process descriptor registry stands in for a real `dlopen` loader (OS-specific, out of scope for headless Mac work); the security gate that exceeds Tauri is identical either way. Ecosystem breadth (50+ plugins, catalogs) is still absent. | `crates/kiri-runtime/src/plugins.rs` (PING/DIAG/RESOURCES_PLUGIN + `PluginAllowlist` + `PluginManifest` + `PluginRegistry` + `register_external` + `tests`), `kiri-agent-execution-corpus/examples/plugin_abi.h`. (A) |
-| G-3 | Official bundler + autoupdater. | Application-level signed updates are implemented (`crates/kiri-core/src/update.rs`: Ed25519 manifest, version-negotiated, never lowers a security check) with a producer that signs the actual artifact URL + SHA-256 and a verifier that checks the downloaded bytes. The unsigned packaging pipeline now emits a macOS `.app` zip, Windows `.exe` zip, Linux `.tar.gz`, and a merged three-platform `RELEASES.json` through one GitHub Actions workflow. Native OS signing is deliberately out of scope, not an unresolved Kiri release blocker. | `crates/kiri-core/src/update.rs`, `tools/packaging/package.sh`, `.github/workflows/unsigned-release.yml`. (A) |
+| G-3 | Official bundler + autoupdater. | Application-level signed updates are implemented (`crates/kiri-core/src/update.rs`: Ed25519 manifest, version-negotiated, never lowers a security check) with a producer that signs the actual artifact URL + SHA-256 and a verifier that checks the downloaded bytes. The unsigned packaging pipeline emits a macOS `.app` zip, Windows `.exe` zip, Linux `.tar.gz`, and a merged three-platform `RELEASES.json`. The current artifacts ship the host binary but do not yet embed or include the frontend, and they remain unsigned at the native OS level. | `crates/kiri-core/src/update.rs`, `tools/packaging/package.sh`, `.github/workflows/unsigned-release.yml`. (A) |
 | G-4 | `tauri://` asset protocol with range requests, content-type mapping, optimization, and `asset:customProtocol` allowlist. | `kiri://` now has content-type mapping + Range/206 (R-1) AND conditional caching (ETag + `If-None-Match` -> 304) + origin allowlist (G-4 parity), all headless-tested in `crates/kiri-runtime/src/assets.rs`. `serve_checked()` is wired into the macOS/Linux `host_cross.rs::serve_kiri`. Windows `host_windows.rs` uses WebView2 `SetVirtualHostNameToFolderMapping` (OS-handled content-types); custom mime/range/etag parity there is blocked pending real-Windows hardware (T008/T009 leg). | `crates/kiri-runtime/src/assets.rs`, `crates/kiri-runtime/src/host_cross.rs`. (A/B) |
 | G-5 | `window.__TAURI__.os/path/app/event/cli/dialog/fs/globalShortcut/http/notification/process/shell/updater/window` JS APIs. | Most of this surface is IMPLEMENTED and exceeds Tauri on the security axis (capability authority + host allowlist + server-side validation): `kiri.window.*` (14-22), `kiri.platform.*`/`kiri.app.*`/`kiri.event.*` (incl. channel-allowlisted audit-16), `kiri.path.*`/`kiri.os.*`, `kiri.http.get` (host-allowlisted), `kiri.shell.run` (host-allowlisted), `kiri.notification.show` (template-allowlisted), `kiri.dialog.open` (kind-allowlisted), `kiri.shortcut.register` (accelerator-allowlisted), `kiri.clipboard.*`, `kiri.opener.open`, `kiri.store.*` (namespace-allowlisted), `kiri.deeplink.register`, `kiri.tray.*`, `kiri.sidecar.*`, `kiri.window.state.*`, `kiri.config.get/keys` (key-allowlisted, audit-17). Still missing: `cli`, `process` (covered by sidecar/shell), and a `updater` JS binding (the verifier exists, no JS command yet). | `crates/kiri-core/src/{window,path,http,shell,notification,dialog,shortcut,clipboard,opener,store,deeplink,tray,sidecar,window_state,config,event}.rs`, `examples/blank/kiri.js`. (A) |
 | G-6 | Sidecar binaries, deep-link, tray, global shortcuts, window-state persistence. | ALL FIVE are implemented and exceed Tauri on the security axis: `kiri.sidecar.*` (host-allowlisted names + argv confinement, audit-15), `kiri.deeplink.register` (scheme-allowlisted), `kiri.tray.*` (item-allowlisted, audit-14), `kiri.shortcut.register` (accelerator-allowlisted), `kiri.window.state.*` (host-owned namespace, audit-13). | `crates/kiri-core/src/{sidecar,deeplink,tray,shortcut,window_state}.rs`. (A) |
@@ -35,14 +35,17 @@ product surface area.
 
 | # | Area | Why Tauri wins | Kiri evidence | Level |
 |---|------|----------------|---------------|-------|
-| F-1 | Asset/protocol loading | `tauri://` is a registered custom protocol with content-type + allowlist + in some configs optimized reads. | `kiri://localhost` does a synchronous `std::fs::read` per navigation with no mime/range/cache (`host_cross.rs:45`). For a multi-asset app this is strictly slower and less correct (wrong/omitted content-type). | B |
-| F-2 | Cold-start is comparable, Tauri's mature builder avoids redundant windowing work | Our macOS `platform_initialized` ~129ms vs Tauri ~157ms (Kiri faster here, see COMPETITIVE_ANALYSIS T009 leg) — so on FIRST paint Kiri currently leads. But Tauri's startup is battle-tested across 1000s of apps; ours is measured on one host. | `artifacts/compare-macos.json` (gitignored). | A (macOS only) |
+| F-1 | Asset/protocol loading | Tauri embeds `frontendDist` assets at build time and serves them through its asset resolver. | Kiri's `kiri://localhost` path supports MIME/range/ETag/origin checks and now uses Wry's asynchronous custom-protocol API, but `--frontend` still reads runtime files. Embedded-asset parity is not implemented. | A/B |
+| F-2 | Hosted startup comparison | The pre-fix hosted artifact showed Tauri ahead on end-to-end startup; the older local marker artifact is not sufficient to claim a Kiri win. | Kiri changed the cross protocol to asynchronous after the hosted run. The fixed commit needs a fresh hosted comparison before a winner is declared. | A |
 | F-3 | IPC for app logic | Tauri's command system (`#[tauri::command]`) is the de-facto ergonomic standard; huge body of examples. Kiri's numeric command routing is faster AND auditable: the required-capability matrix is resolved from one catalog and proven by a headless test covering all 74 commands, so capability authority cannot silently drift. Near-zero examples and no plugin ecosystem remain the real gaps (G-2 ecosystem, F-3 ergonomics). | `dispatch.rs` Router/StaticRouter (`authorize` oracle). | B / A (matrix coverage test) |
 
-**Where we already measured a win:** on macOS startup phases (platform_initialized,
-webview_ready) Kiri native is ~0.75-0.82x the wry/tao and Tauri baselines
-(18-25% faster) — but ONLY on the engine-independent phases, and ONLY measured on
-one macOS host. Do not generalize. (A, macOS-only.)
+**Current performance status:** the earlier one-host startup win is superseded for
+competitive claims. The latest hosted artifact was collected before Kiri moved
+frontend serving off the WebView event thread. After that fix, a six-run local
+macOS release check measured Kiri at a 614 ms median versus 772 ms for Wry/Tao;
+the local Tauri baseline timed out at 20 seconds, so no local Kiri/Tauri winner is
+claimed. The hosted comparison must be rerun on the fixed commit. (A, bounded local
+and hosted measurements.)
 
 ### 2b. Measured IPC throughput (counters F-3 with level-A evidence)
 
@@ -58,19 +61,17 @@ on the macOS development host (M-series, Rust 1.97). Raw artifact:
 | 16 MiB  | 5.413          | ~2961              |
 | 100 MiB | 35.224         | ~2872              |
 
-This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer fast
-path). Tauri's command IPC serializes every call through serde + a string command
-name + the invoke channel; Kiri's numeric, build-time command ids skip the
-name-lookup and share one validation pipeline, which is the structural reason the
-path stays in the low-millisecond range at 1 MiB and ~3 GiB/s at 16/100 MiB. This
-directly answers F-3: Tauri's command system is more ergonomic/example-rich, but
-on the dimension that customers feel (per-call IPC cost at bulk sizes) Kiri's
-routing is faster and auditable. Claim level: **A (measured locally)**.
+This is the **in-process** ordinary JSON path (no WebView, not T008, not
+Tauri `invoke`). The ~3 GiB/s figure is a core-path microbench only. What
+an app feels is `kiri-host --ipc-bench` vs Tauri `kiri_echo`; on this Mac
+those are close at 256 KiB–1 MiB. Tauri remains more ergonomic. Do not
+quote bulk_bench as a customer-visible IPC win.
 
-F-1 (asset/protocol loading) is already closed by R-1: `kiri://` now returns
-content-type, supports Range -> 206, and ETag/304 (commit bdb75ef), matching
-Tauri's custom-protocol correctness. Kiri no longer does a bare synchronous
-`std::fs::read` per navigation.
+F-1 (asset/protocol loading) is functionally covered on macOS/Linux by R-1:
+`kiri://` returns content-type, supports Range -> 206, and ETag/304, while the
+fixed host resolves protocol requests asynchronously. Tauri still has the
+distribution advantage of compile-time embedded assets; Kiri's runtime
+filesystem mode remains a separate path and must not be presented as parity.
 
 ---
 
@@ -138,8 +139,8 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       content-type/Range/ETag, R-2 real plugin ABI, R-3..R-5 JS surface, R-5 window.*,
       and audit-6..13 including clipboard/path/os/http/shell/notification/fs-scope/
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T008 (WebView2
-      shared-buffer) + T009-Windows leg (cross-OS perf comparison) remain blocked on
-      real Windows + perf HW; they cannot be closed on this macOS dev host. `cargo test
+      shared-buffer) + T009 fixed-commit hosted comparison remain open; they cannot
+      be closed as a competitive claim on this macOS dev host alone. `cargo test
       --workspace` green (252 tests: 217 kiri-core + 2 integration + 33 kiri-runtime). All of §6b's 17
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
@@ -510,8 +511,9 @@ Cross-cutting differentiators to protect and advertise:
 ## 6. Threats to the "exceed Tauri" claim (call them out)
 
 - Tauri v2 is stable, funded, and shipping mobile. Kiri cannot "win" on ecosystem
-  overnight; it wins on control-plane discipline + (measured, narrow) startup edge.
-- The startup edge is macOS-only and one-host. Must be reproduced on Windows
-  (T009 Windows leg, blocked) before any external claim.
+  overnight; it wins on control-plane discipline and must earn any startup claim
+  through the fixed hosted comparison.
+- The latest hosted artifact predates the asynchronous protocol fix. The fixed
+  result must be reproduced on macOS and Windows before any external startup claim.
 - Branding: `KIRI` is not unique (crates.io package, KIRI Engine). Legal clearance
   needed before any "take their customers" campaign (`docs/16-branding-legal.md`).

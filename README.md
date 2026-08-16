@@ -13,22 +13,38 @@
 </div>
 
 Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
-control protocol beats general-purpose wrappers (Tauri, Wry) on startup time,
-IPC latency, and memory, while keeping the same security boundaries. The
-corpus rule is explicit: keep direct platform ownership as a hypothesis. If
+control protocol can improve the control plane, IPC latency, and memory profile
+of general-purpose wrappers (Tauri, Wry), while keeping the same security
+boundaries. Startup performance remains measured work, not a product claim.
+The corpus rule is explicit: keep direct platform ownership as a hypothesis. If
 Wry or Tao is as fast and simpler, record that result and switch.
 
 ## Status
 
-Tasks T001-T010 are complete and committed. The runtime runs natively on
+Tasks T001-T007 and T010 are complete. T009 has a local macOS release
+measurement (startup markers + through-webview IPC + binary size). T008
+and the Windows T009 leg remain open. The runtime
+runs natively on
 every desktop platform from one codebase: the direct Win32 + WebView2 backend
 on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
 the same security boundary (application-origin trust, native-assigned caller
-identity and capability authority). All three platforms are equal targets. The wry/tao backend runs natively on macOS and Linux (smoke and stress), and the direct Win32 + WebView2 backend runs natively on Windows (smoke and stress). All three platforms (Windows, macOS, Linux) are equal targets; the macOS dev machine exercises the native wry/tao backend locally while Windows and Linux are exercised by CI and cross-checks.
+identity and capability authority). All three platforms are equal targets. The
+wry/tao backend is smoke/stress-verified on macOS, cross-checked on Linux, and
+the direct Win32 + WebView2 backend is smoke/stress-verified on Windows CI.
+Linux native rendering remains a soft CI probe because shared runners lack a
+usable WebKit compositor.
 
-- 252 tests pass (cargo test --workspace: 217 kiri-core + 2 integration + 33 kiri-runtime)
+- 256 tests pass (cargo test --workspace: 217 kiri-core + 2 integration + 37 kiri-runtime)
+- the macOS/Linux cross backend serves `kiri://` through Wry's asynchronous
+  custom-protocol path. Local release, 5-run marker medians to `webview_ready`:
+  Kiri 290 ms, wry/tao 275 ms, Tauri 312 ms. Not an 18–25% claim.
+- through-webview IPC is a real page→host→page bench (`--ipc-bench` vs Tauri
+  `kiri_echo`). On this Mac, 256 KiB / ~1 MiB batch-means are 1.00 / 2.77 ms
+  (Kiri) vs 1.07 / 3.13 ms (Tauri). Tiny payloads sit inside a 1 ms timer.
+- unstripped release binaries on this Mac: kiri-host 2.7 MiB, wry-tao 1.6 MiB,
+  Tauri baseline 10.0 MiB
 - control-plane ping + trace (T003) and caller/capability authority (T004)
-  implemented; 10k-ping latency distribution emitted
+  implemented; the 10k-ping distribution is in-process, not through the webview
 - wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
   all nine markers and exits 0; `kiri-host-stress` passes multi-cycle
 - direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
@@ -66,7 +82,7 @@ Three layers, one shared marker schema:
 ```
 crates/kiri-core               platform-neutral logical protocol, security
                                authority, resource table, tracing. Pure Rust,
-                               zero platform deps, 72 tests
+                               zero platform deps, 217 tests
 crates/kiri-runtime            the native host. Platform-neutral facade
                                (`lib.rs`) dispatches to a direct Win32 +
                                WebView2 backend on Windows
@@ -99,10 +115,10 @@ deliberately independent of wry, which pins an older API generation.
 
 ```
 .github/workflows/            correctness (all-OS hard gates),
-                              controlled-performance (self-hosted runner)
+                              controlled-performance (hosted macOS/Windows)
 baselines/                    standalone comparators, own lockfiles
 benchmark/                    harness.py, test-vectors.json, README
-crates/kiri-core/             11 modules, 72 tests
+crates/kiri-core/             38 modules, 217 tests
 crates/kiri-runtime/         lib.rs (facade), host_windows.rs (WebView2),
                               host_cross.rs (wry/tao), markers.rs, output.rs,
                               bin/kiri-host, bin/kiri-host-stress
@@ -182,8 +198,9 @@ mirrored in this repo's docs):
 - T001-T007 done (bootstrap, lifecycle, control-plane, authority, codegen,
   resource table, bulk benchmark)
 - T008 WebView2 read-only shared-buffer path (blocked: needs real Windows)
-- T009 direct host versus Wry/Tao versus Tauri comparison (blocked: needs T008 +
-  self-hosted perf hardware)
+- T009 macOS local release comparison recorded (startup + through-webview IPC +
+  size). Windows T009 vs Tauri and a hosted rerun of the async protocol are still
+  open.
 - T010 minimal diagnostics panel (done, macOS-runnable)
 
 ## Documentation

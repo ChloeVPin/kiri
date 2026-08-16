@@ -15,6 +15,7 @@ pub mod autostart_ctl;
 pub mod clipboard_ctl;
 pub mod deeplink_ctl;
 pub mod dialog_ctl;
+pub mod ipc_bench;
 pub mod markers;
 pub mod notification_ctl;
 pub mod opener_ctl;
@@ -64,6 +65,15 @@ pub struct HostOptions {
     /// Hard timeout for reaching ready state (smoke/stress runs; CI cannot
     /// hang). 0 disables the watchdog.
     pub watchdog_ms: u32,
+    /// After the first animation frame, inject a through-webview ping/echo
+    /// bench and exit once the page posts the result. Distinct from `--smoke`.
+    pub ipc_bench: bool,
+    /// Iterations per payload size (after warmup) when `ipc_bench` is set.
+    pub ipc_bench_runs: u32,
+    /// Optional path for the through-webview IPC artifact.
+    pub ipc_bench_out: Option<PathBuf>,
+    /// Payload content sizes for `--ipc-bench`. Empty means DEFAULT_SIZES.
+    pub ipc_bench_sizes: Vec<usize>,
 }
 
 impl Default for HostOptions {
@@ -77,6 +87,10 @@ impl Default for HostOptions {
             smoke: false,
             exit_after_ready_ms: 250,
             watchdog_ms: 30_000,
+            ipc_bench: false,
+            ipc_bench_runs: crate::ipc_bench::DEFAULT_RUNS,
+            ipc_bench_out: None,
+            ipc_bench_sizes: crate::ipc_bench::DEFAULT_SIZES.to_vec(),
         }
     }
 }
@@ -154,6 +168,10 @@ pub fn host_options_from_args(
         smoke,
         exit_after_ready_ms,
         watchdog_ms,
+        ipc_bench: false,
+        ipc_bench_runs: crate::ipc_bench::DEFAULT_RUNS,
+        ipc_bench_out: None,
+        ipc_bench_sizes: crate::ipc_bench::DEFAULT_SIZES.to_vec(),
     }
 }
 

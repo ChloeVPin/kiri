@@ -109,6 +109,8 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result['summary'], indent=2))
+    if any(run['returncode'] != 0 for run in runs):
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

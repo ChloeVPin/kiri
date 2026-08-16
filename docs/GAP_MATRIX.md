@@ -34,13 +34,16 @@ source or docs; B = maintained impl; D = inference.
 
 ## Where Tauri is currently better (do not fake)
 
-- F-1 Asset loading maturity: tauri:// is a registered OS protocol with
-  optimization paths; Kiri kiri:// on macOS/Linux does per-request file reads
-  (now mime/range/ETag) but is younger; Windows WebView2 path is OS-handled and
-  not yet feature-parity-checked (no real hardware).
+- F-1 Asset loading maturity: Tauri embeds `frontendDist` assets at build time
+  and serves them through its asset resolver. Kiri's macOS/Linux `kiri://`
+  path retains runtime filesystem support, MIME/range/ETag/origin checks, and
+  now resolves asynchronously so disk reads do not block the WebView event
+  thread. Windows uses WebView2 folder mapping; embedded-asset parity remains
+  unimplemented.
 - F-3 Ergonomics/examples: Tauri #[tauri::command] and plugin ecosystem are the
   de-facto standard with huge example coverage; Kiri numeric routing is
-  faster/auditable but has near-zero examples.
+  auditable but has near-zero examples. Through-webview IPC vs invoke is now
+  measured on macOS; it is close, not a blowout.
 
 ## Ranked exceed roadmap (next concrete work)
 
@@ -54,11 +57,16 @@ source or docs; B = maintained impl; D = inference.
 7. G-3 Packaging - once signing certs exist, build MSI/dmg/AppImage and wire the
    signed-update verifier into release.
 8. G-1 Mobile - out of scope until desktop dominant; record as hypothesis.
+9. Windows T009 / through-webview IPC vs Tauri - macOS local release is recorded;
+   Windows is still unrun.
 
 ## Honest bottom line
 
 Kiri cannot beat Tauri on ecosystem, docs, mobile, or community short term. It
-CAN and DOES beat Tauri on the security axis, startup-contract rigor, and
-control-plane auditability. Fastest path to exceed on every winnable dimension:
+does beat Tauri on the security axis, startup-contract rigor, control-plane
+auditability, and (on this Mac) unstripped binary size. Startup and
+through-webview IPC on macOS are now measured and close, not a blowout.
+
+Fastest path to exceed on every winnable dimension:
 All headless-runnable surface gaps (G-9, G-13, G-5, G-10, G-11, G-12) are DONE; remaining: G-3 packaging (certs) and G-1 mobile (out of scope)
 Mac and all preserve the security model.

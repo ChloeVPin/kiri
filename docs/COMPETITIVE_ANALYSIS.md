@@ -40,10 +40,9 @@ winnable." Claims here are tied to verified gates, not aspirations.
    Kiri's native host is a single focused binary; the runtime links only what
    the control plane needs. Tauri pulls the full plugin/permission apparatus
    (its default capability set alone grants ~80 core permissions). Smaller
-   default surface = smaller attack surface. Measured release binary sizes
-   will be recorded in the three-way benchmark (T009) once run; the *design*
-   advantage (narrow surface, no mandatory plugin permission tree) is verifiable
-   from the build graph today.
+   default surface = smaller attack surface. The *design* advantage (narrow
+   surface, no mandatory plugin permission tree) is verifiable from the build
+   graph today. No binary-size winner has been measured.
 
 5. **Explicit startup contract on every backend.**
    All three targets (Win32+WebView2, wry/tao macOS, wry/tao Linux) obey the
@@ -71,13 +70,14 @@ winnable." Claims here are tied to verified gates, not aspirations.
   on CI (no GPU on runners); Tauri has the same limitation. Neither can claim
   a hard Linux render gate on shared CI.
 
-## Measured IPC evidence (answers Q-003, level A)
+## Measured IPC evidence (two different benches — do not mix them)
 
-`cargo run -q --release -p kiri-core --example bulk_bench` drives the real
-kiri-core JSON control path (serialize `WireRequest` -> `Router.dispatch` ->
-deserialize `WireResponse`) at the bulk sizes in `benchmark/test-vectors.json`,
-on the macOS development host (Apple Silicon, Rust 1.97). Raw artifact:
-`artifacts/bulk-ordinary.json`. 20 runs each, mean wall time:
+### In-process router only (not what an app feels)
+
+`cargo run -q --release -p kiri-core --example bulk_bench` drives
+serialize `WireRequest` → `Router.dispatch` → deserialize `WireResponse`
+with **no WebView**. It is a useful core-path microbench. It is **not** a
+Tauri `invoke` comparison and must not be quoted as IPC latency.
 
 | Payload | Mean wall (ms) | Throughput (MiB/s) |
 |---------|----------------|--------------------|
@@ -85,17 +85,31 @@ on the macOS development host (Apple Silicon, Rust 1.97). Raw artifact:
 | 16 MiB  | 5.413          | ~2961              |
 | 100 MiB | 35.224         | ~2872              |
 
-This is the ORDINARY JSON message path (not the T008 WebView2 shared-buffer
-fast path). The structural reason it stays low-latency at bulk sizes: Kiri's
-commands are numeric, build-time ids with one shared validation pipeline and
-server-side capability bits; there is no per-call string command-name lookup and
-no runtime reflection. Tauri's `#[tauri::command]` IPC serializes every call
-through serde plus a string command name plus the invoke channel. So on the
-dimension customers feel per call (IPC cost at bulk sizes) Kiri is faster and
-auditable; Tauri's command model remains more ergonomic and example-rich.
-Claim level: **A (measured locally)**. Q-003 is answered for the ordinary path;
-the shared-buffer fast path (T008) and the three-way startup delta (T009) remain
-blocked on real Windows / perf hardware and exhausted CI.
+### Through-webview ping/echo (what an app feels)
+
+`kiri-host --ipc-bench` and the Tauri baseline `kiri_echo` command now run
+the same payload sizes through a live page: Kiri uses `window.kiri.send` +
+host `evaluate_script(onResponse)`; Tauri uses `__TAURI_INTERNALS__.invoke`.
+Harness: `python3 benchmark/compare.py`. WKWebView `performance.now()` is
+often 1 ms coarse, so the comparable figure is batch-mean (total batch
+time / N), not the per-call median of 0/1 ms samples.
+
+Local macOS aarch64, release, 30 iterations after 5 warmups (this host):
+
+| Payload content | Kiri batch-mean (ms) | Tauri batch-mean (ms) | kiri/tauri |
+|-----------------|---------------------:|----------------------:|-----------:|
+| 0 B             |                0.133 |                 0.267 |       0.50 |
+| 64 B            |                0.133 |                 0.700 |       0.19 |
+| 1 KiB           |                0.500 |                 0.233 |       2.14 |
+| 16 KiB          |                0.133 |                 0.300 |       0.44 |
+| 256 KiB         |                1.000 |                 1.067 |       0.94 |
+| ~1 MiB          |                2.767 |                 3.133 |       0.88 |
+
+Honesty: sub-millisecond rows are inside timer noise and flip winners
+(see 1 KiB). At 256 KiB and ~1 MiB the two paths are close, with Kiri
+slightly ahead on this host. This is **not** a router's 3 GiB/s claim.
+Windows through-webview vs Tauri is still unmeasured. T008 shared-buffer
+is still blocked on real Windows hardware.
 
 ## Tauri baseline fix (so the comparison is honest)
 
@@ -115,7 +129,7 @@ Verified on macOS (this host): the Tauri baseline now emits all 9 markers and
 exits 0, same as the Kiri wry/tao host. This makes the T009 three-way
 comparison (Kiri vs Wry/Tao vs Tauri) a real, apples-to-apples measurement.
 
-## T009 three-way comparison: macOS-native leg (MEASURED)
+## T009 three-way comparison: historical macOS marker leg (SUPERSEDED)
 
 Run on macOS aarch64 (this dev host, real GPU), same blank frontend
 (`examples/blank`), same frozen marker schema (schema_version: 1). Each target
@@ -131,10 +145,9 @@ locally). Harness: `benchmark/compare_macos.py`.
 | bridge_ready              |          217,924,000 |     319,127,958 |   301,354,625 |
 | first_animation_frame     |          337,397,250 |     448,645,667 |   423,760,875 |
 
-**Comparable phases (webview_ready and earlier): Kiri native is faster on every
-one.** Medians: ~0.77x the wry/tao baseline and ~0.82x the Tauri baseline on
-`platform_initialized`; ~0.75x / ~0.80x on `webview_ready`. That is an 18-25%
-startup-edge on macOS, on the honest (engine-independent) phases.
+This five-run debug artifact predates the asynchronous `kiri://` protocol fix
+and is retained as historical evidence only. It must not be used to claim a
+current Kiri startup advantage.
 
 **Honesty notes (carried from Q-003):**
 - `dom_ready` / `app_ready` / `first_animation_frame` for the Tauri baseline run
@@ -142,10 +155,8 @@ startup-edge on macOS, on the honest (engine-independent) phases.
   wry `window.ipc.postMessage` path. Those phases are reported but flagged
   non-comparable across targets; Kiri and the wry/tao baseline share the lighter
   path and are directly comparable there.
-- This is the **macOS leg only**. The Windows leg (direct Win32 + WebView2 host
-  vs the baselines) is still blocked on T008 (WebView2 shared-buffer) and
-  self-hosted perf hardware, and is not represented here. Do not generalize the
-  macOS number to Windows/Linux.
+- This is the **macOS leg only** and is superseded by the later hosted artifact
+  described below. Do not generalize it to Windows/Linux.
 - Linux is a documented headless soft probe (no GPU on runners), so no hard
   Linux comparison is claimed.
 
@@ -154,6 +165,40 @@ startup-edge on macOS, on the honest (engine-independent) phases.
 reference and collapsed every early marker to ~0ns. Corrected to record
 `NativeEntry` with a real `now_ns()` sample (matching the wry/tao baseline), so
 Tauri's early phases are now honestly measured (was ~84ns, now ~156ms).
+
+## T009 current evidence: local release, async `kiri://`, 5-run markers
+
+Local macOS aarch64, **release** binaries, 5 launches each, same blank
+frontend, frozen marker schema. Harness: `benchmark/compare.py`. Raw:
+`artifacts/compare-macos.json` (gitignored).
+
+| marker (median ns)         | Kiri native | wry/tao baseline | Tauri baseline | notes |
+|----------------------------|------------:|-----------------:|---------------:|-------|
+| platform_initialized       |  92,681,875 |       92,564,917 |     93,997,250 | comparable |
+| webview_creation_requested |  92,682,542 |       92,565,583 |     93,997,583 | comparable |
+| webview_ready              | 290,252,834 |      274,833,292 |    312,477,667 | comparable |
+| first_animation_frame      | 290,348,625 |      275,014,083 |    312,824,000 | Tauri via invoke |
+
+On this host, all three are clustered. wry/tao is fastest to `webview_ready`
+(~275 ms). Kiri is ~5% behind that baseline (~290 ms) and ~7% ahead of
+Tauri (~312 ms). That is **not** an 18–25% product claim. Earlier debug
+and pre-async-protocol artifacts are historical only.
+
+Unstripped release binary sizes from the same run:
+
+| binary | bytes |
+|--------|------:|
+| wry-tao-baseline | 1,662,592 |
+| kiri-host | 2,709,024 |
+| tauri-baseline | 10,041,504 |
+
+Kiri is ~3.7× smaller than the Tauri baseline and ~1.6× larger than the
+thin wry/tao baseline (Kiri carries the control plane). Footprint vs Tauri
+is a real, measured edge. Windows T009 vs Tauri is still unrun here.
+
+The hosted `c0a9120` artifact predates async `kiri://` and measured Kiri
+losing end-to-end process time to Tauri's embedded frontend. It remains a
+valid pre-fix diagnostic, not a current claim.
 
 ## Bottom line
 
@@ -201,12 +246,13 @@ This inverts Tauri's trust model, where a granted capability is often sufficient
 
 ## Bottom line (updated)
 
-We are at parity with Tauri on platform coverage and capability *concept*, and we have
-measured wins on startup (macOS, 18-25% on engine-independent phases) and IPC throughput
-(~1.7/3.0/2.9 GiB/s at 1/16/100 MiB, level-A). The durable, defensible edge is the
-double-gated control plane: a granted capability can never by itself reach an unapproved
-host, command, template, channel, or scheme. The remaining work to take Tauri customers is
-product surface (mobile, bundling/signing, community) - not engine quality.
+We are at parity with Tauri on desktop platform coverage and capability
+*concept*. The durable, defensible edge is the double-gated control plane
+plus a smaller default binary. Through-webview IPC on this Mac is close
+to Tauri's invoke at 256 KiB–1 MiB and too noisy to call at tiny
+payloads. Startup on this Mac is a few percent around the wry/tao
+baseline, not a blowout. Remaining work that actually takes customers:
+mobile, bundling/signing, templates, docs, and a Windows T009 vs Tauri.
 
 
 ## Headless catalog-lockstep guarantee (added this session)

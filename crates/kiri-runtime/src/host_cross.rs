@@ -14,7 +14,7 @@
 
 #![cfg(not(target_os = "windows"))]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -128,7 +128,16 @@ const BRIDGE_SCRIPT: &str = r#"
         post({ type: 'ready', phase: 'frame' });
       });
       window.kiri = {
-        send: function (req) { post({ type: 'cmd', request: req }); }
+        pending: Object.create(null),
+        send: function (req) { post({ type: 'cmd', request: req }); },
+        onResponse: function (resp) {
+          var id = resp && resp.request_id;
+          var cb = window.kiri.pending[id];
+          if (cb) {
+            delete window.kiri.pending[id];
+            cb(resp);
+          }
+        }
       };
     })();
 "#;
@@ -434,29 +443,42 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new()));
     let router = build_host_router(window_ctrl, clipboard_ctrl, &diagnostics, &resources, &options);
     let smoke = options.smoke;
+    let ipc_bench = options.ipc_bench;
+    let ipc_bench_runs = options.ipc_bench_runs;
+    let ipc_bench_sizes = options.ipc_bench_sizes.clone();
+    let ipc_bench_out = options.ipc_bench_out.clone();
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
     let watchdog_ms = options.watchdog_ms as u128;
+    let ipc_bench_done = Rc::new(Cell::new(false));
+    let ipc_bench_injected = Rc::new(Cell::new(false));
 
     // Shared slot so the IPC handler can post responses back to the webview
     // once it exists (the handler is created on the builder before build()).
     let webview_slot: Rc<RefCell<Option<wry::WebView>>> = Rc::new(RefCell::new(None));
     let webview = WebViewBuilder::new()
-        .with_custom_protocol("kiri".into(), {
+        .with_asynchronous_custom_protocol("kiri".into(), {
             let options = options.clone();
-            move |_id, request| {
-                let path = request.uri().path().to_string();
-                let range = request
-                    .headers()
-                    .get(header::RANGE)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
-                let if_none_match = request
-                    .headers()
-                    .get(header::IF_NONE_MATCH)
-                    .and_then(|v| v.to_str().ok())
-                    .map(|s| s.to_string());
-                serve_kiri(&options, &path, range.as_deref(), if_none_match.as_deref())
+            move |_id, request, responder| {
+                std::thread::spawn({
+                    let options = options.clone();
+                    move || {
+                        let path = request.uri().path().to_string();
+                        let range = request
+                            .headers()
+                            .get(header::RANGE)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string());
+                        let if_none_match = request
+                            .headers()
+                            .get(header::IF_NONE_MATCH)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_string());
+                        let response =
+                            serve_kiri(&options, &path, range.as_deref(), if_none_match.as_deref());
+                        responder.respond(response);
+                    }
+                });
             }
         })
         .with_navigation_handler(|url| is_navigation_allowed(&url))
@@ -476,6 +498,8 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let webview_slot = webview_slot.clone();
             let diagnostics = diagnostics.clone();
             let resources = resources.clone();
+            let ipc_bench_done = ipc_bench_done.clone();
+            let ipc_bench_out = ipc_bench_out.clone();
             move |msg| {
                 // Origin check: wry builds the IPC Request from the calling
                 // frame's document URL (uri), with no Origin header. We judge
@@ -490,6 +514,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 let Ok(value) = serde_json::from_str::<serde_json::Value>(msg.body()) else {
                     return;
                 };
+                if value.get("type").and_then(|t| t.as_str()) == Some("ipc_bench") {
+                    match crate::ipc_bench::write_result(ipc_bench_out.as_ref(), &value) {
+                        Ok(()) => ipc_bench_done.set(true),
+                        Err(e) => {
+                            eprintln!("[kiri] through-webview ipc bench failed: {e}");
+                            std::process::exit(1);
+                        }
+                    }
+                    return;
+                }
                 // Control-plane command: dispatch through kiri-core and post
                 // the wire response back to the page (T003).
                 if let Some(req_val) = value.get("request") {
@@ -544,7 +578,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     // runs when events arrive; if the loop is starved (headless display with
     // no frame pumping) it would never fire and the smoke run would hang.
     // This thread guarantees the process terminates after watchdog_ms.
-    if smoke {
+    if smoke || ipc_bench {
         let wd_ms = options.watchdog_ms as u64;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(wd_ms));
@@ -564,7 +598,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let _ = event;
         }
 
-        if smoke {
+        if smoke || ipc_bench {
             let elapsed = t0.elapsed().as_millis();
             if elapsed > watchdog_ms {
                 eprintln!("[kiri] watchdog: ready state not reached within the watchdog");
@@ -575,7 +609,27 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 smoke_armed = true;
                 frame_at = Some(Instant::now());
             }
-            if let Some(frame) = frame_at {
+            if ipc_bench && has_frame && !ipc_bench_injected.get() {
+                if let Some(webview) = webview_slot.borrow().as_ref() {
+                    ipc_bench_injected.set(true);
+                    let script = crate::ipc_bench::kiri_script(
+                        ipc_bench_runs,
+                        crate::ipc_bench::DEFAULT_WARMUP,
+                        &ipc_bench_sizes,
+                    );
+                    if let Err(e) = webview.evaluate_script(&script) {
+                        eprintln!("[kiri] failed to inject ipc bench: {e}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+            if ipc_bench {
+                if ipc_bench_done.get() {
+                    let recorded = markers.borrow().clone_markers();
+                    write_startup_result(&recorded, markers_out.as_ref());
+                    std::process::exit(0);
+                }
+            } else if let Some(frame) = frame_at {
                 if frame.elapsed().as_millis() > exit_after_ready_ms {
                     // Emit the startup result (stdout + optional file) and exit
                     // cleanly. tao's macOS loop does not return, so this is the

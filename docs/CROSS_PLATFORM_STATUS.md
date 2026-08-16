@@ -14,13 +14,17 @@ blocked are called out explicitly.
 
 The day-to-day verification target. Real GPU, real WebView.
 
-- `cargo test --workspace`: 211 kiri-core + 25 kiri-runtime unit tests pass (plus 2 integration tests).
+- `cargo test --workspace`: 217 kiri-core + 33 kiri-runtime unit tests pass (plus 2 integration tests).
 - `cargo build -p kiri-runtime --bins`: builds.
 - `kiri-host --smoke --frontend examples/blank`: all 9 startup markers,
   exit 0 (webview_ready, bridge_ready, dom_ready, first_animation_frame, ...).
 - `kiri-host-stress --cycles 100`: 100 launch-close cycles, 0 failures.
 - `cargo clippy -p kiri-runtime --all-targets -- -D warnings`: clean.
 - `cargo fmt --all -- --check`: clean.
+- The cross-backend `kiri://` handler uses Wry's asynchronous custom-protocol
+  path, so frontend file reads do not block the WebView event thread. The
+  change is verified by the native smoke/stress gates below and by a local
+  release benchmark; hosted performance must be rerun after publication.
 
 T011 added here: `kiri.open` (id 3) / `kiri.close` (id 4) control-plane
 commands backed by a real `ResourceTable<()>`, so the diagnostics panel's
@@ -83,7 +87,9 @@ both (id 3 / id 4).
   nothing -- the real constraint is hardware, not quota. CI already covers
   windows-latest (hard native gate) and ubuntu-latest (soft GPU probe) on every
   push/PR; re-run via `gh run rerun` or just push.
-- `controlled-performance.yml` comparison (T009): needs a self-hosted labeled
-  runner `[self-hosted, windows, x64, kiri-perf]`; cannot run on shared CI.
+- `controlled-performance.yml` now runs on public hosted macOS and Windows
+  runners, but the latest artifact at `c0a9120` predates the asynchronous
+  protocol fix. Its Windows Wry sample set also contained a timeout, so it is
+  diagnostic evidence only until rerun on the fixed commit.
 - T008 WebView2 shared-buffer: needs real Windows to implement + benchmark
   against the T007 baseline.

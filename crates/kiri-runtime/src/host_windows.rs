@@ -137,6 +137,8 @@ pub(crate) struct HostRuntime {
     /// Set once the first animation frame arrived in smoke mode; the smoke
     /// timer then posts WM_QUIT after `exit_after_ready_ms`.
     pub smoke_armed: bool,
+    /// Set once the through-webview IPC bench script has been injected.
+    pub ipc_bench_injected: bool,
     pub exit_code: i32,
 }
 
@@ -605,8 +607,17 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         (function () {
           if (window.location.origin !== 'https://app.local') { return; }
           window.kiri = {
+            pending: Object.create(null),
             post: function (o) { window.chrome.webview.postMessage(o); },
-            send: function (req) { window.chrome.webview.postMessage({ type: 'cmd', request: req }); }
+            send: function (req) { window.chrome.webview.postMessage({ type: 'cmd', request: req }); },
+            onResponse: function (resp) {
+              var id = resp && resp.request_id;
+              var cb = window.kiri.pending[id];
+              if (cb) {
+                delete window.kiri.pending[id];
+                cb(resp);
+              }
+            }
           };
           function postDom() {
             window.kiri.post({ type: 'ready', phase: 'dom' });
@@ -731,13 +742,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         webview_token,
         navigation_token,
         smoke_armed: false,
+        ipc_bench_injected: false,
         exit_code: 0,
     });
     if let Some(version) = browser_version {
         eprintln!("[kiri] WebView2 runtime version: {version}");
     }
     // Watchdog armed for smoke runs so CI cannot hang.
-    if runtime.options.smoke {
+    if runtime.options.smoke || runtime.options.ipc_bench {
         let _ =
             unsafe { SetTimer(Some(hwnd), WATCHDOG_TIMER_ID, runtime.options.watchdog_ms, None) };
     }
@@ -823,6 +835,18 @@ fn handle_web_message(
         return;
     };
 
+    if value.get("type").and_then(|t| t.as_str()) == Some("ipc_bench") {
+        match crate::ipc_bench::write_result(rt.options.ipc_bench_out.as_ref(), &value) {
+            Ok(()) => unsafe { PostQuitMessage(0) },
+            Err(e) => {
+                eprintln!("[kiri] through-webview ipc bench failed: {e}");
+                rt.exit_code = 1;
+                unsafe { PostQuitMessage(1) };
+            }
+        }
+        return;
+    }
+
     // Control-plane command: dispatch through kiri-core and post the
     // wire response back to the page (T003).
     if let Some(req_val) = value.get("request") {
@@ -866,7 +890,15 @@ fn handle_web_message(
             }
             Some("frame") => {
                 rt.markers.record(Marker::FirstAnimationFrame, qpc_now_ns());
-                if rt.options.smoke && !rt.smoke_armed {
+                if rt.options.ipc_bench && !rt.ipc_bench_injected {
+                    rt.ipc_bench_injected = true;
+                    let script = crate::ipc_bench::kiri_script(
+                        rt.options.ipc_bench_runs,
+                        crate::ipc_bench::DEFAULT_WARMUP,
+                        &rt.options.ipc_bench_sizes,
+                    );
+                    exec_script(&rt.webview, &script);
+                } else if rt.options.smoke && !rt.smoke_armed {
                     rt.smoke_armed = true;
                     let _ = unsafe {
                         SetTimer(Some(hwnd), SMOKE_TIMER_ID, rt.options.exit_after_ready_ms, None)
