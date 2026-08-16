@@ -194,7 +194,38 @@ Unstripped release binary sizes from the same run:
 
 Kiri is ~3.7× smaller than the Tauri baseline and ~1.6× larger than the
 thin wry/tao baseline (Kiri carries the control plane). Footprint vs Tauri
-is a real, measured edge. Windows T009 vs Tauri is still unrun here.
+is a real, measured edge.
+
+## T009 hosted Windows + macOS (commit `1ed43c6`, workflow `controlled-performance`)
+
+`windows-latest` and `macos-latest` after skipping the hanging wry/tao
+Windows baseline and fixing WebView2 replies (`PostWebMessageAsJson`).
+Harness wall-clock is process spawn → smoke exit, not `webview_ready`.
+Tauri embeds its frontend; Kiri serves `examples/blank` at runtime.
+
+Hosted **startup** medians (20 runs, process wall-clock):
+
+| runner | Kiri | Tauri | wry/tao |
+|--------|-----:|------:|--------:|
+| windows-latest | 2770 ms | 801 ms | skipped (hangs) |
+| macos-latest | 1724 ms | 1501 ms | 1547 ms |
+
+Hosted **through-webview IPC** batch-means (20 runs, all 6 sizes succeeded):
+
+| Payload | Win Kiri | Win Tauri | Mac Kiri | Mac Tauri |
+|---------|---------:|----------:|---------:|----------:|
+| 0 B | 0.30 | 1.86 | 0.35 | 0.40 |
+| 64 B | 0.23 | 1.60 | 0.30 | 0.70 |
+| 1 KiB | 0.24 | 1.58 | 0.20 | 0.55 |
+| 16 KiB | 0.77 | 2.25 | 0.60 | 0.75 |
+| 256 KiB | 7.57 | 9.79 | 1.15 | 1.50 |
+| ~1 MiB | 28.3 | 36.9 | 3.20 | 3.75 |
+
+On Windows, through-webview ping/echo is faster than Tauri invoke at every
+size. Hosted process-level startup is not: Tauri's embedded `frontendDist`
+exits the smoke path in ~0.8 s vs Kiri's ~2.8 s. Do not mix those two
+claims. Artifacts: `perf-windows-latest` / `perf-macos-latest` on the
+`1ed43c6` Actions run.
 
 The hosted `c0a9120` artifact predates async `kiri://` and measured Kiri
 losing end-to-end process time to Tauri's embedded frontend. It remains a
