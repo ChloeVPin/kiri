@@ -114,13 +114,18 @@
       };
       var body = payload === undefined ? null : payload;
       var payloadJson = JSON.stringify(body);
+      // Host validates against serde UTF-8 bytes, not JS UTF-16 length.
+      // "Kiri — desk" is 23 code units and 25 bytes.
+      var payloadLen = typeof TextEncoder === "function"
+        ? new TextEncoder().encode(payloadJson).length
+        : payloadJson.length;
       global.kiri.send({
         magic: "KRI1",
         version: 1,
         flags: 1,
         command_id: cmdId,
         request_id: id,
-        payload_len: payloadJson.length,
+        payload_len: payloadLen,
         codec: 1,
         payload: body,
       });

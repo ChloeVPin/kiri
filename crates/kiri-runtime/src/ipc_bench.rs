@@ -80,13 +80,16 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         }}
       }};
       var payloadJson = JSON.stringify(payload);
+      var payloadLen = typeof TextEncoder === "function"
+        ? new TextEncoder().encode(payloadJson).length
+        : payloadJson.length;
       window.kiri.send({{
         magic: "KRI1",
         version: 1,
         flags: 1,
         command_id: 1,
         request_id: id,
-        payload_len: payloadJson.length,
+        payload_len: payloadLen,
         codec: 1,
         payload: payload
       }});
