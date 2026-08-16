@@ -176,12 +176,26 @@ python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/sta
   -- ./target/release/kiri-host --smoke --frontend examples/blank
 ```
 
+## Run the app (macOS)
+
+Unsigned, no Apple Developer account. The bundle copies `kiri-host` and
+`examples/blank` so a double-click finds the frontend without `--frontend`.
+
+```sh
+./tools/packaging/make-app.sh
+open artifacts/Kiri.app
+```
+
+`kiri-host` also looks at `KIRI_FRONTEND`, `Contents/Resources/frontend`, or
+a `frontend/` folder next to the binary. `--frontend DIR` still wins.
+
 ## CI
 
 - `correctness`: fmt, clippy, tests on windows/macos/ubuntu; the Windows
   runtime is cross-checked on non-Windows runners
-- `controlled-performance`: hosted macOS/Windows startup comparison for Kiri,
-  Wry/Tao, and Tauri; artifacts uploaded
+- `controlled-performance`: hosted macOS (Kiri + wry/tao + Tauri) and Windows
+  (Kiri vs Tauri only; wry/tao hangs on windows-latest and is skipped);
+  through-webview IPC artifacts uploaded
 - `unsigned-release`: tag/manual packaging on macOS, Windows, and Linux from
   one script; artifacts are intentionally unsigned at the OS level, while
   `RELEASES.json` signs and verifies their exact bytes with Kiri's Ed25519 key.

@@ -91,9 +91,11 @@ The queue lives in the corpus at `agent/task_queue.json` (T001 through T010)
 and is mirrored in `README.md`. Handoff notes are written to
 `kiri-agent-execution-corpus/agent/HANDOFF.md` at session end.
 
-Next work: T008 (WebView2 shared-buffer) and the Windows leg of T009 depend on
-real Windows/performance hardware. G-1 mobile support and G-2 ecosystem
-breadth remain larger roadmap items. A fresh update public key is now pinned
+Next work: Windows T009 numbers come from hosted `windows-latest` (no local
+Windows box required); wry/tao is skipped there because it hangs. T008
+(WebView2 shared-buffer) still needs real Windows to implement. Local macOS
+can ship an unsigned `.app` via `tools/packaging/make-app.sh`. G-1 mobile
+and G-2 ecosystem breadth remain larger roadmap items. A fresh update public key is now pinned
 in the runtime; its private half must be supplied to GitHub as
 `KIRI_UPDATE_SIGNING_KEY_HEX` before the first public release tag. The
 `correctness` workflow is the native all-OS correctness path; it includes the

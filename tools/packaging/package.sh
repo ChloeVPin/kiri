@@ -106,8 +106,12 @@ case "$PLATFORM_OS" in
     APP_DIR="$OUT_DIR/$ARTIFACT_STEM.app"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
     rm -rf "$APP_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
+    mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources/frontend"
     cp "$BIN_FILE" "$APP_DIR/Contents/MacOS/$BIN"
+    cp -R examples/blank/. "$APP_DIR/Contents/Resources/frontend/"
+    if [ -f assets/kiri.icns ]; then
+      cp assets/kiri.icns "$APP_DIR/Contents/Resources/kiri.icns"
+    fi
     sed "s/@KIRI_VERSION@/$PKG_VERSION/g" tools/packaging/Info.plist \
       > "$APP_DIR/Contents/Info.plist"
     ditto -c -k --keepParent "$APP_DIR" "$ARTIFACT_PATH"
@@ -116,8 +120,9 @@ case "$PLATFORM_OS" in
     STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.zip"
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$STAGE_DIR"
+    mkdir -p "$STAGE_DIR/frontend"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN.exe"
+    cp -R examples/blank/. "$STAGE_DIR/frontend/"
     if command -v powershell.exe >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
       WIN_STAGE_DIR="$(cygpath -w "$STAGE_DIR")"
       WIN_ARTIFACT_PATH="$(cygpath -w "$ARTIFACT_PATH")"
@@ -134,9 +139,10 @@ case "$PLATFORM_OS" in
     STAGE_DIR="$OUT_DIR/$ARTIFACT_STEM"
     ARTIFACT_PATH="$OUT_DIR/$ARTIFACT_STEM.tar.gz"
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
-    mkdir -p "$STAGE_DIR"
+    mkdir -p "$STAGE_DIR/frontend"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN"
-    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN"
+    cp -R examples/blank/. "$STAGE_DIR/frontend/"
+    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN" frontend
     ;;
 esac
 

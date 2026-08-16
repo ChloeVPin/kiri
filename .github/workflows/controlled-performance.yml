@@ -6,8 +6,10 @@
 # nonexistent [self-hosted, windows, x64, kiri-perf] runner.
 #
 # What runs where:
-#   - macOS and Windows: native host + both baselines run their real startup
-#     smoke (real GPU), benchmarked over N runs by benchmark/harness.py.
+#   - macOS: Kiri + wry/tao + Tauri startup, then Kiri vs Tauri through-webview IPC.
+#   - Windows: Kiri (direct WebView2) vs Tauri only. The wry/tao baseline is
+#     skipped: it hangs on windows-latest (60s harness timeout) and is not
+#     the product comparison. The fight on Windows is Kiri's direct host vs Tauri.
 #   - Linux: baselines compile; the native WebView run is a SOFT probe
 #     (headless WebKit2GTK has no GPU on runners), so no benchmark numbers
 #     are emitted for Linux native here.
@@ -39,6 +41,7 @@ jobs:
       - name: Build Kiri host (release)
         run: cargo build --release -p kiri-runtime --bin kiri-host
       - name: Build Wry/Tao baseline (release)
+        if: runner.os != 'Windows'
         run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
       - name: Build Tauri baseline (release)
         run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
@@ -51,10 +54,6 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
 
-      - name: Startup benchmark (Wry/Tao baseline)
-        shell: pwsh
-        if: runner.os == 'Windows'
-        run: python benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
@@ -88,9 +87,11 @@ jobs:
           .\baselines\tauri\target\release\tauri-baseline.exe
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: perf-${{ matrix.os }}
           path: artifacts/
+          if-no-files-found: warn
 
   # Optional: pin to a dedicated low-noise machine. Free on public repos.
   # Register a runner with labels [self-hosted, windows, x64, kiri-perf].

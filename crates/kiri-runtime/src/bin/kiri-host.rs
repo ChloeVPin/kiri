@@ -91,7 +91,7 @@ fn main() {
             "--help" | "-h" => {
                 println!(
                     "kiri-host: native host (cross-platform)\n\
-                     usage: kiri-host --frontend DIR [--markers-out PATH] [--smoke]\n\
+                     usage: kiri-host [--frontend DIR] [--markers-out PATH] [--smoke]\n\
                      \x20  [--ipc-bench] [--ipc-bench-runs N] [--ipc-bench-out PATH]\n\
                      \x20  [--ipc-bench-sizes 0,64,1024,...]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
@@ -107,10 +107,17 @@ fn main() {
         i += 1;
     }
 
-    if frontend_dir.is_none() {
-        eprintln!("kiri-host: --frontend DIR is required");
-        std::process::exit(2);
-    }
+    let frontend_dir = {
+        let env_frontend = std::env::var_os("KIRI_FRONTEND").map(PathBuf::from);
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kiri-host"));
+        match kiri_runtime::frontend::resolve_frontend_dir(frontend_dir, env_frontend, &exe) {
+            Ok(dir) => Some(dir),
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(2);
+            }
+        }
+    };
 
     if ipc_bench {
         if watchdog_ms < kiri_runtime::ipc_bench::WATCHDOG_MS {
