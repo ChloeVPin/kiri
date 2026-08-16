@@ -1,17 +1,9 @@
 <div align="center">
+  <img src="assets/kiri.svg" alt="Kiri logo" width="144" />
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/kiri.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/kiri-dark.svg">
-  <img alt="Kiri logo" src="assets/kiri.svg" width="180" align="center">
-</picture>
+  <h1>Kiri</h1>
 
-<h1 align="center">Kiri</h1>
-
-<p align="center">
-  Cross-platform native desktop app runtime for Windows, macOS, and Linux &middot; direct WebView2 host on Windows, wry/tao host on macOS and Linux &middot; platform-neutral control-plane core &middot; Tauri and Wry baselines measured on a shared startup-marker schema
-</p>
-
+  <p>A native desktop app runtime for Windows, macOS, and Linux.</p>
 </div>
 
 Kiri tests the hypothesis that a hand-rolled WebView2 host with a thin
