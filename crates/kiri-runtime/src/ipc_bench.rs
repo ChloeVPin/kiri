@@ -225,13 +225,7 @@ fn git_commit() -> String {
         .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout).ok()
-            } else {
-                None
-            }
-        })
+        .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
 }
@@ -348,9 +342,8 @@ mod tests {
 
     #[test]
     fn one_mib_string_exceeds_control_ceiling_last_size_does_not() {
-        let too_big = serde_json::to_vec(&serde_json::Value::String("a".repeat(1_048_576)))
-            .unwrap()
-            .len();
+        let too_big =
+            serde_json::to_vec(&serde_json::Value::String("a".repeat(1_048_576))).unwrap().len();
         let last = serde_json::to_vec(&serde_json::Value::String(
             "a".repeat(*DEFAULT_SIZES.last().unwrap()),
         ))

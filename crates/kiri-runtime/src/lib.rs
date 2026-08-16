@@ -12,10 +12,10 @@
 
 pub mod assets;
 pub mod autostart_ctl;
-pub mod frontend;
 pub mod clipboard_ctl;
 pub mod deeplink_ctl;
 pub mod dialog_ctl;
+pub mod frontend;
 pub mod ipc_bench;
 pub mod markers;
 pub mod notification_ctl;

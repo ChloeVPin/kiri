@@ -46,10 +46,7 @@ pub fn resolve_frontend_dir(
         if frontend_has_index(&dir) {
             return Ok(dir);
         }
-        return Err(format!(
-            "kiri-host: --frontend {} does not contain index.html",
-            dir.display()
-        ));
+        return Err(format!("kiri-host: --frontend {} does not contain index.html", dir.display()));
     }
     if let Some(dir) = env_frontend {
         if frontend_has_index(&dir) {
@@ -65,12 +62,10 @@ pub fn resolve_frontend_dir(
             return Ok(candidate);
         }
     }
-    Err(
-        "kiri-host: no frontend found. Pass --frontend DIR, set KIRI_FRONTEND, \
+    Err("kiri-host: no frontend found. Pass --frontend DIR, set KIRI_FRONTEND, \
          or place index.html in Resources/frontend (macOS app) or ./frontend \
          next to the binary."
-            .into(),
-    )
+        .into())
 }
 
 #[cfg(test)]
@@ -79,7 +74,8 @@ mod tests {
     use std::fs;
 
     fn temp_tree(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("kiri-frontend-test-{name}-{}", std::process::id()));
+        let root =
+            std::env::temp_dir().join(format!("kiri-frontend-test-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -114,7 +110,8 @@ mod tests {
     #[test]
     fn missing_index_is_an_error() {
         let root = temp_tree("missing");
-        let err = resolve_frontend_dir(Some(root.clone()), None, &root.join("kiri-host")).unwrap_err();
+        let err =
+            resolve_frontend_dir(Some(root.clone()), None, &root.join("kiri-host")).unwrap_err();
         assert!(err.contains("index.html"));
         let _ = fs::remove_dir_all(root);
     }

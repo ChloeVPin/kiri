@@ -69,11 +69,8 @@ fn main() {
             "--ipc-bench-sizes" => {
                 i += 1;
                 if let Some(v) = args.get(i) {
-                    ipc_bench_sizes = Some(
-                        v.split(',')
-                            .filter_map(|s| s.trim().parse::<usize>().ok())
-                            .collect(),
-                    );
+                    ipc_bench_sizes =
+                        Some(v.split(',').filter_map(|s| s.trim().parse::<usize>().ok()).collect());
                 }
             }
             "--exit-after-ready-ms" => {
