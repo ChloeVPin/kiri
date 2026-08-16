@@ -282,14 +282,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // capability so control commands run from the trusted frontend.
     let mut registry = CallerRegistry::new();
     let caller = registry.register();
-    let mut caller_caps = CapabilityBits::empty();
-    caller_caps.set(kiri_core::dispatch::capability_bit::PING);
-    caller_caps.set(kiri_core::dispatch::capability_bit::DIAGNOSTICS);
-    caller_caps.set(kiri_core::dispatch::capability_bit::RESOURCES);
-    // G-6: trusted frontend may use the capability-gated clipboard surface.
-    caller_caps.set(kiri_core::dispatch::capability_bit::CLIPBOARD);
-    // audit-18: trusted frontend may use the host-pinned-key updater check.
-    caller_caps.set(kiri_core::dispatch::capability_bit::UPDATER);
+    let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
     // Shared generational resource table owned by the host. The resources plugin

@@ -83,9 +83,54 @@
     "kiri.plugin.list": 74,
   };
 
-  // Resolve the host bridge. The direct Kiri host injects window.kiri with an
-  // invoke(name, payload) -> Promise. Otherwise we shim through postMessage.
+  // Host injects window.kiri.send(WireRequest). Talk that path first so a
+  // live WebView actually reaches Router::dispatch. Fall back to a named
+  // invoke helper, then to a postMessage shim for harnesses.
+  function invokeViaSend(name, payload) {
+    return new Promise(function (resolve, reject) {
+      var cmdId = IDS[name];
+      if (cmdId == null) {
+        reject(new Error("unknown command " + name));
+        return;
+      }
+      if (!global.kiri || typeof global.kiri.send !== "function") {
+        reject(new Error("window.kiri.send is not available"));
+        return;
+      }
+      global.kiri.pending = global.kiri.pending || Object.create(null);
+      global.__kiriIpcSeq = global.__kiriIpcSeq || 1;
+      var id = global.__kiriIpcSeq++;
+      var timer = setTimeout(function () {
+        delete global.kiri.pending[id];
+        reject(new Error("ipc timeout"));
+      }, 15000);
+      global.kiri.pending[id] = function (resp) {
+        clearTimeout(timer);
+        if (resp && resp.error) {
+          reject(new Error((resp.error && resp.error.message) || "ipc error"));
+        } else {
+          resolve(resp && resp.payload !== undefined ? resp.payload : resp);
+        }
+      };
+      var body = payload === undefined ? null : payload;
+      var payloadJson = JSON.stringify(body);
+      global.kiri.send({
+        magic: "KRI1",
+        version: 1,
+        flags: 1,
+        command_id: cmdId,
+        request_id: id,
+        payload_len: payloadJson.length,
+        codec: 1,
+        payload: body,
+      });
+    });
+  }
+
   function bridge() {
+    if (global.kiri && typeof global.kiri.send === "function") {
+      return invokeViaSend;
+    }
     if (global.kiri && typeof global.kiri.invoke === "function") {
       return function (name, payload) {
         return global.kiri.invoke(name, payload);
@@ -120,6 +165,10 @@
   }
 
   var invoke = bridge();
+
+  function httpResult(r) {
+    return { status: r.status, headers: r.headers, base64: r.base64, bytes: r.bytes };
+  }
 
   function call(name, payload) {
     return invoke(name, payload || null).then(function (resp) {
@@ -207,6 +256,18 @@
       focus: function () {
         return call("kiri.window.focus");
       },
+      state: {
+        save: function (geometry) {
+          return call("kiri.window.state.save", geometry || {}).then(function (r) {
+            return { geometry: r };
+          });
+        },
+        load: function () {
+          return call("kiri.window.state.load", {}).then(function (r) {
+            return { geometry: r };
+          });
+        },
+      },
     },
     clipboard: {
       read: function () {
@@ -236,10 +297,6 @@
       documentDir: function () { return call("kiri.os.documentDir").then(function (r) { return r.dir; }); },
       appDir: function () { return call("kiri.os.appDir").then(function (r) { return r.dir; }); },
     },
-
-    function httpResult(r) {
-      return { status: r.status, headers: r.headers, base64: r.base64, bytes: r.bytes };
-    }
 
     http: {
       get: function (url, maxBytes) {
@@ -374,25 +431,6 @@
       },
     },
 
-    // Restricted, host-owned window-state persistence (kiri.window.state.save/load).
-    // The host owns the store namespace; the frontend may only save/load the current
-    // window's own geometry, never an arbitrary location or another window's state.
-    window: (function (prev) {
-      prev.state = {
-        save: function (geometry) {
-          return call("kiri.window.state.save", geometry || {}).then(function (r) {
-            return { geometry: r };
-          });
-        },
-        load: function () {
-          return call("kiri.window.state.load", {}).then(function (r) {
-            return { geometry: r };
-          });
-        },
-      };
-      return prev;
-    })(global.kiri ? global.kiri.window : {}),
-
     // Restricted, host-allowlisted system tray (kiri.tray.*). The frontend may
     // only reference pre-approved item ids; the host owns every item's label and
     // action, so JavaScript can never draw or invoke an arbitrary native menu.
@@ -493,7 +531,66 @@
       },
     },
 
-    // Expose raw command ids for tooling/debugging parity with the catalog.
+    fsWatch: {
+      watch: function (path, kind) {
+        return call("kiri.fs.watch", { path: path, kind: kind || "all" }).then(function (r) {
+          return { watchId: r.watchId, path: r.path };
+        });
+      },
+      unwatch: function (watchId) {
+        return call("kiri.fs.unwatch", { watchId: watchId }).then(function (r) {
+          return { unwatched: r.unwatched, watchId: r.watchId };
+        });
+      },
+    },
+    ws: {
+      connect: function (url) {
+        return call("kiri.ws.connect", { url: url }).then(function (r) {
+          return { connId: r.connId, url: r.url };
+        });
+      },
+      send: function (connId, message) {
+        return call("kiri.ws.send", { connId: connId, message: message }).then(function (r) {
+          return { sent: r.sent, connId: r.connId };
+        });
+      },
+      close: function (connId) {
+        return call("kiri.ws.close", { connId: connId }).then(function (r) {
+          return { closed: r.closed, connId: r.connId };
+        });
+      },
+    },
+    menu: {
+      set: function (ids) {
+        return call("kiri.menu.set", { ids: ids }).then(function (r) {
+          return { items: r.items };
+        });
+      },
+      invoke: function (id) {
+        return call("kiri.menu.invoke", { id: id }).then(function (r) {
+          return { id: r.id, action: r.action };
+        });
+      },
+    },
+    plugin: {
+      list: function () {
+        return call("kiri.plugin.list", {}).then(function (r) {
+          return { plugins: r.plugins };
+        });
+      },
+    },
+    cli: {
+      args: function (full) {
+        return call("kiri.cli.args", { full: !!full }).then(function (r) {
+          return {
+            raw: r.raw,
+            positionals: r.positionals,
+            flags: r.flags,
+            options: r.options,
+          };
+        });
+      },
+    },
     commandIds: IDS,
   };
 
@@ -532,88 +629,12 @@
   global.kiri.window = Kiri.window;
   global.kiri.tray = Kiri.tray;
   global.kiri.sidecar = Kiri.sidecar;
-    // Host-allowlisted filesystem watcher (kiri.fs.watch / kiri.fs.unwatch, G-10).
-    // The watched path must be host-allowlisted inside the fs scope, so the
-    // frontend cannot pivot a granted FS capability into arbitrary surveillance.
-    fsWatch: {
-      watch: function (path, kind) {
-        return call("kiri.fs.watch", { path: path, kind: kind || "all" }).then(function (r) {
-          return { watchId: r.watchId, path: r.path };
-        });
-      },
-      unwatch: function (watchId) {
-        return call("kiri.fs.unwatch", { watchId: watchId }).then(function (r) {
-          return { unwatched: r.unwatched, watchId: r.watchId };
-        });
-      },
-    },
-
-    // Host-allowlisted WebSocket (kiri.ws.connect / send / close, G-11). The
-    // URL must be on the host allowlist, so a granted capability cannot reach
-    // an unapproved origin (exceeds Tauri's websocket on the security axis).
-    ws: {
-      connect: function (url) {
-        return call("kiri.ws.connect", { url: url }).then(function (r) {
-          return { connId: r.connId, url: r.url };
-        });
-      },
-      send: function (connId, message) {
-        return call("kiri.ws.send", { connId: connId, message: message }).then(function (r) {
-          return { sent: r.sent, connId: r.connId };
-        });
-      },
-      close: function (connId) {
-        return call("kiri.ws.close", { connId: connId }).then(function (r) {
-          return { closed: r.closed, connId: r.connId };
-        });
-      },
-    },
-
-    // Host-owned application menu (kiri.menu.set / invoke, G-12). The frontend
-    // may only pick host-owned item ids whose label/action are host-owned, so
-    // it cannot forge a native menu (exceeds Tauri's app menu).
-    menu: {
-      set: function (ids) {
-        return call("kiri.menu.set", { ids: ids }).then(function (r) {
-          return { items: r.items };
-        });
-      },
-      invoke: function (id) {
-        return call("kiri.menu.invoke", { id: id }).then(function (r) {
-          return { id: r.id, action: r.action };
-        });
-      },
-    },
-
-    // Host-owned external-plugin inventory (kiri.plugin.list, G-2 capstone).
-    // Returns only plugin names + their allowlisted command names; the raw
-    // descriptors never cross the bridge, so the frontend cannot reach an
-    // unvetted plugin command. Exceeds Tauri's plugin discovery.
-    plugin: {
-      list: function () {
-        return call("kiri.plugin.list", {}).then(function (r) {
-          return { plugins: r.plugins };
-        });
-      },
-    },
-
-    // Structured, allowlist-scoped command-line surface (kiri.cli.args, G-5).
-    // Exceeds Tauri's process.argv: the host parses argv into positionals +
-    // flags + options and only reveals the host-allowlisted subset.
-    cli: {
-      args: function (full) {
-        return call("kiri.cli.args", { full: !!full }).then(function (r) {
-          return {
-            raw: r.raw,
-            positionals: r.positionals,
-            flags: r.flags,
-            options: r.options,
-          };
-        });
-      },
-    },
-
+  global.kiri.fsWatch = Kiri.fsWatch;
+  global.kiri.ws = Kiri.ws;
+  global.kiri.menu = Kiri.menu;
+  global.kiri.plugin = Kiri.plugin;
+  global.kiri.cli = Kiri.cli;
   global.kiri.updater = Kiri.updater;
-  global.kiri.event = Kiri.event;
+  global.kiri.invoke = invoke;
   global.__kiri = Kiri;
 })(typeof window !== "undefined" ? window : this);

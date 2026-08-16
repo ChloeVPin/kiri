@@ -130,9 +130,11 @@ pub fn trusted_frontend_capabilities() -> crate::capabilities::CapabilityBits {
     // capability bit even though it is granted here; the scheme/extension allowlist is
     // the second gate, so this still exceeds Tauri's unscoped opener plugin.
     caps.set(crate::dispatch::capability_bit::OPENER);
-    // WINDOW_STATE + TRAY capability bits are granted to the trusted frontend;
-    // the real authority for both is the host-owned store/allowlist (audit items
-    // 13 and 14). A granted bit cannot escape the host-owned boundary.
+    // Window chrome is part of the trusted app surface; JS still cannot
+    // reach the native handle. WINDOW_STATE + TRAY stay host-allowlisted.
+    caps.set(crate::dispatch::capability_bit::WINDOW);
+    caps.set(crate::dispatch::capability_bit::WINDOW_STATE);
+    caps.set(crate::dispatch::capability_bit::TRAY);
     // audit-17: the trusted frontend may use the restricted, key-allowlisted
     // config surface (kiri.config.get/keys). Authorization still flows through the
     // CONFIG capability bit even though it is granted here; the key allowlist is
@@ -177,5 +179,7 @@ mod tests {
     fn trusted_frontend_has_ping() {
         let caps = trusted_frontend_capabilities();
         assert!(caps.has(crate::dispatch::capability_bit::PING));
+        assert!(caps.has(crate::dispatch::capability_bit::WINDOW));
+        assert!(caps.has(crate::dispatch::capability_bit::PLATFORM));
     }
 }

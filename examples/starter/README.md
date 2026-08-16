@@ -1,6 +1,8 @@
 # Kiri starter
 
-A complete frontend you can pack into `kiri-host`.
+A live host demo you can pack into `kiri-host`. It reads version, OS, arch,
+and home through the real bridge, and can rename the window or copy a host
+line to the clipboard.
 
 ```sh
 # from the Kiri repo

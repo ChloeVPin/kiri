@@ -10,54 +10,104 @@
       --bone: #e8dcc8;
       --rust: #c45c26;
       --ash: #8a7a68;
+      --line: #3a3028;
     }
     * { box-sizing: border-box; }
     html, body { height: 100%; margin: 0; }
     body {
       background: var(--ink);
       color: var(--bone);
-      font: 16px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+      font: 15px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+    }
+    .wrap {
+      min-height: 100%;
       display: grid;
       place-items: center;
+      padding: 2.5rem 1.5rem;
     }
-    main {
-      width: min(28rem, calc(100vw - 3rem));
-      text-align: center;
-    }
-    img {
-      width: 88px;
-      height: 88px;
-      display: block;
-      margin: 0 auto 1.25rem;
-    }
+    main { width: min(26rem, 100%); }
+    header { text-align: center; margin-bottom: 1.75rem; }
+    header img { width: 72px; height: 72px; display: block; margin: 0 auto 0.9rem; }
     h1 {
       font-family: Palatino, "Iowan Old Style", "Times New Roman", serif;
       font-weight: 600;
-      font-size: 2.25rem;
+      font-size: 2rem;
       letter-spacing: -0.03em;
-      margin: 0 0 0.35rem;
+      margin: 0 0 0.3rem;
     }
-    p { margin: 0; color: var(--ash); }
-    #frame {
-      margin-top: 1.5rem;
-      font-size: 0.75rem;
+    .lede { margin: 0; color: var(--ash); }
+    dl {
+      margin: 0 0 1.25rem;
+      border-top: 1px solid var(--line);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 6.5rem 1fr;
+      gap: 0.75rem;
+      padding: 0.65rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    dt {
+      margin: 0;
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ash);
+      padding-top: 0.2rem;
+    }
+    dd {
+      margin: 0;
+      font-variant-numeric: tabular-nums;
+      word-break: break-all;
+    }
+    .actions { display: flex; gap: 0.6rem; }
+    button {
+      flex: 1;
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--soot);
+      color: var(--bone);
+      font: inherit;
+      padding: 0.65rem 0.75rem;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--rust); }
+    button:focus-visible { outline: 2px solid var(--rust); outline-offset: 2px; }
+    #status {
+      margin: 1rem 0 0;
+      text-align: center;
+      font-size: 0.72rem;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: var(--rust);
     }
+    #status.err { color: #c44; }
   </style>
 </head>
 <body>
-  <main>
-    <img src="kiri.svg" alt="">
-    <h1>Kiri</h1>
-    <p>Native host. The UI is packed in the binary.</p>
-    <p id="frame">waiting for animation frame…</p>
-  </main>
+  <div class="wrap">
+    <main>
+      <header>
+        <img src="kiri.svg" alt="">
+        <h1>Kiri</h1>
+        <p class="lede">This window is talking to the native host.</p>
+      </header>
+      <dl>
+        <div class="row"><dt>Version</dt><dd id="ver">…</dd></div>
+        <div class="row"><dt>OS</dt><dd id="os">…</dd></div>
+        <div class="row"><dt>Arch</dt><dd id="arch">…</dd></div>
+        <div class="row"><dt>Home</dt><dd id="home">…</dd></div>
+      </dl>
+      <div class="actions">
+        <button type="button" id="rename">Rename window</button>
+        <button type="button" id="copy">Copy host line</button>
+      </div>
+      <p id="status">connecting…</p>
+    </main>
+  </div>
   <script src="kiri.js"></script>
   <script>
     (function () {
-      if (window.kiri && !window.kiri.send && !window.ipc) { /* keep host bridge */ }
       function post(o) {
         var s = JSON.stringify(o);
         if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
@@ -66,13 +116,63 @@
           window.ipc.postMessage(s);
         }
       }
-      window.addEventListener('DOMContentLoaded', function () {
-        post({ type: 'ready', phase: 'dom' });
-        var el = document.getElementById('frame');
-        if (el) el.textContent = 'ready';
+      window.addEventListener("DOMContentLoaded", function () {
+        post({ type: "ready", phase: "dom" });
       });
       requestAnimationFrame(function () {
-        post({ type: 'ready', phase: 'frame' });
+        post({ type: "ready", phase: "frame" });
+      });
+
+      var status = document.getElementById("status");
+      function setStatus(text, err) {
+        status.textContent = text;
+        status.className = err ? "err" : "";
+      }
+      function set(id, value) {
+        document.getElementById(id).textContent = value || "—";
+      }
+
+      var api = window.kiri;
+      if (!api || !api.platform) {
+        setStatus("bridge missing", true);
+        return;
+      }
+
+      Promise.all([
+        api.app.version(),
+        api.platform.os(),
+        api.platform.arch(),
+        api.os.homedir(),
+      ]).then(function (parts) {
+        set("ver", parts[0]);
+        set("os", parts[1]);
+        set("arch", parts[2]);
+        set("home", parts[3]);
+        setStatus("live");
+        window.__kiriHostLine = "Kiri " + parts[0] + " · " + parts[1] + " " + parts[2];
+      }).catch(function (err) {
+        setStatus(String(err.message || err), true);
+      });
+
+      var titles = ["Kiri", "Kiri — desk", "Kiri — live"];
+      var titleAt = 0;
+      document.getElementById("rename").addEventListener("click", function () {
+        titleAt = (titleAt + 1) % titles.length;
+        var next = titles[titleAt];
+        api.window.setTitle(next).then(function () {
+          setStatus("title → " + next);
+        }).catch(function (err) {
+          setStatus(String(err.message || err), true);
+        });
+      });
+
+      document.getElementById("copy").addEventListener("click", function () {
+        var line = window.__kiriHostLine || "Kiri";
+        api.clipboard.write(line).then(function () {
+          setStatus("copied host line");
+        }).catch(function (err) {
+          setStatus(String(err.message || err), true);
+        });
       });
     })();
   </script>
