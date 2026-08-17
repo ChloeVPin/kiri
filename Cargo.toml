@@ -22,6 +22,11 @@ hex = "0.4"
 base64 = "0.22"
 sha2 = "0.10"
 
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
 # The workspace intentionally does not include baselines/.
 # Tauri and Wry/Tao baselines are standalone projects (own Cargo.lock) so their
 # heavy dependency trees never slow core workspace builds or tests. See

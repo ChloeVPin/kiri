@@ -96,6 +96,21 @@ jobs:
           $env:KIRI_IPC_BENCH_OUT = "artifacts\ipc-tauri.json"
           .\baselines\tauri\target\release\tauri-baseline.exe
 
+      - name: Record binary sizes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, pathlib
+          artifacts = pathlib.Path("artifacts")
+          artifacts.mkdir(exist_ok=True)
+          sizes = {}
+          for p in pathlib.Path(".").rglob("*"):
+              if p.name in ("kiri-host", "kiri-host.exe", "tauri-baseline", "tauri-baseline.exe", "wry-tao-baseline", "wry-tao-baseline.exe") and p.is_file() and "release" in p.parts:
+                  sizes[str(p).replace("\\", "/")] = p.stat().st_size
+          (artifacts / "binary-sizes.json").write_text(json.dumps(sizes, indent=2) + "\n")
+          print(json.dumps(sizes, indent=2))
+          PY
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -80,6 +80,66 @@ fn post_wire_response(
     }
 }
 
+/// Serve a packed asset from memory. Used when `--frontend` is omitted so
+/// Windows does not have to materialize the UI to a temp folder (the thing
+/// that made hosted embed startup look like the disk path).
+fn handle_embed_resource(
+    env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
+    args: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2WebResourceRequestedEventArgs,
+) {
+    use crate::assets::{response_headers, serve_embedded, status_code, ServeOptions};
+    use windows::Win32::UI::Shell::SHCreateMemStream;
+
+    let Ok(request) = (unsafe { args.Request() }) else {
+        return;
+    };
+    let mut uri = windows::core::PWSTR(std::ptr::null_mut());
+    if unsafe { request.Uri(&mut uri) }.is_err() {
+        return;
+    }
+    let url = pwstr_to_string(uri);
+    unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(uri.0 as _)) };
+    if !is_app_origin_url(&url) {
+        return;
+    }
+    let path = crate::embed::request_path_from_https_origin(&url, APP_ORIGIN)
+        .unwrap_or_else(|| "index.html".into());
+    let served = serve_embedded(&path, &ServeOptions::default());
+    let status = i32::from(status_code(&served));
+    let header_lines: Vec<String> =
+        response_headers(&served).into_iter().map(|(k, v)| format!("{k}: {v}")).collect();
+    let header_blob = header_lines.join("\r\n");
+    let body: &[u8] = match &served {
+        crate::assets::AssetResponse::Full { body, .. }
+        | crate::assets::AssetResponse::Partial { body, .. } => body.as_slice(),
+        _ => b"",
+    };
+    let Some(stream) = (unsafe { SHCreateMemStream(Some(body)) }) else {
+        return;
+    };
+    let reason = match status {
+        200 => "OK",
+        206 => "Partial Content",
+        304 => "Not Modified",
+        404 => "Not Found",
+        416 => "Range Not Satisfiable",
+        _ => "OK",
+    };
+    let reason_w = to_wide(reason);
+    let headers_w = to_wide(&header_blob);
+    let Ok(response) = (unsafe {
+        env.CreateWebResourceResponse(
+            &stream,
+            status,
+            PCWSTR::from_raw(reason_w.as_ptr()),
+            PCWSTR::from_raw(headers_w.as_ptr()),
+        )
+    }) else {
+        return;
+    };
+    let _ = unsafe { args.SetResponse(&response) };
+}
+
 /// The Windows native host: window, WebView2 lifecycle, and message loop.
 pub struct WindowsHost;
 
@@ -153,6 +213,7 @@ pub(crate) struct HostRuntime {
     pub webview: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
     pub webview_token: i64,
     pub navigation_token: i64,
+    pub resource_token: i64,
     /// Set once the first animation frame arrived in smoke mode; the smoke
     /// timer then posts WM_QUIT after `exit_after_ready_ms`.
     pub smoke_armed: bool,
@@ -265,12 +326,13 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
         CreateCoreWebView2ControllerCompletedHandler,
         CreateCoreWebView2EnvironmentCompletedHandler, NavigationCompletedEventHandler,
-        WebMessageReceivedEventHandler,
+        WebMessageReceivedEventHandler, WebResourceRequestedEventHandler,
     };
 
     let mut markers = StartupMarkers::new();
@@ -674,34 +736,46 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         markers.record(Marker::BridgeReady, qpc_now_ns());
     }
 
-    // ---- virtual host mapping for the local application origin ----
-    let webview3 = webview
-        .cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
-        .map_err(|e| format!("cast to ICoreWebView2_3: {e}"))?;
-    let host_name = windows::core::HSTRING::from(VIRTUAL_HOST_NAME);
-    let frontend_dir = match options.frontend_dir.as_ref() {
-        Some(dir) => {
-            let dir = absolute_lexical(dir);
-            if !dir.is_dir() {
-                return Err(format!("frontend directory does not exist: {}", dir.display()));
+    // Application origin. Disk `--frontend` still uses WebView2 folder
+    // mapping. Packed UI is served from memory via WebResourceRequested so
+    // embed startup is not a temp-directory copy of the same files.
+    let mut resource_token: i64 = 0;
+    if let Some(dir) = options.frontend_dir.as_ref() {
+        let webview3 = webview
+            .cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
+            .map_err(|e| format!("cast to ICoreWebView2_3: {e}"))?;
+        let host_name = windows::core::HSTRING::from(VIRTUAL_HOST_NAME);
+        let frontend_dir = absolute_lexical(dir);
+        if !frontend_dir.is_dir() {
+            return Err(format!("frontend directory does not exist: {}", frontend_dir.display()));
+        }
+        let folder = windows::core::HSTRING::from(frontend_dir.as_os_str());
+        webview3
+            .SetVirtualHostNameToFolderMapping(
+                PCWSTR::from_raw(host_name.as_ptr()),
+                PCWSTR::from_raw(folder.as_ptr()),
+                COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
+            )
+            .map_err(|e| format!("SetVirtualHostNameToFolderMapping: {e}"))?;
+    } else {
+        let filter = to_wide(&format!("https://{VIRTUAL_HOST_NAME}/*"));
+        webview
+            .AddWebResourceRequestedFilter(
+                PCWSTR::from_raw(filter.as_ptr()),
+                COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+            )
+            .map_err(|e| format!("AddWebResourceRequestedFilter: {e}"))?;
+        let env_for_res = env.clone();
+        let res_handler = WebResourceRequestedEventHandler::create(Box::new(move |_s, args| {
+            if let Some(args) = args {
+                handle_embed_resource(&env_for_res, args);
             }
-            dir
-        }
-        None => {
-            let dest = std::env::temp_dir().join(format!("kiri-embed-{}", std::process::id()));
-            crate::embed::materialize(&dest)
-                .map_err(|e| format!("materialize embedded frontend: {e}"))?;
-            dest
-        }
-    };
-    let folder = windows::core::HSTRING::from(frontend_dir.as_os_str());
-    webview3
-        .SetVirtualHostNameToFolderMapping(
-            PCWSTR::from_raw(host_name.as_ptr()),
-            PCWSTR::from_raw(folder.as_ptr()),
-            COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
-        )
-        .map_err(|e| format!("SetVirtualHostNameToFolderMapping: {e}"))?;
+            Ok(())
+        }));
+        webview
+            .add_WebResourceRequested(&res_handler, &mut resource_token)
+            .map_err(|e| format!("add_WebResourceRequested: {e}"))?;
+    }
 
     // ---- event handlers ----
     let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
@@ -774,6 +848,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         webview,
         webview_token,
         navigation_token,
+        resource_token,
         smoke_armed: false,
         ipc_bench_injected: false,
         exit_code: 0,
@@ -816,6 +891,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let rt = unsafe { Box::from_raw(runtime_ptr) };
     let _ = rt.webview.remove_WebMessageReceived(rt.webview_token);
     let _ = rt.webview.remove_NavigationCompleted(rt.navigation_token);
+    if rt.resource_token != 0 {
+        let _ = rt.webview.remove_WebResourceRequested(rt.resource_token);
+    }
     let _ = rt.controller.Close();
     let markers_out = rt.markers;
     let _ = rt.env; // explicit drop before CoUninitialize (called by run)

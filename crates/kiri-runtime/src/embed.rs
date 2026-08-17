@@ -34,6 +34,14 @@ pub fn materialize(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Map `https://app.local/foo` to the packed key `foo` (or `index.html`).
+pub fn request_path_from_https_origin(url: &str, origin: &str) -> Option<String> {
+    let rest = url.strip_prefix(origin)?;
+    let rest = rest.split(['?', '#']).next().unwrap_or(rest);
+    let rest = rest.trim_start_matches('/');
+    Some(if rest.is_empty() { "index.html".into() } else { rest.to_string() })
+}
+
 pub fn normalize_key(request_path: &str) -> Option<String> {
     let trimmed = request_path.trim_start_matches('/');
     if trimmed.is_empty() {
@@ -64,5 +72,21 @@ mod tests {
     fn traversal_is_rejected() {
         assert!(normalize_key("../etc/passwd").is_none());
         assert_eq!(normalize_key("/").as_deref(), Some("index.html"));
+    }
+
+    #[test]
+    fn https_origin_maps_to_pack_keys() {
+        assert_eq!(
+            request_path_from_https_origin("https://app.local/", "https://app.local").as_deref(),
+            Some("index.html")
+        );
+        assert_eq!(
+            request_path_from_https_origin("https://app.local/kiri.js", "https://app.local")
+                .as_deref(),
+            Some("kiri.js")
+        );
+        assert!(
+            request_path_from_https_origin("https://evil.example/x", "https://app.local").is_none()
+        );
     }
 }
