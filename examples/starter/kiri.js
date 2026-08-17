@@ -525,7 +525,8 @@
     // updater on the security axis.
     updater: {
       check: function (manifest) {
-        return call("kiri.updater.check", { manifest: manifest }).then(function (r) {
+        var payload = manifest ? { manifest: manifest } : {};
+        return call("kiri.updater.check", payload).then(function (r) {
           return {
             available: r.available,
             version: r.version,

@@ -201,9 +201,10 @@ cargo build -p kiri-runtime --bin kiri-host
 ./tools/packaging/make-dmg.sh
 open artifacts/Kiri.app
 
-# start a new frontend
+# start a runnable app (downloads the latest release; no git tree required)
 ./tools/create-kiri-app.sh ~/Desktop/my-kiri-app
-./tools/packaging/make-app.sh --frontend ~/Desktop/my-kiri-app/frontend
+# or:
+# curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ~/Desktop/my-kiri-app
 ```
 
 `kiri-host` also looks at `KIRI_FRONTEND` and a `frontend/` folder next to the

@@ -60,9 +60,9 @@
       font-variant-numeric: tabular-nums;
       word-break: break-all;
     }
-    .actions { display: flex; gap: 0.6rem; }
+    .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
     button {
-      flex: 1;
+      flex: 1 1 7rem;
       appearance: none;
       border: 1px solid var(--line);
       background: var(--soot);
@@ -101,6 +101,7 @@
       <div class="actions">
         <button type="button" id="rename">Rename window</button>
         <button type="button" id="copy">Copy host line</button>
+        <button type="button" id="update">Check for updates</button>
       </div>
       <p id="status">connecting…</p>
     </main>
@@ -170,6 +171,19 @@
         var line = window.__kiriHostLine || "Kiri";
         api.clipboard.write(line).then(function () {
           setStatus("copied host line");
+        }).catch(function (err) {
+          setStatus(String(err.message || err), true);
+        });
+      });
+
+      document.getElementById("update").addEventListener("click", function () {
+        setStatus("checking…");
+        api.updater.check().then(function (r) {
+          if (r.available) {
+            setStatus("update " + r.version);
+          } else {
+            setStatus("up to date" + (r.version ? " (" + r.version + ")" : ""));
+          }
         }).catch(function (err) {
           setStatus(String(err.message || err), true);
         });

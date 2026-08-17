@@ -228,9 +228,18 @@ claims. Artifacts: `perf-windows-latest` / `perf-macos-latest` on the
 `1ed43c6` Actions run.
 
 From 0.1.3 the same workflow also records `startup-kiri-embed.json`:
-`kiri-host --smoke` with **no** `--frontend`, so the packed UI is what
-starts. That is the number to compare with Tauri's embedded `frontendDist`.
-The `--frontend examples/blank` row remains a disk-serve diagnostic.
+`kiri-host --smoke` with **no** `--frontend`. Hosted medians, 20 runs,
+commit `25b8898`:
+
+| runner | Kiri disk `--frontend` | Kiri embedded | Tauri |
+|--------|----------------------:|--------------:|------:|
+| macos-latest | 1518 ms | **557 ms** | 546 ms |
+| windows-latest | 2794 ms | 2788 ms | 830 ms |
+
+On macOS, packed UI and Tauri are a tie on process wall-clock. On Windows
+the embed path still materializes to a temp folder for WebView2, so it
+does not beat Tauri's in-binary assets there. Disk `--frontend` remains a
+diagnostic, not a product claim.
 
 The hosted `c0a9120` artifact predates async `kiri://` and measured Kiri
 losing end-to-end process time to Tauri's embedded frontend. It remains a

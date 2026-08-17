@@ -1,0 +1,61 @@
+# Copy into .github/workflows/ship.yml in an app repo.
+# Puts your frontend next to the latest kiri-host and uploads a zip.
+# Does not need the Kiri git tree.
+
+name: ship
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  pack:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            asset: darwin-aarch64.zip
+          - os: windows-latest
+            asset: windows-x86_64.zip
+          - os: ubuntu-latest
+            asset: linux-x86_64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Kiri host
+        shell: bash
+        run: |
+          set -euo pipefail
+          feed="$(curl -fsSL -A ship-app https://github.com/ChloeVPin/kiri/releases/latest/download/RELEASES.json)"
+          ver="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' <<<"$feed")"
+          echo "KIRI_VERSION=$ver" >> "$GITHUB_ENV"
+          mkdir -p dist/host
+          url="https://github.com/ChloeVPin/kiri/releases/download/v${ver}/kiri-${ver}-${{ matrix.asset }}"
+          curl -fsSL -A ship-app -o /tmp/kiri-host.bin "$url"
+          case "${{ matrix.asset }}" in
+            *.zip) unzip -q /tmp/kiri-host.bin -d dist/host ;;
+            *.tar.gz) tar -xzf /tmp/kiri-host.bin -C dist/host ;;
+          esac
+      - name: Attach frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/app/frontend
+          if [ -d frontend ]; then
+            cp -R frontend/. dist/app/frontend/
+          else
+            echo "put your UI in frontend/" >&2
+            exit 1
+          fi
+          if [ -d dist/host/Kiri.app ]; then
+            cp -R dist/host/Kiri.app dist/app/Kiri.app
+            mkdir -p dist/app/Kiri.app/Contents/Resources/frontend
+            cp -R dist/app/frontend/. dist/app/Kiri.app/Contents/Resources/frontend/
+          else
+            find dist/host -name 'kiri-host*' -type f -exec cp {} dist/app/ \;
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.os }}
+          path: dist/app/

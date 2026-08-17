@@ -27,16 +27,26 @@ pub const UPDATER_CAPABILITY: u32 = crate::dispatch::capability_bit::UPDATER;
 /// Host-pinned update checker. The public key and current version are injected
 /// by the native host at build/runtime; JavaScript can only feed it a manifest
 /// and learn whether a newer, correctly-signed release exists for this OS.
+pub type FeedFetch = Arc<dyn Fn() -> Result<String> + Send + Sync>;
+
 #[derive(Clone)]
 pub struct UpdaterService {
     public_key: String,
     current_version: Version,
     limits: Limits,
+    /// Host-pinned release feed. When the frontend omits `manifest`, the
+    /// host fetches this itself so JavaScript never names the URL or key.
+    feed: Option<FeedFetch>,
 }
 
 impl UpdaterService {
     pub fn new(public_key: impl Into<String>, current_version: Version, limits: Limits) -> Self {
-        Self { public_key: public_key.into(), current_version, limits }
+        Self { public_key: public_key.into(), current_version, limits, feed: None }
+    }
+
+    pub fn with_feed(mut self, fetch: impl Fn() -> Result<String> + Send + Sync + 'static) -> Self {
+        self.feed = Some(Arc::new(fetch));
+        self
     }
 
     /// Parse a manifest, select the current-OS asset, verify its signature
@@ -136,10 +146,15 @@ pub fn updater_handlers(
         command_id::UPDATER_CHECK,
         required,
         Arc::new(move |_c, _rid, p: &Value| {
-            let manifest = p.get("manifest").and_then(|v| v.as_str()).ok_or_else(|| {
-                Error::invalid_argument("kiri.updater.check requires string manifest")
-            })?;
-            svc.check(manifest)
+            let provided = p.get("manifest").and_then(|v| v.as_str()).unwrap_or("").trim();
+            let manifest = if !provided.is_empty() {
+                provided.to_string()
+            } else if let Some(fetch) = &svc.feed {
+                fetch()?
+            } else {
+                return Err(Error::invalid_argument("kiri.updater.check requires string manifest"));
+            };
+            svc.check(&manifest)
         }) as Handler,
     )]
 }
@@ -251,6 +266,19 @@ mod tests {
         let out = dispatch(&r, command_id::UPDATER_CHECK, json!({ "manifest": manifest }));
         assert!(out["error"].is_null());
         assert_eq!(out["payload"]["available"], false);
+    }
+
+    #[test]
+    fn omitted_manifest_uses_host_feed() {
+        let pk = host_pinned_pk();
+        let manifest = produce_manifest("0.2.0");
+        let svc = UpdaterService::new(pk, Version::parse("0.1.0").unwrap(), Limits::default())
+            .with_feed(move || Ok(manifest.clone()));
+        let router = Router::new().with_updater(svc);
+        let out = dispatch(&router, command_id::UPDATER_CHECK, json!({}));
+        assert!(out["error"].is_null(), "{out}");
+        assert_eq!(out["payload"]["available"], true);
+        assert_eq!(out["payload"]["version"], "0.2.0");
     }
 
     #[test]

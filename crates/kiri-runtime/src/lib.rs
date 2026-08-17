@@ -28,6 +28,7 @@ pub mod shortcut_ctl;
 pub mod sidecar_ctl;
 pub mod store_ctl;
 pub mod tray_ctl;
+pub mod update_feed;
 pub mod window_ctl;
 pub mod window_state_ctl;
 

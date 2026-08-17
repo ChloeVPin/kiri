@@ -1263,7 +1263,7 @@ dependencies = [
 
 [[package]]
 name = "kiri-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -1276,7 +1276,7 @@ dependencies = [
 
 [[package]]
 name = "kiri-runtime"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "arboard",
  "kiri-core",
@@ -1305,9 +1305,9 @@ dependencies = [
 
 [[package]]
 name = "libredox"
-version = "0.1.20"
+version = "0.1.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d0a00925a9f930d679b6789b721e3a7f9ed110f41b86d2497caa780c3a070a"
+checksum = "2026a5056764a10b2bf5d56488cba40da507f5493a6a429340e2004d9ed085fa"
 dependencies = [
  "libc",
 ]

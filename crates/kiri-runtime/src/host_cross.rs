@@ -354,12 +354,15 @@ pub(crate) fn build_host_router(
         kiri_core::config::ConfigAllowlist::new(config_keys()),
         kiri_core::limits::Limits::default(),
     ))
-    .with_updater(kiri_core::updater_surface::UpdaterService::new(
-        HOST_PINNED_UPDATE_PUBLIC_KEY,
-        kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
-            .expect("valid package version"),
-        kiri_core::limits::Limits::default(),
-    ))
+    .with_updater(
+        kiri_core::updater_surface::UpdaterService::new(
+            HOST_PINNED_UPDATE_PUBLIC_KEY,
+            kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
+                .expect("valid package version"),
+            kiri_core::limits::Limits::default(),
+        )
+        .with_feed(crate::update_feed::fetch_pinned_release_manifest),
+    )
     .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
     .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
         Arc::new(kiri_core::fs_watch::DisabledFsWatch),
