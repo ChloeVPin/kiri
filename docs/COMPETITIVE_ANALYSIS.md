@@ -236,11 +236,20 @@ commit `25b8898`:
 | macos-latest | 1518 ms | **557 ms** | 546 ms |
 | windows-latest | 2794 ms | 2788 ms | 830 ms |
 
-On macOS, packed UI and Tauri are a tie on process wall-clock (557 vs 546
-ms). Windows used to copy the pack to a temp folder for WebView2 folder
-mapping, so embed looked like the disk path (~2.8 s). Packed UI is now
-served from memory via `WebResourceRequested`; the next hosted run is the
-number that counts. Disk `--frontend` remains a diagnostic.
+Hosted `2761005` (in-memory Windows pack, 20 runs):
+
+| runner | Kiri disk | Kiri packed | Tauri |
+|--------|----------:|------------:|------:|
+| macos-latest | 1597 ms | 1586 ms | 1443 ms |
+| windows-latest | 2812 ms | 2899 ms | 938 ms |
+
+Serving packed UI from memory on Windows did **not** close the gap.
+The ~2.8 s is WebView2 environment + first navigation on the hosted VM,
+not folder I/O. Next experiment: `--disable-gpu` + a persistent user-data
+folder on that VM. Disk `--frontend` remains a diagnostic.
+
+macOS runners are noisy (557 ms last time, 1586 ms this time). Treat
+single-job hosted medians as directional, not a trophy.
 
 The hosted `c0a9120` artifact predates async `kiri://` and measured Kiri
 losing end-to-end process time to Tauri's embedded frontend. It remains a

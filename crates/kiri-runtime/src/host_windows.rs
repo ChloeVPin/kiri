@@ -600,13 +600,31 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         use std::{cell::RefCell, rc::Rc};
         use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment;
         let env_cell: Rc<RefCell<Option<ICoreWebView2Environment>>> = Rc::new(RefCell::new(None));
+        let user_data = {
+            let root = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir)
+                .join("Kiri")
+                .join("WebView2");
+            let _ = std::fs::create_dir_all(&root);
+            windows::core::HSTRING::from(root.as_os_str())
+        };
+        let env_opts = webview2_com::CoreWebView2EnvironmentOptions::default();
+        unsafe {
+            let args = std::env::var("KIRI_WEBVIEW2_ARGS").unwrap_or_default();
+            env_opts.set_additional_browser_arguments(args);
+            env_opts.set_enable_tracking_prevention(false);
+            env_opts.set_are_browser_extensions_enabled(false);
+        }
+        let env_opts: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2EnvironmentOptions =
+            env_opts.into();
         let done = CreateCoreWebView2EnvironmentCompletedHandler::wait_for_async_operation(
-            Box::new(|handler| {
+            Box::new(move |handler| {
                 unsafe {
                     CreateCoreWebView2EnvironmentWithOptions(
                         PCWSTR::null(),
-                        PCWSTR::null(),
-                        None,
+                        PCWSTR::from_raw(user_data.as_ptr()),
+                        Some(&env_opts),
                         &handler,
                     )
                 }

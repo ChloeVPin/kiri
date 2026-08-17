@@ -97,6 +97,7 @@
         <div class="row"><dt>OS</dt><dd id="os">…</dd></div>
         <div class="row"><dt>Arch</dt><dd id="arch">…</dd></div>
         <div class="row"><dt>Home</dt><dd id="home">…</dd></div>
+        <div class="row"><dt>Allowlist</dt><dd id="gate">…</dd></div>
       </dl>
       <div class="actions">
         <button type="button" id="rename">Rename window</button>
@@ -151,6 +152,14 @@
         set("home", parts[3]);
         setStatus("live");
         window.__kiriHostLine = "Kiri " + parts[0] + " · " + parts[1] + " " + parts[2];
+        return api.http.get("https://evil.example.com/");
+      }).then(function () {
+        set("gate", "open — that is a bug");
+      }).catch(function (err) {
+        if (document.getElementById("os").textContent === "…") {
+          throw err;
+        }
+        set("gate", "held (evil.example.com denied)");
       }).catch(function (err) {
         setStatus(String(err.message || err), true);
       });
