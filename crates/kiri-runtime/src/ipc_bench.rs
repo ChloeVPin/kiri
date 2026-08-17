@@ -50,6 +50,17 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         window.kiri.onResponse(d);
       }}
     }});
+    window.chrome.webview.addEventListener("sharedbufferreceived", function (e) {{
+      try {{
+        var buf = e.getBuffer();
+        var text = new TextDecoder("utf-8").decode(new Uint8Array(buf));
+        window.chrome.webview.releaseBuffer(buf);
+        var d = JSON.parse(text);
+        if (d && d.request_id !== undefined && window.kiri && window.kiri.onResponse) {{
+          window.kiri.onResponse(d);
+        }}
+      }} catch (err) {{}}
+    }});
   }}
   function post(o) {{
     var s = JSON.stringify(o);

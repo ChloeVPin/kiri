@@ -28,7 +28,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use kiri_core::caller::{CallerId, CallerRegistry};
 use kiri_core::capabilities::CapabilityBits;
-use kiri_core::capabilities::PathScope;
 use kiri_core::diagnostics::Diagnostics;
 use kiri_core::dispatch::Router;
 use kiri_core::error::Error as KiriError;
@@ -70,14 +69,58 @@ fn exec_script(webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWeb
 /// `ExecuteScript` from inside `WebMessageReceived` can stall on WebView2
 /// (the through-webview IPC bench timed out on the first ping on
 /// windows-latest). `PostWebMessageAsJson` is the documented reply path.
+/// Payloads over 64KiB use `PostSharedBufferToScript` (T008) when the
+/// runtime supports `ICoreWebView2Environment12`.
 fn post_wire_response(
+    env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
     response: &WireResponse,
 ) {
     if let Ok(json) = serde_json::to_string(response) {
+        if json.len() > 64 * 1024 && post_shared_buffer(env, webview, json.as_bytes()) {
+            return;
+        }
         let wide = to_wide(&json);
         let _ = unsafe { webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
     }
+}
+
+/// Copy `bytes` into a WebView2 shared buffer and hand it to script.
+/// Returns false when the runtime is too old or the copy fails so the
+/// caller can fall back to `PostWebMessageAsJson`.
+fn post_shared_buffer(
+    env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    bytes: &[u8],
+) -> bool {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment12, ICoreWebView2_17, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY,
+    };
+    let Ok(env12) = env.cast::<ICoreWebView2Environment12>() else {
+        return false;
+    };
+    let Ok(webview17) = webview.cast::<ICoreWebView2_17>() else {
+        return false;
+    };
+    let Ok(buffer) = (unsafe { env12.CreateSharedBuffer(bytes.len() as u64) }) else {
+        return false;
+    };
+    let mut dest: *mut u8 = std::ptr::null_mut();
+    if unsafe { buffer.Buffer(&mut dest) }.is_err() || dest.is_null() {
+        let _ = unsafe { buffer.Close() };
+        return false;
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), dest, bytes.len()) };
+    let extra = to_wide(r#"{"kind":"wire"}"#);
+    let posted = unsafe {
+        webview17.PostSharedBufferToScript(
+            &buffer,
+            COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_ONLY,
+            PCWSTR::from_raw(extra.as_ptr()),
+        )
+    };
+    let _ = unsafe { buffer.Close() };
+    posted.is_ok()
 }
 
 /// Serve a packed asset from memory. Used when `--frontend` is omitted so
@@ -203,9 +246,12 @@ fn absolute_lexical(path: &Path) -> PathBuf {
 pub(crate) struct HostRuntime {
     pub options: HostOptions,
     pub markers: StartupMarkers,
+    pub hwnd: HWND,
     pub caller: CallerId,
     pub caller_caps: CapabilityBits,
-    pub router: Router,
+    /// Built on first `window.kiri.send()`, never before WebView2 init.
+    pub router: Option<Router>,
+    pub events: EventBus,
     pub diagnostics: Diagnostics,
     pub resources: std::sync::Arc<std::sync::Mutex<ResourceTable<()>>>,
     pub env: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
@@ -229,7 +275,56 @@ impl HostRuntime {
         let error = KiriError::protocol_error("command not implemented by this host slice")
             .with_command(command.unwrap_or("").to_string());
         let envelope = WireResponse::err(request_id.unwrap_or(0), error);
-        post_wire_response(&self.webview, &envelope);
+        post_wire_response(&self.env, &self.webview, &envelope);
+    }
+
+    /// Build the core plugin router (ping/diag/resources) on first send.
+    fn ensure_core_router(&mut self) {
+        if self.router.is_some() {
+            return;
+        }
+        let started = qpc_now_ns();
+        let router = crate::plugins::PluginHost::build_router_with_plugins(
+            &self.diagnostics,
+            &self.resources,
+            self.caller,
+            &crate::plugins::PluginManifest::empty(),
+            &crate::plugins::PluginRegistry::empty(),
+        );
+        eprintln!(
+            "[kiri] lazy-router: core plugins in {} ms",
+            (qpc_now_ns().saturating_sub(started)) / 1_000_000
+        );
+        self.router = Some(router);
+    }
+
+    /// Attach the surface that owns `command_id` if it is not registered yet.
+    fn ensure_surface(&mut self, command_id: u32) {
+        use crate::router_surfaces::{surface_for_command, Surface};
+        self.ensure_core_router();
+        let Some(surface) = surface_for_command(command_id) else {
+            return;
+        };
+        if surface == Surface::Core {
+            return;
+        }
+        if self.router.as_ref().is_some_and(|r| r.is_known(command_id)) {
+            return;
+        }
+        let started = qpc_now_ns();
+        let router = self.router.take().unwrap_or_else(Router::new_empty);
+        self.router = Some(attach_windows_surface(router, self, surface));
+        eprintln!(
+            "[kiri] lazy-router: attached {surface:?} in {} ms",
+            (qpc_now_ns().saturating_sub(started)) / 1_000_000
+        );
+    }
+
+    fn dispatch_cmd(&mut self, request: &WireRequest) -> WireResponse {
+        self.ensure_surface(request.command_id);
+        let router = self.router.as_ref().expect("router after ensure_surface");
+        let mut sink = self.diagnostics.clone();
+        router.dispatch(self.caller, &self.caller_caps, request, &mut sink)
     }
 }
 
@@ -353,12 +448,6 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let resources: std::sync::Arc<std::sync::Mutex<ResourceTable<()>>> =
         std::sync::Arc::new(std::sync::Mutex::new(ResourceTable::<()>::new()));
 
-    // Host-owned fs scope: a bounded sandbox under the temp dir. The host is
-    // the only authority that can widen it; the frontend cannot.
-    let mut fs_scope = PathScope::new(std::env::temp_dir().join("kiri-fs"));
-    fs_scope.read = true;
-    fs_scope.write = true;
-
     // ---- window creation (W0: native host) ----
     let hmodule = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW: {e}"))?;
     let hinstance = windows::Win32::Foundation::HINSTANCE(hmodule.0);
@@ -398,203 +487,11 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     .map_err(|e| format!("CreateWindowExW: {e}"))?;
     markers.record(Marker::PlatformInit, qpc_now_ns());
 
-    // Control-plane router (built after the window so it can own the native
-    // window handle). Caller identity is assigned by the native runtime, never
-    // by JavaScript. G-5: kiri.window.* surface backed by the real HWND.
-    let router =
-        crate::plugins::PluginHost::build_router_with_plugins(
-            &diagnostics,
-            &resources,
-            caller,
-            &crate::plugins::PluginManifest::empty(),
-            &crate::plugins::PluginRegistry::empty(),
-        )
-        // R-3: JS-surface commands (kiri.platform.*, kiri.app.*, kiri.event.*).
-        .with_platform(events.clone())
-        .with_fs_service(
-            kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
-                .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
-        )
-        .with_window(
-            std::sync::Arc::new(crate::window_ctl::WinWindowController::new(hwnd)),
-            std::sync::Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new(
-                &options.title,
-            ))),
-        )
-        // G-6: kiri.clipboard.* surface backed by the real OS clipboard.
-        .with_clipboard(
-            std::sync::Arc::new(
-                crate::clipboard_ctl::WinClipboardController::new().expect("clipboard init"),
-            ),
-            std::sync::Arc::new(std::sync::Mutex::new(kiri_core::clipboard::ClipboardState::new())),
-        )
-        // G-7: kiri.path.* / kiri.os.* surface (audit item 2). Pure path
-        // math plus read-only OS directory discovery, capability-gated (PATH).
-        .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
-        // G-3: kiri.http.get surface (audit item 3). Capability-gated (HTTP) and
-        // constrained to a host allowlist so a granted capability still cannot
-        // reach an unapproved origin; responses are bulk-capped like kiri.fs.
-        .with_http(kiri_core::http::HttpService::new(
-            std::sync::Arc::new(kiri_core::http::StdHttpClient),
-            kiri_core::http::HostAllowlist::new(http_allow_hosts()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
-        // and constrained to a host allowlist so a granted capability still
-        // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
-        .with_shell(kiri_core::shell::ShellService::new(
-            std::sync::Arc::new(crate::shell_ctl::WinShellRunner::new()),
-            kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4b: kiri.notification.show surface (audit item 5). Capability-gated
-        // (NOTIFICATION) and constrained to a host template allowlist so a
-        // granted capability still cannot render arbitrary title/body.
-        .with_notification(kiri_core::notification::NotificationService::new(
-            std::sync::Arc::new(crate::notification_ctl::win_notify::WinNotificationRunner::new()),
-            kiri_core::notification::NotificationAllowlist::new(notification_templates()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4c: kiri.dialog.open surface (audit item 7). Capability-gated
-        // (DIALOG) and constrained to a host allowlist of dialog kinds with a
-        // host-owned title, so a granted capability still cannot open an
-        // arbitrary native prompt; only pre-approved dialog kinds may show.
-        .with_dialog(kiri_core::dialog::DialogService::new(
-            std::sync::Arc::new(crate::dialog_ctl::WinDialogRunner::new()),
-            kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4d: kiri.shortcut.register surface (audit item 8). Capability-gated
-        // (SHORTCUT) and constrained to a host allowlist of exact accelerators mapped
-        // to host-owned actions, so a granted capability still cannot register an
-        // arbitrary global hotkey; only pre-approved accelerators may bind.
-        .with_shortcut(kiri_core::shortcut::ShortcutService::new(
-            std::sync::Arc::new(crate::shortcut_ctl::WinShortcutRunner::new()),
-            kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4e: kiri.autostart.set/get surface (audit item 9). Capability-gated
-        // (AUTOSTART) and bounded to a host policy (default-deny). Even when the
-        // policy permits it, the runner only registers the host's own binary, so a
-        // granted capability still cannot persist an arbitrary executable. This
-        // exceeds Tauri's autostart plugin, which lets the frontend enable login
-        // launch freely once the capability is present.
-        .with_autostart(kiri_core::autostart::AutostartService::new(
-            std::sync::Arc::new(crate::autostart_ctl::WinAutostartRunner::new()),
-            kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4f: kiri.store.get/set surface (audit item 10). Capability-gated (STORE)
-        // and bounded to a host allowlist of namespaces, so a granted capability still
-        // cannot read/write outside an approved namespace. This exceeds Tauri's store
-        // plugin, which lets the frontend read/write the whole store once the capability
-        // is present (a cross-feature data-leak surface).
-        .with_store(kiri_core::store::StoreService::new(
-            std::sync::Arc::new(crate::store_ctl::WinStoreBackend::new()),
-            kiri_core::store::StoreAllowlist::new(store_namespaces()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-4g: kiri.deeplink.register surface (audit item 11). Capability-gated
-        // (DEEPLINK) and bounded to a host allowlist of exact schemes, so a granted
-        // capability still cannot squat on an arbitrary URI scheme. This exceeds
-        // Tauri's deep-link plugin, which lets the frontend register any scheme once
-        // the capability is present (a scheme-squatting surface).
-        .with_deeplink(kiri_core::deeplink::DeeplinkService::new(
-            std::sync::Arc::new(crate::deeplink_ctl::win_deeplink::WinDeeplinkRunner::new()),
-            kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-2c: kiri.opener.open surface (audit item 12). Capability-gated (OPENER)
-        // and bounded to a host allowlist of exact URL schemes and file extensions, so a
-        // granted capability still cannot launch an arbitrary URL scheme or file. This
-        // exceeds Tauri's opener plugin, which opens arbitrary URLs/files once the
-        // capability is present (a scheme/file-launch surface).
-        .with_opener(kiri_core::opener::OpenerService::new(
-            std::sync::Arc::new(crate::opener_ctl::win_opener::WinOpenerRunner::new()),
-            kiri_core::opener::OpenerAllowlist::new(opener_url_schemes(), opener_file_extensions()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-2d: kiri.window.state.save/load surface (audit item 13). Capability-gated
-        // (WINDOW_STATE) and confined to a fixed, frontend-unaddressable host store, so a
-        // granted capability still cannot read/write arbitrary state. This exceeds Tauri's
-        // window-state plugin, which persists to a frontend-readable/writable JSON without a
-        // second capability gate.
-        .with_window_state(kiri_core::window_state::WindowStateService::new(
-            std::sync::Arc::new(
-                crate::window_state_ctl::win_window_state::WinWindowStateBackend::new(),
-            ),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-6: kiri.tray.setMenu/invoke surface (audit item 14). Capability-gated
-        // (TRAY) and bounded to a host allowlist of item ids, so a granted capability
-        // still cannot draw an arbitrary native menu. This exceeds Tauri's tray.
-        .with_tray(kiri_core::tray::TrayService::new(
-            std::sync::Arc::new(crate::tray_ctl::win_tray::WinTrayBackend::new()),
-            kiri_core::tray::TrayAllowlist::new(tray_items()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // G-6: kiri.sidecar.spawn/stop/list surface (audit item 15). Capability-gated
-        // (SIDECAR) and bounded to a host allowlist of exact sidecar names, so a
-        // granted capability still cannot fork an unapproved binary or pass arbitrary
-        // argv. This exceeds Tauri's sidecar API, which lets the frontend name an
-        // arbitrary companion executable once the capability is present.
-        .with_sidecar(kiri_core::sidecar::SidecarService::new(
-            std::sync::Arc::new(crate::sidecar_ctl::win_sidecar::WinSidecarRunner::new()),
-            kiri_core::sidecar::SidecarAllowlist::new(sidecar_allow()),
-            kiri_core::sidecar::SidecarTable::new(),
-            kiri_core::limits::Limits::default(),
-        ))
-        // audit-16: kiri.event.publish/subscribe/channels (restricted,
-        // channel-allowlisted). Capability-gated (EVENT) and bounded to a host
-        // allowlist of exact channel names, so a granted capability still cannot
-        // forge or snoop cross-module events. This exceeds Tauri's unrestricted
-        // event module on the security axis.
-        .with_event(kiri_core::event::EventService::new(
-            std::sync::Arc::new(events.clone()),
-            kiri_core::event::EventAllowlist::new(event_channels()),
-            kiri_core::limits::Limits::default(),
-        ))
-        // audit-17: kiri.config.get/keys (restricted, key-allowlisted). Capability-gated
-        // (CONFIG) and bounded to a host allowlist of exact key paths, so a granted
-        // capability still cannot read arbitrary host config. This exceeds Tauri's
-        // unrestricted getConfig() on the security axis.
-        .with_config(kiri_core::config::ConfigService::new(
-            std::sync::Arc::new(kiri_core::config::MapConfigBackend::new({
-                let mut m = std::collections::HashMap::new();
-                m.insert("app.name".to_string(), serde_json::json!("Kiri"));
-                m.insert("app.version".to_string(), serde_json::json!(env!("CARGO_PKG_VERSION")));
-                m.insert("window.theme".to_string(), serde_json::json!("system"));
-                m
-            })),
-            kiri_core::config::ConfigAllowlist::new(config_keys()),
-            kiri_core::limits::Limits::default(),
-        ))
-        .with_updater(
-            kiri_core::updater_surface::UpdaterService::new(
-                HOST_PINNED_UPDATE_PUBLIC_KEY,
-                kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
-                    .expect("valid package version"),
-                kiri_core::limits::Limits::default(),
-            )
-            .with_feed(crate::update_feed::fetch_pinned_release_manifest),
-        )
-        .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
-        .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
-            std::sync::Arc::new(kiri_core::fs_watch::DisabledFsWatch),
-            kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
-            kiri_core::limits::Limits::default(),
-        ))
-        .with_ws(kiri_core::websocket::WsService::new(
-            std::sync::Arc::new(kiri_core::websocket::DisabledWs),
-            kiri_core::websocket::WsAllowlist::new(vec![]),
-            kiri_core::limits::Limits::default(),
-        ))
-        .with_menu(kiri_core::app_menu::MenuService::new(
-            std::sync::Arc::new(kiri_core::app_menu::DisabledMenu),
-            kiri_core::app_menu::MenuAllowlist::new(vec![]),
-            kiri_core::limits::Limits::default(),
-        ));
-    // ---- WebView2 environment (W1: WebView2 shell) ----
+    // Lazy Router (research #1/#7): plugin surfaces attach on first
+    // `window.kiri.send()`, never before WebView2 environment creation.
+    // Smoke (blank frontend) never invokes, so this gap is the 1–2s we
+    // used to spend building fs/http/shell/tray/sidecar/... on the
+    // critical path.
     markers.record(Marker::WebViewCreationRequested, qpc_now_ns());
     let env = {
         use std::{cell::RefCell, rc::Rc};
@@ -615,6 +512,16 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             env_opts.set_additional_browser_arguments(args);
             env_opts.set_enable_tracking_prevention(false);
             env_opts.set_are_browser_extensions_enabled(false);
+            // First-class `kiri://` scheme at environment create (research #2).
+            // Navigation still uses https://app.local so smoke origin stays
+            // unchanged; the registration is the documented API for origin
+            // isolation when we switch the Windows origin later.
+            let scheme = webview2_com::CoreWebView2CustomSchemeRegistration::new("kiri".into());
+            scheme.set_treat_as_secure(true);
+            scheme.set_has_authority_component(true);
+            let scheme: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2CustomSchemeRegistration =
+                scheme.into();
+            env_opts.set_scheme_registrations(vec![Some(scheme)]);
         }
         let env_opts: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2EnvironmentOptions =
             env_opts.into();
@@ -720,6 +627,17 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               if (d && d.request_id !== undefined) {
                 window.kiri.onResponse(d);
               }
+            });
+            window.chrome.webview.addEventListener('sharedbufferreceived', function (e) {
+              try {
+                var buf = e.getBuffer();
+                var text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+                window.chrome.webview.releaseBuffer(buf);
+                var d = JSON.parse(text);
+                if (d && d.request_id !== undefined) {
+                  window.kiri.onResponse(d);
+                }
+              } catch (err) {}
             });
           }
           function postDom() {
@@ -856,9 +774,11 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let runtime = Box::new(HostRuntime {
         options: options.clone(),
         markers,
+        hwnd,
         caller,
         caller_caps,
-        router,
+        router: None,
+        events,
         diagnostics,
         resources,
         env,
@@ -981,15 +901,14 @@ fn handle_web_message(
     if let Some(req_val) = value.get("request") {
         match serde_json::from_value::<WireRequest>(req_val.clone()) {
             Ok(request) => {
-                let mut sink = rt.diagnostics.clone();
-                let response = rt.router.dispatch(rt.caller, &rt.caller_caps, &request, &mut sink);
+                let response = rt.dispatch_cmd(&request);
                 rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
-                post_wire_response(&rt.webview, &response);
+                post_wire_response(&rt.env, &rt.webview, &response);
             }
             Err(_) => {
                 let err =
                     WireResponse::err(0, KiriError::protocol_error("malformed command request"));
-                post_wire_response(&rt.webview, &err);
+                post_wire_response(&rt.env, &rt.webview, &err);
             }
         }
         return;
@@ -1034,6 +953,154 @@ fn handle_web_message(
     let request_id = value.get("requestId").and_then(|r| r.as_u64());
     let command = value.get("command").and_then(|c| c.as_str());
     rt.reply_protocol_error(request_id, command);
+}
+
+/// Attach one production surface to an already-built core router.
+fn attach_windows_surface(
+    router: Router,
+    rt: &HostRuntime,
+    surface: crate::router_surfaces::Surface,
+) -> Router {
+    use crate::router_surfaces::Surface;
+    match surface {
+        Surface::Core => router,
+        Surface::Platform => router.with_platform(rt.events.clone()),
+        Surface::Fs => {
+            let mut fs_scope =
+                kiri_core::capabilities::PathScope::new(std::env::temp_dir().join("kiri-fs"));
+            fs_scope.read = true;
+            fs_scope.write = true;
+            router.with_fs_service(
+                kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
+                    .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
+            )
+        }
+        Surface::Window => router.with_window(
+            std::sync::Arc::new(crate::window_ctl::WinWindowController::new(rt.hwnd)),
+            std::sync::Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new(
+                &rt.options.title,
+            ))),
+        ),
+        Surface::Clipboard => router.with_clipboard(
+            std::sync::Arc::new(
+                crate::clipboard_ctl::WinClipboardController::new().expect("clipboard init"),
+            ),
+            std::sync::Arc::new(std::sync::Mutex::new(kiri_core::clipboard::ClipboardState::new())),
+        ),
+        Surface::Path => {
+            router.with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
+        }
+        Surface::Http => router.with_http(kiri_core::http::HttpService::new(
+            std::sync::Arc::new(kiri_core::http::StdHttpClient),
+            kiri_core::http::HostAllowlist::new(http_allow_hosts()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Shell => router.with_shell(kiri_core::shell::ShellService::new(
+            std::sync::Arc::new(crate::shell_ctl::WinShellRunner::new()),
+            kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Notification => {
+            router.with_notification(kiri_core::notification::NotificationService::new(
+                std::sync::Arc::new(
+                    crate::notification_ctl::win_notify::WinNotificationRunner::new(),
+                ),
+                kiri_core::notification::NotificationAllowlist::new(notification_templates()),
+                kiri_core::limits::Limits::default(),
+            ))
+        }
+        Surface::Dialog => router.with_dialog(kiri_core::dialog::DialogService::new(
+            std::sync::Arc::new(crate::dialog_ctl::WinDialogRunner::new()),
+            kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Shortcut => router.with_shortcut(kiri_core::shortcut::ShortcutService::new(
+            std::sync::Arc::new(crate::shortcut_ctl::WinShortcutRunner::new()),
+            kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Autostart => router.with_autostart(kiri_core::autostart::AutostartService::new(
+            std::sync::Arc::new(crate::autostart_ctl::WinAutostartRunner::new()),
+            kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Store => router.with_store(kiri_core::store::StoreService::new(
+            std::sync::Arc::new(crate::store_ctl::WinStoreBackend::new()),
+            kiri_core::store::StoreAllowlist::new(store_namespaces()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Deeplink => router.with_deeplink(kiri_core::deeplink::DeeplinkService::new(
+            std::sync::Arc::new(crate::deeplink_ctl::win_deeplink::WinDeeplinkRunner::new()),
+            kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Opener => router.with_opener(kiri_core::opener::OpenerService::new(
+            std::sync::Arc::new(crate::opener_ctl::win_opener::WinOpenerRunner::new()),
+            kiri_core::opener::OpenerAllowlist::new(opener_url_schemes(), opener_file_extensions()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::WindowState => {
+            router.with_window_state(kiri_core::window_state::WindowStateService::new(
+                std::sync::Arc::new(
+                    crate::window_state_ctl::win_window_state::WinWindowStateBackend::new(),
+                ),
+                kiri_core::limits::Limits::default(),
+            ))
+        }
+        Surface::Tray => router.with_tray(kiri_core::tray::TrayService::new(
+            std::sync::Arc::new(crate::tray_ctl::win_tray::WinTrayBackend::new()),
+            kiri_core::tray::TrayAllowlist::new(tray_items()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Sidecar => router.with_sidecar(kiri_core::sidecar::SidecarService::new(
+            std::sync::Arc::new(crate::sidecar_ctl::win_sidecar::WinSidecarRunner::new()),
+            kiri_core::sidecar::SidecarAllowlist::new(sidecar_allow()),
+            kiri_core::sidecar::SidecarTable::new(),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Event => router.with_event(kiri_core::event::EventService::new(
+            std::sync::Arc::new(rt.events.clone()),
+            kiri_core::event::EventAllowlist::new(event_channels()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Config => router.with_config(kiri_core::config::ConfigService::new(
+            std::sync::Arc::new(kiri_core::config::MapConfigBackend::new({
+                let mut m = std::collections::HashMap::new();
+                m.insert("app.name".to_string(), serde_json::json!("Kiri"));
+                m.insert("app.version".to_string(), serde_json::json!(env!("CARGO_PKG_VERSION")));
+                m.insert("window.theme".to_string(), serde_json::json!("system"));
+                m
+            })),
+            kiri_core::config::ConfigAllowlist::new(config_keys()),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Updater => router.with_updater(
+            kiri_core::updater_surface::UpdaterService::new(
+                HOST_PINNED_UPDATE_PUBLIC_KEY,
+                kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
+                    .expect("valid package version"),
+                kiri_core::limits::Limits::default(),
+            )
+            .with_feed(crate::update_feed::fetch_pinned_release_manifest),
+        ),
+        Surface::Cli => router
+            .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>())),
+        Surface::FsWatch => router.with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
+            std::sync::Arc::new(kiri_core::fs_watch::DisabledFsWatch),
+            kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Ws => router.with_ws(kiri_core::websocket::WsService::new(
+            std::sync::Arc::new(kiri_core::websocket::DisabledWs),
+            kiri_core::websocket::WsAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
+        )),
+        Surface::Menu => router.with_menu(kiri_core::app_menu::MenuService::new(
+            std::sync::Arc::new(kiri_core::app_menu::DisabledMenu),
+            kiri_core::app_menu::MenuAllowlist::new(vec![]),
+            kiri_core::limits::Limits::default(),
+        )),
+    }
 }
 
 /// Host-allowlist for kiri.http.get. Default-deny: only these hosts may be

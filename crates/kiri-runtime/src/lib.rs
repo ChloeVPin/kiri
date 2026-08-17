@@ -23,6 +23,7 @@ pub mod notification_ctl;
 pub mod opener_ctl;
 pub mod output;
 pub mod plugins;
+mod router_surfaces;
 pub mod shell_ctl;
 pub mod shortcut_ctl;
 pub mod sidecar_ctl;

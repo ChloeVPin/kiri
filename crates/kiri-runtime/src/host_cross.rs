@@ -404,30 +404,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
 
     record(&markers, Marker::WebViewCreationRequested);
 
-    // Control-plane router for the native bridge (T003). The caller identity
-    // is assigned by the native runtime, never by JavaScript; grant the ping
-    // capability so control commands can run from the trusted frontend.
+    // Control-plane identity is assigned by the native runtime, never by JS.
+    // The full Router is built on first `window.kiri.send()` (research #1)
+    // so WebView creation is not blocked by plugin construction.
     let mut registry = CallerRegistry::new();
     let caller = registry.register();
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
-    // Control-plane router for the native bridge (T003). Delegated to
-    // build_host_router so the registration regression test exercises the
-    // exact production construction; the host-owned fs scope, event bus, and
-    // resource table all live inside that function.
-    let window_ctrl: std::sync::Arc<dyn kiri_core::window::WindowController> =
-        std::sync::Arc::new(crate::window_ctl::TaoWindowController::new(window.clone()));
-    let clipboard_ctrl: std::sync::Arc<dyn kiri_core::clipboard::ClipboardController> =
-        std::sync::Arc::new(
-            crate::clipboard_ctl::CrossClipboardController::new().expect("clipboard init"),
-        );
-    // Shared diagnostics + generational resource table owned by the host. The
-    // resources plugin binds this exact instance via the ABI context, so
-    // kiri.open/kiri.close mutate it and keep the diagnostics open-resource
-    // count honest and dynamic. Handed to build_host_router and the IPC handler.
     let diagnostics = Diagnostics::new();
     let resources: std::sync::Arc<Mutex<ResourceTable<()>>> =
         std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new()));
-    let router = build_host_router(window_ctrl, clipboard_ctrl, &diagnostics, &resources, &options);
+    let router_cell: Rc<RefCell<Option<kiri_core::dispatch::Router>>> = Rc::new(RefCell::new(None));
     let smoke = options.smoke;
     let ipc_bench = options.ipc_bench;
     let ipc_bench_runs = options.ipc_bench_runs;
@@ -480,7 +466,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         })
         .with_ipc_handler({
             let markers = markers.clone();
-            let router = router.clone();
+            let router_cell = router_cell.clone();
+            let window_for_router = window.clone();
+            let options_for_router = options.clone();
             let webview_slot = webview_slot.clone();
             let diagnostics = diagnostics.clone();
             let resources = resources.clone();
@@ -522,7 +510,31 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         return;
                     };
                     let mut sink = diagnostics.clone();
-                    let response = router.dispatch(caller, &caller_caps, &request, &mut sink);
+                    if router_cell.borrow().is_none() {
+                        let window_ctrl: std::sync::Arc<dyn kiri_core::window::WindowController> =
+                            std::sync::Arc::new(crate::window_ctl::TaoWindowController::new(
+                                window_for_router.clone(),
+                            ));
+                        let clipboard_ctrl: std::sync::Arc<
+                            dyn kiri_core::clipboard::ClipboardController,
+                        > = std::sync::Arc::new(
+                            crate::clipboard_ctl::CrossClipboardController::new()
+                                .expect("clipboard init"),
+                        );
+                        *router_cell.borrow_mut() = Some(build_host_router(
+                            window_ctrl,
+                            clipboard_ctrl,
+                            &diagnostics,
+                            &resources,
+                            &options_for_router,
+                        ));
+                    }
+                    let response = router_cell.borrow().as_ref().unwrap().dispatch(
+                        caller,
+                        &caller_caps,
+                        &request,
+                        &mut sink,
+                    );
                     // Reflect any resource churn so the panel stays honest.
                     diagnostics.set_open_resources(resources.lock().unwrap().len() as u32);
                     post_response(&webview_slot, &response);
