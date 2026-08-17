@@ -133,14 +133,24 @@ fn main() {
     markers.borrow_mut().record(Marker::PlatformInit, now_ns());
 
     markers.borrow_mut().record(Marker::WebViewCreationRequested, now_ns());
-    let webview = WebViewBuilder::new()
+    // Windows: a synchronous `wry://` custom protocol + Navigate during
+    // WebView2 `wait_with_pump` deadlocks before `event_loop.run()` (60s
+    // hang on windows-latest). Serve the same HTML via `with_html` so the
+    // event loop is reached. Other platforms keep the custom-scheme path
+    // used by the Kiri cross host.
+    let builder = WebViewBuilder::new();
+    #[cfg(target_os = "windows")]
+    let builder = builder.with_html(FRONTEND_HTML);
+    #[cfg(not(target_os = "windows"))]
+    let builder = builder
         .with_custom_protocol("wry".into(), |_id, _request| {
             wry::http::Response::builder()
                 .header("Content-Type", "text/html")
                 .body(std::borrow::Cow::Borrowed(FRONTEND_HTML.as_bytes()))
                 .unwrap()
         })
-        .with_url("wry://localhost/index.html")
+        .with_url("wry://localhost/index.html");
+    let webview = builder
         .with_initialization_script(BRIDGE_SCRIPT)
         .with_on_page_load_handler({
             let markers = markers.clone();

@@ -15,9 +15,13 @@
 /// scheme host, so it is stable and cannot be confused with a remote origin.
 pub const CROSS_APP_ORIGIN: &str = "kiri://localhost";
 
-/// The application origin used by the Windows direct backend (WebV2 virtual
-/// host mapping, docs/06-windows.md D-004).
-pub const WINDOWS_APP_ORIGIN: &str = "https://app.local";
+/// The application origin used by the Windows direct backend (WebView2
+/// virtual host mapping). `*.localhost` avoids the ~2s mDNS wait that
+/// `*.local` incurs on Windows.
+pub const WINDOWS_APP_ORIGIN: &str = "https://app.localhost";
+/// Previous Windows origin. Still accepted so an old document URL cannot
+/// be confused with a remote origin during the rename.
+const WINDOWS_APP_ORIGIN_LEGACY: &str = "https://app.local";
 
 /// True when `origin` is one of the known application origins, or a path
 /// under one of them. Document URLs for the app page (for example
@@ -26,8 +30,10 @@ pub const WINDOWS_APP_ORIGIN: &str = "https://app.local";
 pub fn is_app_origin(origin: &str) -> bool {
     origin == CROSS_APP_ORIGIN
         || origin == WINDOWS_APP_ORIGIN
+        || origin == WINDOWS_APP_ORIGIN_LEGACY
         || origin.starts_with(&format!("{CROSS_APP_ORIGIN}/"))
         || origin.starts_with(&format!("{WINDOWS_APP_ORIGIN}/"))
+        || origin.starts_with(&format!("{WINDOWS_APP_ORIGIN_LEGACY}/"))
 }
 
 /// Policy for navigations initiated by the page.
@@ -159,6 +165,7 @@ mod tests {
         assert!(!is_app_origin("https://evil.example.com"));
         assert!(!is_app_origin("null"));
         assert!(is_app_origin("kiri://localhost/index.html"));
+        assert!(is_app_origin("https://app.localhost/index.html"));
         assert!(is_app_origin("https://app.local/index.html"));
     }
 

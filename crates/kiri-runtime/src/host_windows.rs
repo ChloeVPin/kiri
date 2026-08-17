@@ -188,9 +188,13 @@ pub struct WindowsHost;
 
 /// Virtual host used for the local application origin (WebView2 virtual host
 /// mapping; gives the page a proper https origin instead of `file://`).
-pub(crate) const VIRTUAL_HOST_NAME: &str = "app.local";
+/// `*.localhost` is special-cased by the OS (RFC 6761) and does not wait
+/// on mDNS the way `*.local` does. Hosted Windows showed a stable ~2s gap
+/// from `bridge_ready` to `webview_ready` while Tauri (`*.localhost`)
+/// painted in ~45ms after its bridge.
+pub(crate) const VIRTUAL_HOST_NAME: &str = "app.localhost";
 pub(crate) const FRONTEND_PAGE: &str = "index.html";
-pub(crate) const APP_ORIGIN: &str = "https://app.local";
+pub(crate) const APP_ORIGIN: &str = "https://app.localhost";
 
 /// True for URLs served from the application origin (used to reject markers
 /// from `about:blank` or any other origin).
@@ -513,9 +517,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             env_opts.set_enable_tracking_prevention(false);
             env_opts.set_are_browser_extensions_enabled(false);
             // First-class `kiri://` scheme at environment create (research #2).
-            // Navigation still uses https://app.local so smoke origin stays
-            // unchanged; the registration is the documented API for origin
-            // isolation when we switch the Windows origin later.
+            // First-class `kiri://` scheme at environment create. The live
+            // document still uses https://app.localhost (virtual host).
             let scheme = webview2_com::CoreWebView2CustomSchemeRegistration::new("kiri".into());
             scheme.set_treat_as_secure(true);
             scheme.set_has_authority_component(true);
@@ -604,7 +607,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // page; it must only emit markers from the application origin.
     let bridge_script = r#"
         (function () {
-          if (window.location.origin !== 'https://app.local') { return; }
+          if (window.location.origin !== 'https://app.localhost') { return; }
           window.kiri = {
             pending: Object.create(null),
             post: function (o) { window.chrome.webview.postMessage(o); },

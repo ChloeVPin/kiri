@@ -34,7 +34,7 @@ pub fn materialize(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Map `https://app.local/foo` to the packed key `foo` (or `index.html`).
+/// Map `https://app.localhost/foo` to the packed key `foo` (or `index.html`).
 pub fn request_path_from_https_origin(url: &str, origin: &str) -> Option<String> {
     let rest = url.strip_prefix(origin)?;
     let rest = rest.split(['?', '#']).next().unwrap_or(rest);
@@ -77,12 +77,16 @@ mod tests {
     #[test]
     fn https_origin_maps_to_pack_keys() {
         assert_eq!(
-            request_path_from_https_origin("https://app.local/", "https://app.local").as_deref(),
+            request_path_from_https_origin("https://app.localhost/", "https://app.localhost")
+                .as_deref(),
             Some("index.html")
         );
         assert_eq!(
-            request_path_from_https_origin("https://app.local/kiri.js", "https://app.local")
-                .as_deref(),
+            request_path_from_https_origin(
+                "https://app.localhost/kiri.js",
+                "https://app.localhost"
+            )
+            .as_deref(),
             Some("kiri.js")
         );
         assert!(
