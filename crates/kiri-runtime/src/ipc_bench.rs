@@ -50,8 +50,10 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         window.kiri.onResponse(d);
       }}
     }});
+    window.__kiriSharedBufferHits = 0;
     window.chrome.webview.addEventListener("sharedbufferreceived", function (e) {{
       try {{
+        window.__kiriSharedBufferHits++;
         var buf = e.getBuffer();
         var text = new TextDecoder("utf-8").decode(new Uint8Array(buf));
         window.chrome.webview.releaseBuffer(buf);
@@ -119,6 +121,7 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         await ping(payload);
       }}
       var samples = [];
+      var hitsBefore = window.__kiriSharedBufferHits || 0;
       var tBatch = performance.now();
       for (var i = 0; i < RUNS; i++) {{
         var t0 = performance.now();
@@ -126,11 +129,14 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         samples.push(performance.now() - t0);
       }}
       var batchMs = performance.now() - tBatch;
+      var hits = (window.__kiriSharedBufferHits || 0) - hitsBefore;
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
         batch_ms: batchMs,
-        mean_from_batch_ms: batchMs / RUNS
+        mean_from_batch_ms: batchMs / RUNS,
+        shared_buffer_hits: hits,
+        shared_buffer_used: hits > 0
       }});
     }}
     post({{ type: "ipc_bench", target: "kiri-host", results: results }});
@@ -269,6 +275,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 .unwrap_or_default();
             let batch_ms = item.get("batch_ms").and_then(|v| v.as_f64());
             let mean_from_batch = item.get("mean_from_batch_ms").and_then(|v| v.as_f64());
+            let shared_hits = item.get("shared_buffer_hits").and_then(|v| v.as_u64());
+            let shared_used = item.get("shared_buffer_used").and_then(|v| v.as_bool());
             let mut summary = summarize(&rtt);
             if let Some(obj) = summary.as_object_mut() {
                 if let Some(v) = batch_ms {
@@ -283,6 +291,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 "rtt_ms": rtt,
                 "batch_ms": batch_ms,
                 "mean_from_batch_ms": mean_from_batch,
+                "shared_buffer_hits": shared_hits,
+                "shared_buffer_used": shared_used.unwrap_or(false),
                 "summary": summary,
             }));
         }
@@ -303,6 +313,11 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
         "runs": results_out.first().and_then(|r| r.get("rtt_ms")).and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(DEFAULT_RUNS as usize),
         "warmup": raw.get("warmup").cloned().unwrap_or(json!(DEFAULT_WARMUP)),
         "sizes_bytes": results_out.iter().filter_map(|r| r.get("size_bytes").cloned()).collect::<Vec<_>>(),
+        "shared_buffer": {
+            "threshold_bytes": 64 * 1024,
+            "replies_ok": raw.get("shared_buffer_replies_ok").cloned().unwrap_or(json!(0)),
+            "replies_fallback": raw.get("shared_buffer_replies_fallback").cloned().unwrap_or(json!(0)),
+        },
         "results": results_out,
     });
 
@@ -327,6 +342,7 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
 mod tests {
     use super::*;
     use kiri_core::wire::WireRequest;
+    use serde_json::{json, Value};
 
     #[test]
     fn kiri_script_mentions_real_bridge_and_sizes() {
@@ -335,6 +351,7 @@ mod tests {
         assert!(script.contains("command_id: 1"));
         assert!(script.contains("type: \"ipc_bench\""));
         assert!(script.contains("1048574"));
+        assert!(script.contains("shared_buffer_used"));
         assert!(!script.contains("bulk_bench"));
     }
 
@@ -364,6 +381,29 @@ mod tests {
         assert_eq!(req.command_id, 1);
         assert_eq!(req.request_id, 42);
         assert_eq!(req.payload_len, payload_len);
+    }
+
+    #[test]
+    fn write_result_records_shared_buffer_proof() {
+        let raw = json!({
+            "type": "ipc_bench",
+            "target": "kiri-host",
+            "shared_buffer_replies_ok": 20,
+            "shared_buffer_replies_fallback": 0,
+            "results": [{
+                "size_bytes": 262144,
+                "rtt_ms": [5.0, 5.0],
+                "shared_buffer_hits": 2,
+                "shared_buffer_used": true
+            }]
+        });
+        let dir = std::env::temp_dir().join("kiri-ipc-proof");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("ipc.json");
+        write_result(Some(&path), &raw).expect("write");
+        let out: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(out["shared_buffer"]["replies_ok"], 20);
+        assert_eq!(out["results"][0]["shared_buffer_used"], true);
     }
 
     #[test]

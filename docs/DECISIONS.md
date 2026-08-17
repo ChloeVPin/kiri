@@ -36,18 +36,18 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   must NOT depend on kiri-core.
 - **Evidence**: Level A - workspace `Cargo.toml`, baseline manifests.
 
-## D-004: virtual host mapping (https://app.local) instead of a custom scheme
+## D-004: custom scheme `kiri://localhost` on every OS
 
-- **Status**: decided (T001)
-- **Context**: the host must serve the frontend from the local disk with a
-  stable origin that behaves like a web origin (needed for later origin-based
-  security checks).
-- **Decision**: `SetVirtualHostNameToFolderMapping` with
-  `COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW`, serving
-  `https://app.local/index.html`. Constants: `VIRTUAL_HOST_NAME = "app.local"`,
-  `FRONTEND_PAGE = "index.html"`.
-- **Evidence**: Level A - webview2-com 0.39.1 `ICoreWebView2_3` bindings;
-  Windows 11 WebView2 SDK docs.
+- **Status**: superseded T001 virtual-host decision (2026-08-17)
+- **Context**: `https://app.local` paid a ~2s Windows LLMNR/mDNS tax before
+  first paint. `https://app.localhost` removed the tax but still started
+  Chromium's HTTPS network service.
+- **Decision**: register `kiri` via `ICoreWebView2EnvironmentOptions4` and
+  navigate to `kiri://localhost/index.html`. Serve assets with
+  `WebResourceRequested`. Same origin as the wry/tao backend.
+- **Evidence**: hosted `windows-latest` 20-run medians: `app.local` 2811 ms
+  process / 2482 ms `webview_ready`; `app.localhost` 846 / 511 ms. Custom
+  scheme is the remaining network-stack cut.
 
 ## D-005: startup markers via the runtime's own QPC clock, shared schema
 

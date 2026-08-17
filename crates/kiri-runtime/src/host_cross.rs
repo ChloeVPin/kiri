@@ -510,6 +510,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         return;
                     };
                     let mut sink = diagnostics.clone();
+                    if !markers.borrow().has(Marker::FirstInvokeDispatched) {
+                        record(&markers, Marker::FirstInvokeDispatched);
+                    }
                     if router_cell.borrow().is_none() {
                         let window_ctrl: std::sync::Arc<dyn kiri_core::window::WindowController> =
                             std::sync::Arc::new(crate::window_ctl::TaoWindowController::new(
@@ -535,6 +538,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         &request,
                         &mut sink,
                     );
+                    if !markers.borrow().has(Marker::FirstInvokeResponded) {
+                        record(&markers, Marker::FirstInvokeResponded);
+                    }
                     // Reflect any resource churn so the panel stays honest.
                     diagnostics.set_open_resources(resources.lock().unwrap().len() as u32);
                     post_response(&webview_slot, &response);

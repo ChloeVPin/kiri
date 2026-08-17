@@ -7,9 +7,9 @@
 #
 # What runs where:
 #   - macOS: Kiri + wry/tao + Tauri startup, then Kiri vs Tauri through-webview IPC.
-#   - Windows: Kiri (direct WebView2) vs Tauri only. The wry/tao baseline is
-#     skipped: it hangs on windows-latest (60s harness timeout) and is not
-#     the product comparison. The fight on Windows is Kiri's direct host vs Tauri.
+#   - Windows: Kiri (direct WebView2) vs Tauri. Official Kiri numbers do NOT
+#     set KIRI_WEBVIEW2_ARGS. A separate swrender row keeps --disable-gpu as
+#     a labeled appendix. wry-tao is re-enabled (with_html on Windows).
 #   - Linux: baselines compile; the native WebView run is a SOFT probe
 #     (headless WebKit2GTK has no GPU on runners), so no benchmark numbers
 #     are emitted for Linux native here.
@@ -35,17 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: WebView2 software flags (hosted Windows is a VM)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: echo "KIRI_WEBVIEW2_ARGS=--disable-gpu" >> $env:GITHUB_ENV
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
 
       - name: Build Kiri host (release)
         run: cargo build --release -p kiri-runtime --bin kiri-host
       - name: Build Wry/Tao baseline (release)
-        if: runner.os != 'Windows'
         run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
       - name: Build Tauri baseline (release)
         run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
@@ -66,9 +61,29 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-kiri-embed --runs 20 --output artifacts/startup-kiri-embed.json -- ./target/release/kiri-host --smoke
 
+      - name: Startup benchmark (Kiri starter, first-invoke)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: python benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- .\target\release\kiri-host.exe --smoke --frontend examples\starter
+      - name: Startup benchmark (Kiri starter, first-invoke)
+        if: runner.os == 'macOS'
+        run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
+
+      - name: Startup benchmark (Kiri host, software WebView2 appendix)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        env:
+          KIRI_WEBVIEW2_ARGS: --disable-gpu
+        run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
+      - name: Startup benchmark (Wry/Tao baseline)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        run: python benchmark/harness.py --name startup-wry --runs 20 --warmups 1 --timeout-seconds 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
 
       - name: Startup benchmark (Tauri baseline)
         shell: pwsh

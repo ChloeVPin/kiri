@@ -16,6 +16,8 @@ and the Tauri baseline, derived from corpus `docs/12-benchmarks.md`.
 | 7 | `dom_ready`             | frontend DOMContentLoaded fired                          |
 | 8 | `app_ready`             | application logic considers itself ready                |
 | 9 | `first_animation_frame` | first requestAnimationFrame callback fired              |
+| 10 | `first_invoke_dispatched` | first `window.kiri.send()` entered native dispatch (optional; omitted when the page never invokes) |
+| 11 | `first_invoke_responded` | first control-plane response produced (optional) |
 
 ## JSON document (stdout, one line)
 

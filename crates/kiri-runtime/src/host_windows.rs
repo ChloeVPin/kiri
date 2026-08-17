@@ -75,14 +75,16 @@ fn post_wire_response(
     env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
     response: &WireResponse,
-) {
+) -> bool {
     if let Ok(json) = serde_json::to_string(response) {
         if json.len() > 64 * 1024 && post_shared_buffer(env, webview, json.as_bytes()) {
-            return;
+            return true;
         }
         let wide = to_wide(&json);
         let _ = unsafe { webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
+        return false;
     }
+    false
 }
 
 /// Copy `bytes` into a WebView2 shared buffer and hand it to script.
@@ -111,7 +113,7 @@ fn post_shared_buffer(
         return false;
     }
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), dest, bytes.len()) };
-    let extra = to_wide(r#"{"kind":"wire"}"#);
+    let extra = to_wide(r#"{"kind":"wire","shared_buffer":true}"#);
     let posted = unsafe {
         webview17.PostSharedBufferToScript(
             &buffer,
@@ -123,14 +125,15 @@ fn post_shared_buffer(
     posted.is_ok()
 }
 
-/// Serve a packed asset from memory. Used when `--frontend` is omitted so
-/// Windows does not have to materialize the UI to a temp folder (the thing
-/// that made hosted embed startup look like the disk path).
-fn handle_embed_resource(
+/// Serve a packed or disk asset for `kiri://localhost/*`.
+fn handle_app_resource(
     env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     args: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2WebResourceRequestedEventArgs,
+    frontend_dir: Option<&Path>,
 ) {
-    use crate::assets::{response_headers, serve_embedded, status_code, ServeOptions};
+    use crate::assets::{
+        response_headers, serve_checked, serve_embedded, status_code, ServeOptions,
+    };
     use windows::Win32::UI::Shell::SHCreateMemStream;
 
     let Ok(request) = (unsafe { args.Request() }) else {
@@ -147,7 +150,11 @@ fn handle_embed_resource(
     }
     let path = crate::embed::request_path_from_https_origin(&url, APP_ORIGIN)
         .unwrap_or_else(|| "index.html".into());
-    let served = serve_embedded(&path, &ServeOptions::default());
+    let opts = ServeOptions::default();
+    let served = match frontend_dir {
+        Some(root) => serve_checked(root, &path, &opts),
+        None => serve_embedded(&path, &opts),
+    };
     let status = i32::from(status_code(&served));
     let header_lines: Vec<String> =
         response_headers(&served).into_iter().map(|(k, v)| format!("{k}: {v}")).collect();
@@ -186,20 +193,15 @@ fn handle_embed_resource(
 /// The Windows native host: window, WebView2 lifecycle, and message loop.
 pub struct WindowsHost;
 
-/// Virtual host used for the local application origin (WebView2 virtual host
-/// mapping; gives the page a proper https origin instead of `file://`).
-/// `*.localhost` is special-cased by the OS (RFC 6761) and does not wait
-/// on mDNS the way `*.local` does. Hosted Windows showed a stable ~2s gap
-/// from `bridge_ready` to `webview_ready` while Tauri (`*.localhost`)
-/// painted in ~45ms after its bridge.
-pub(crate) const VIRTUAL_HOST_NAME: &str = "app.localhost";
+/// Live Windows document origin. Same custom scheme as macOS/Linux so the
+/// WebView2 HTTPS network stack is not initialized for first paint.
+pub(crate) const APP_ORIGIN: &str = kiri_core::security::CROSS_APP_ORIGIN;
 pub(crate) const FRONTEND_PAGE: &str = "index.html";
-pub(crate) const APP_ORIGIN: &str = "https://app.localhost";
 
 /// True for URLs served from the application origin (used to reject markers
 /// from `about:blank` or any other origin).
 fn is_app_origin_url(url: &str) -> bool {
-    url == APP_ORIGIN || url.starts_with(&format!("{APP_ORIGIN}/"))
+    kiri_core::security::is_app_origin(url)
 }
 
 /// Timer IDs for the smoke-exit and watchdog paths.
@@ -270,6 +272,10 @@ pub(crate) struct HostRuntime {
     /// Set once the through-webview IPC bench script has been injected.
     pub ipc_bench_injected: bool,
     pub exit_code: i32,
+    /// T008: replies that went through `PostSharedBufferToScript`.
+    pub shared_buffer_ok: u32,
+    /// T008: replies over 64 KiB that fell back to JSON.
+    pub shared_buffer_fallback: u32,
 }
 
 impl HostRuntime {
@@ -279,7 +285,7 @@ impl HostRuntime {
         let error = KiriError::protocol_error("command not implemented by this host slice")
             .with_command(command.unwrap_or("").to_string());
         let envelope = WireResponse::err(request_id.unwrap_or(0), error);
-        post_wire_response(&self.env, &self.webview, &envelope);
+        let _ = post_wire_response(&self.env, &self.webview, &envelope);
     }
 
     /// Build the core plugin router (ping/diag/resources) on first send.
@@ -325,10 +331,17 @@ impl HostRuntime {
     }
 
     fn dispatch_cmd(&mut self, request: &WireRequest) -> WireResponse {
+        if !self.markers.has(Marker::FirstInvokeDispatched) {
+            self.markers.record(Marker::FirstInvokeDispatched, qpc_now_ns());
+        }
         self.ensure_surface(request.command_id);
         let router = self.router.as_ref().expect("router after ensure_surface");
         let mut sink = self.diagnostics.clone();
-        router.dispatch(self.caller, &self.caller_caps, request, &mut sink)
+        let response = router.dispatch(self.caller, &self.caller_caps, request, &mut sink);
+        if !self.markers.has(Marker::FirstInvokeResponded) {
+            self.markers.record(Marker::FirstInvokeResponded, qpc_now_ns());
+        }
+        response
     }
 }
 
@@ -424,8 +437,7 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
 
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
-        CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
-        COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+        CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
     };
     use webview2_com::{
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
@@ -518,7 +530,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             env_opts.set_are_browser_extensions_enabled(false);
             // First-class `kiri://` scheme at environment create (research #2).
             // First-class `kiri://` scheme at environment create. The live
-            // document still uses https://app.localhost (virtual host).
+            // document navigates to kiri://localhost so Chromium does not
+            // start the HTTPS network stack for first paint.
             let scheme = webview2_com::CoreWebView2CustomSchemeRegistration::new("kiri".into());
             scheme.set_treat_as_secure(true);
             scheme.set_has_authority_component(true);
@@ -607,7 +620,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // page; it must only emit markers from the application origin.
     let bridge_script = r#"
         (function () {
-          if (window.location.origin !== 'https://app.localhost') { return; }
+          if (window.location.origin !== 'kiri://localhost') { return; }
           window.kiri = {
             pending: Object.create(null),
             post: function (o) { window.chrome.webview.postMessage(o); },
@@ -675,46 +688,40 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         markers.record(Marker::BridgeReady, qpc_now_ns());
     }
 
-    // Application origin. Disk `--frontend` still uses WebView2 folder
-    // mapping. Packed UI is served from memory via WebResourceRequested so
-    // embed startup is not a temp-directory copy of the same files.
+    // Serve kiri://localhost from memory (embed) or the optional disk
+    // frontend. Virtual-host https mapping is gone: it still paid the
+    // Chromium network-stack tax on first navigation.
     let mut resource_token: i64 = 0;
-    if let Some(dir) = options.frontend_dir.as_ref() {
-        let webview3 = webview
-            .cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_3>()
-            .map_err(|e| format!("cast to ICoreWebView2_3: {e}"))?;
-        let host_name = windows::core::HSTRING::from(VIRTUAL_HOST_NAME);
-        let frontend_dir = absolute_lexical(dir);
-        if !frontend_dir.is_dir() {
-            return Err(format!("frontend directory does not exist: {}", frontend_dir.display()));
+    let frontend_dir = match options.frontend_dir.as_ref() {
+        Some(dir) => {
+            let abs = absolute_lexical(dir);
+            if !abs.is_dir() {
+                return Err(format!("frontend directory does not exist: {}", abs.display()));
+            }
+            Some(abs)
         }
-        let folder = windows::core::HSTRING::from(frontend_dir.as_os_str());
-        webview3
-            .SetVirtualHostNameToFolderMapping(
-                PCWSTR::from_raw(host_name.as_ptr()),
-                PCWSTR::from_raw(folder.as_ptr()),
-                COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
-            )
-            .map_err(|e| format!("SetVirtualHostNameToFolderMapping: {e}"))?;
-    } else {
-        let filter = to_wide(&format!("https://{VIRTUAL_HOST_NAME}/*"));
+        None => None,
+    };
+    for pattern in [format!("{APP_ORIGIN}/*"), APP_ORIGIN.to_string()] {
+        let filter = to_wide(&pattern);
         webview
             .AddWebResourceRequestedFilter(
                 PCWSTR::from_raw(filter.as_ptr()),
                 COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
             )
-            .map_err(|e| format!("AddWebResourceRequestedFilter: {e}"))?;
-        let env_for_res = env.clone();
-        let res_handler = WebResourceRequestedEventHandler::create(Box::new(move |_s, args| {
-            if let Some(args) = args {
-                handle_embed_resource(&env_for_res, args);
-            }
-            Ok(())
-        }));
-        webview
-            .add_WebResourceRequested(&res_handler, &mut resource_token)
-            .map_err(|e| format!("add_WebResourceRequested: {e}"))?;
+            .map_err(|e| format!("AddWebResourceRequestedFilter {pattern}: {e}"))?;
     }
+    let env_for_res = env.clone();
+    let dir_for_res = frontend_dir.clone();
+    let res_handler = WebResourceRequestedEventHandler::create(Box::new(move |_s, args| {
+        if let Some(args) = args {
+            handle_app_resource(&env_for_res, args, dir_for_res.as_deref());
+        }
+        Ok(())
+    }));
+    webview
+        .add_WebResourceRequested(&res_handler, &mut resource_token)
+        .map_err(|e| format!("add_WebResourceRequested: {e}"))?;
 
     // ---- event handlers ----
     let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
@@ -793,6 +800,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         smoke_armed: false,
         ipc_bench_injected: false,
         exit_code: 0,
+        shared_buffer_ok: 0,
+        shared_buffer_fallback: 0,
     });
     if let Some(version) = browser_version {
         eprintln!("[kiri] WebView2 runtime version: {version}");
@@ -808,7 +817,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, runtime_ptr as isize);
 
     // ---- navigate to the local application origin ----
-    let url = format!("https://{VIRTUAL_HOST_NAME}/{FRONTEND_PAGE}");
+    let url = format!("{APP_ORIGIN}/{FRONTEND_PAGE}");
+    eprintln!("[kiri] navigate {url}");
     let url_h = windows::core::HSTRING::from(url.as_str());
     if let Some(rt) = unsafe { get_runtime(hwnd) } {
         rt.webview
@@ -888,7 +898,15 @@ fn handle_web_message(
     };
 
     if value.get("type").and_then(|t| t.as_str()) == Some("ipc_bench") {
-        match crate::ipc_bench::write_result(rt.options.ipc_bench_out.as_ref(), &value) {
+        let mut report = value;
+        if let Some(obj) = report.as_object_mut() {
+            obj.insert("shared_buffer_replies_ok".into(), serde_json::json!(rt.shared_buffer_ok));
+            obj.insert(
+                "shared_buffer_replies_fallback".into(),
+                serde_json::json!(rt.shared_buffer_fallback),
+            );
+        }
+        match crate::ipc_bench::write_result(rt.options.ipc_bench_out.as_ref(), &report) {
             Ok(()) => unsafe { PostQuitMessage(0) },
             Err(e) => {
                 eprintln!("[kiri] through-webview ipc bench failed: {e}");
@@ -906,12 +924,18 @@ fn handle_web_message(
             Ok(request) => {
                 let response = rt.dispatch_cmd(&request);
                 rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
-                post_wire_response(&rt.env, &rt.webview, &response);
+                let used = post_wire_response(&rt.env, &rt.webview, &response);
+                if used {
+                    rt.shared_buffer_ok = rt.shared_buffer_ok.saturating_add(1);
+                } else if serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0) > 64 * 1024
+                {
+                    rt.shared_buffer_fallback = rt.shared_buffer_fallback.saturating_add(1);
+                }
             }
             Err(_) => {
                 let err =
                     WireResponse::err(0, KiriError::protocol_error("malformed command request"));
-                post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err);
             }
         }
         return;

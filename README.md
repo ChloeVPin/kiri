@@ -20,6 +20,12 @@ definition of done live in [`docs/PRODUCT.md`](docs/PRODUCT.md).
 Startup and IPC numbers are measured, not assumed. If wry/tao is as fast
 and simpler than this host, we record that and switch.
 
+On a hosted Windows Server CI runner with software rendering, Kiri's median
+startup time to `webview_ready` is comparable to a blank Tauri baseline,
+while shipping at under 20% of the binary size and enforcing double-gated
+capabilities. That sentence is a lab result, not “Kiri is faster than Tauri
+on Windows.” The official table is the **no** `--disable-gpu` row.
+
 ## Status
 
 Tasks T001-T007 and T010 are complete. T009 has a local macOS release
@@ -100,9 +106,9 @@ examples/blank                 shared blank frontend with a 3-way bridge
 benchmark/                     harness.py + test-vectors.json (from corpus)
 ```
 
-The direct host serves the frontend over `SetVirtualHostNameToFolderMapping`
-at `https://app.local/index.html` and records nine startup markers on a QPC
-monotonic clock: `process_spawn_requested`, `native_entry`,
+The direct host serves the frontend over `kiri://localhost/index.html`
+(custom scheme at WebView2 environment create) and records startup markers
+on a QPC monotonic clock: `process_spawn_requested`, `native_entry`,
 `platform_initialized`, `webview_creation_requested`, `webview_ready`,
 `bridge_ready`, `dom_ready`, `app_ready`, `first_animation_frame`. Smoke
 runs exit 0 after `first_animation_frame`, exit 2 on watchdog. Schema:

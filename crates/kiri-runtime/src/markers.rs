@@ -20,10 +20,14 @@ pub enum Marker {
     DomReady,
     AppReady,
     FirstAnimationFrame,
+    /// First `window.kiri.send()` entered native dispatch (lazy Router attach).
+    FirstInvokeDispatched,
+    /// First control-plane response was produced.
+    FirstInvokeResponded,
 }
 
 impl Marker {
-    pub const ALL: [Marker; 9] = [
+    pub const ALL: [Marker; 11] = [
         Marker::ProcessSpawnRequested,
         Marker::NativeEntry,
         Marker::PlatformInit,
@@ -33,6 +37,8 @@ impl Marker {
         Marker::DomReady,
         Marker::AppReady,
         Marker::FirstAnimationFrame,
+        Marker::FirstInvokeDispatched,
+        Marker::FirstInvokeResponded,
     ];
 
     pub const fn name(self) -> &'static str {
@@ -46,6 +52,8 @@ impl Marker {
             Marker::DomReady => "dom_ready",
             Marker::AppReady => "app_ready",
             Marker::FirstAnimationFrame => "first_animation_frame",
+            Marker::FirstInvokeDispatched => "first_invoke_dispatched",
+            Marker::FirstInvokeResponded => "first_invoke_responded",
         }
     }
 }
@@ -138,9 +146,11 @@ mod tests {
         let json = serde_json::to_value(&result).unwrap();
         assert_eq!(json["schema_version"], 1);
         let markers = json["markers"].as_array().unwrap();
-        assert_eq!(markers.len(), 9);
+        assert_eq!(markers.len(), 11);
         assert_eq!(markers[0]["name"], "process_spawn_requested");
         assert_eq!(markers[0]["since_first_ns"], 0);
         assert_eq!(markers[8]["name"], "first_animation_frame");
+        assert_eq!(markers[9]["name"], "first_invoke_dispatched");
+        assert_eq!(markers[10]["name"], "first_invoke_responded");
     }
 }
