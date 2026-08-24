@@ -34,6 +34,7 @@ pub mod tray_ctl;
 pub mod update_feed;
 pub mod window_ctl;
 pub mod window_state_ctl;
+pub mod ws_ctl;
 
 #[cfg(not(target_os = "windows"))]
 mod host_cross;

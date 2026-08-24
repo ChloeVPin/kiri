@@ -208,11 +208,12 @@ CORRECTED (this change, uncommitted): the production router construction is now
 extracted into `build_host_router(window, clipboard_ctrl, diagnostics, resources,
 options)` and `run_inner` calls it. That function wires all four surfaces via the
 same `with_*` builders the test used, so the commands are registered on the real
-host router. `FsWatch` now uses the native `notify` backend on all desktop
-targets, while `Ws` and `Menu` remain explicit `service_unavailable` surfaces
-until their native transports are wired. All three remain capability-gated and
-allowlist-bound; unsupported transports fail with `ErrorCode::ServiceUnavailable`
-instead of an unknown-command failure.
+host router. `FsWatch` now uses the native `notify` backend and `Ws` uses a
+bounded `tungstenite` worker transport for host-allowlisted `ws://` connections
+on all desktop targets. `Menu` remains an explicit `service_unavailable`
+surface until its native transport is wired. All three remain
+capability-gated and allowlist-bound; unsupported transports fail with
+`ErrorCode::ServiceUnavailable` instead of an unknown-command failure.
 
 A regression test (`host_router_regression_tests`) now builds the EXACT production
 router (no test-only router) and asserts `Router::is_known(id)` for every catalog
@@ -220,8 +221,9 @@ command in `kiri_core::commands::COMMANDS` (the single source of truth), plus a
 targeted check that ids 66-73 are registered. If any `with_*` surface is dropped
 from `build_host_router` again, this test fails loudly instead of silently
 returning `ProtocolError`. CLAIM UPDATE: cli/fs-watch/ws/menu are correctly wired
-into the production host router on all three OSes; fs-watch has a native
-transport, while ws/menu are explicitly tracked as transport gaps. Evidence:
+into the production host router on all three OSes; fs-watch and bounded ws have
+native transports, while menu remains explicitly tracked as a transport gap.
+Evidence:
 `cargo test -p kiri-runtime
 host_router_regression_tests` (2 passing); `cargo clippy -p kiri-runtime
 --all-targets -D warnings` (macOS) and `cargo clippy --target

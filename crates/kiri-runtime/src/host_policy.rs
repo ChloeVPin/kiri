@@ -38,6 +38,13 @@ pub fn fs_watch_targets() -> Vec<kiri_core::fs_watch::WatchTarget> {
     ]
 }
 
+/// Host-owned WebSocket URLs. The seed keeps network use local and explicit;
+/// an application release should replace this policy with its own signed
+/// configuration rather than widening it from frontend JavaScript.
+pub fn ws_allow_urls() -> Vec<String> {
+    vec!["ws://127.0.0.1:8765".to_string(), "ws://localhost:8765".to_string()]
+}
+
 /// Host allowlist for `kiri.shell.run`. Default-deny: only the exact program
 /// + arg prefix below may spawn. The seed entry is a harmless readonly probe.
 pub fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {

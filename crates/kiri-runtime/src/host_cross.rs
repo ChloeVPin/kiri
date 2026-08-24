@@ -377,8 +377,8 @@ pub(crate) fn build_host_router(
         kiri_core::limits::Limits::default(),
     ))
     .with_ws(kiri_core::websocket::WsService::new(
-        Arc::new(kiri_core::websocket::DisabledWs),
-        kiri_core::websocket::WsAllowlist::new(vec![]),
+        Arc::new(crate::ws_ctl::NativeWsBackend::new()),
+        kiri_core::websocket::WsAllowlist::new(crate::host_policy::ws_allow_urls()),
         kiri_core::limits::Limits::default(),
     ))
     .with_menu(kiri_core::app_menu::MenuService::new(

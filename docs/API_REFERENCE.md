@@ -232,8 +232,11 @@ Structured, allowlist-scoped argv. Exceeds Tauri's raw `process.argv`.
 
 ## WebSocket (ids 69–71)
 
-Host-allowlisted URL. A granted capability cannot reach an unapproved
-origin.
+Host-allowlisted URL. A granted capability cannot reach an unapproved origin.
+The current seed host policy permits local `ws://127.0.0.1:8765` and
+`ws://localhost:8765` connections; TLS WebSockets are rejected until a pinned
+TLS policy is available. Network I/O runs off the WebView dispatch path and
+inbound messages are drained through a bounded host queue.
 
 | Method | Id | Capability | Returns |
 |--------|----|------------|---------|

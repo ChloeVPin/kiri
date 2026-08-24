@@ -1119,8 +1119,8 @@ fn attach_windows_surface(
             kiri_core::limits::Limits::default(),
         )),
         Surface::Ws => router.with_ws(kiri_core::websocket::WsService::new(
-            std::sync::Arc::new(kiri_core::websocket::DisabledWs),
-            kiri_core::websocket::WsAllowlist::new(vec![]),
+            std::sync::Arc::new(crate::ws_ctl::NativeWsBackend::new()),
+            kiri_core::websocket::WsAllowlist::new(crate::host_policy::ws_allow_urls()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Menu => router.with_menu(kiri_core::app_menu::MenuService::new(
