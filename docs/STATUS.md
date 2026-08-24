@@ -72,8 +72,10 @@ open because its platform objects are event-loop-affine.
 
 The corpus task queue currently marks T001-T008 and T010 complete, with T009
 still in progress. T008's implementation and hosted evidence are summarized
-in [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). T009 requires the
-remaining stable hosted comparison evidence before it can be called complete.
+in [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). Run `32696370579`
+provides complete macOS and Windows Kiri/Tauri startup and IPC artifacts, but
+the Windows Wry/Tao startup baseline is incomplete after its 20-second warmup
+timeout, so T009 remains open for a stable three-way set.
 
 ## Open work
 

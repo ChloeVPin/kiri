@@ -94,10 +94,12 @@ both (id 3 / id 4).
   windows-latest (hard native gate) and ubuntu-latest (soft GPU probe) on every
   push/PR; re-run via `gh run rerun` or just push.
 - `controlled-performance.yml` now runs on public hosted macOS and Windows
-  runners. Actions run `31988662774` completed both hosted jobs and produced
-  startup, IPC, and binary-size artifacts. The Windows Wry/Tao startup sample
-  set still contains only one 20.7-second sample, so it is not treated as a
-  stable three-way Windows comparison; Kiri/Tauri and IPC results are usable.
+  runners. Actions run `32696370579` completed both hosted jobs and produced
+  startup, IPC, and binary-size artifacts. The Windows Wry/Tao startup
+  baseline is explicitly incomplete after its 20-second warmup timeout, so it
+  is not treated as a stable three-way Windows comparison; Kiri/Tauri and IPC
+  results are usable. The current interpretation is recorded in
+  [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
 - T008 WebView2 shared-buffer is verified on real Windows; see
   [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). T009 remains open only
   for a stable hosted comparison set.

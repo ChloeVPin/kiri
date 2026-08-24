@@ -203,6 +203,51 @@ Kiri is ~3.7× smaller than the Tauri baseline and ~1.6× larger than the
 thin wry/tao baseline (Kiri carries the control plane). Footprint vs Tauri
 is a real, measured edge.
 
+## T009 current hosted evidence: macOS + Windows (commit `0d7e9a6`, run `32696370579`)
+
+This is the first complete run after the Kiri-first artifact ordering and
+bounded-failure changes. Each startup target used 20 measured launches with
+three warmups; IPC used 20 batch iterations at six payload sizes. Values below
+are process wall-clock medians/p95s for startup and batch means in milliseconds
+for IPC. GitHub-hosted runners are directional evidence, not a universal
+hardware claim.
+
+| runner | Kiri startup p50/p95 | Tauri startup p50/p95 | Wry/Tao status |
+|--------|----------------------:|----------------------:|----------------|
+| macos-latest | 1,819.6 / 1,952.1 | 1,641.4 / 1,919.6 | complete: 1,730.4 / 1,893.8 |
+| windows-latest | 831.2 / 850.7 | 826.5 / 858.2 | incomplete: warmup timeout at 20 s |
+
+Kiri does not win startup in this run: Tauri is faster on both runners within
+the observed distributions, with Windows effectively close at the reported
+precision. This is evidence against an unconditional Kiri startup advantage.
+
+Hosted through-webview IPC batch means:
+
+| payload | Win Kiri | Win Tauri | Mac Kiri | Mac Tauri |
+|---------:|---------:|----------:|---------:|----------:|
+| 0 B | 0.260 | 1.720 | 0.600 | 1.600 |
+| 64 B | 0.175 | 1.600 | 0.750 | 0.900 |
+| 1 KiB | 0.225 | 1.655 | 0.400 | 0.600 |
+| 16 KiB | 0.780 | 2.350 | 0.800 | 0.850 |
+| 256 KiB | 4.870 | 10.385 | 3.250 | 2.400 |
+| ~1 MiB | 19.480 | 38.080 | 4.300 | 5.100 |
+
+Kiri is faster for the largest payload on both runners and for most smaller
+payloads, but macOS at 256 KiB is a counterexample. This supports a scoped IPC
+throughput advantage, not a blanket performance claim. All six IPC sizes
+completed for both Kiri and Tauri.
+
+Unstripped release binary sizes from this run:
+
+| runner | Kiri | Wry/Tao | Tauri |
+|--------|-----:|--------:|------:|
+| macOS | 2,779,824 | 1,664,528 | 10,058,640 |
+| Windows | 1,963,008 | 901,120 | 8,663,552 |
+
+Kiri is smaller than the Tauri baseline on both runners. Wry/Tao is smaller
+because it does not include Kiri's control plane and native capability layer.
+Raw artifacts are retained by the Actions run above.
+
 ## T009 hosted macOS + Windows (commit `6e0c6ef`, workflow `controlled-performance`)
 
 `windows-latest` and `macos-latest` after fixing WebView2 replies
