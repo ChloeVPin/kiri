@@ -5,13 +5,12 @@ repeatedly and writes a JSON result containing samples and environment
 metadata. It is deliberately generic so each baseline can expose the same
 scenario command.
 
-On POSIX hosts, each measured child also records user CPU, system CPU, and
-the child RSS high-water mark using Python's standard `resource` module. The
-RSS value is a process-group high-water mark across waited-for children, not a
-per-sample delta. Windows currently records
-`child_resource_accounting: unavailable`; its equivalent process sampler is
-tracked separately rather than presenting an elapsed-time result as a memory
-claim.
+Each measured child records user CPU, system CPU, and an RSS high-water mark.
+POSIX uses Python's standard `resource` module; Windows uses the native
+Kernel32/PSAPI process APIs while the child is running. POSIX `ru_maxrss` is a
+process-group high-water mark across waited-for children, not a per-sample
+delta. Windows samples the child working set at a bounded interval, so its
+RSS value is an observed peak and can miss a short-lived maximum.
 
 Example:
 

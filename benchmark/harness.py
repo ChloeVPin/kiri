@@ -7,6 +7,54 @@ try:
 except ImportError:  # Windows does not expose POSIX child accounting.
     resource = None
 
+if platform.system() == 'Windows':
+    import ctypes
+    from ctypes import wintypes
+
+    class _FileTime(ctypes.Structure):
+        _fields_ = [('low', wintypes.DWORD), ('high', wintypes.DWORD)]
+
+    class _ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [
+            ('cb', wintypes.DWORD), ('page_fault_count', wintypes.DWORD),
+            ('peak_working_set', ctypes.c_size_t), ('working_set', ctypes.c_size_t),
+            ('quota_peak_paged_pool', ctypes.c_size_t), ('quota_paged_pool', ctypes.c_size_t),
+            ('quota_peak_non_paged_pool', ctypes.c_size_t), ('quota_non_paged_pool', ctypes.c_size_t),
+            ('pagefile_usage', ctypes.c_size_t), ('peak_pagefile_usage', ctypes.c_size_t),
+        ]
+
+    _kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    _psapi = ctypes.WinDLL('psapi', use_last_error=True)
+    _kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    _kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(_FileTime), ctypes.POINTER(_FileTime), ctypes.POINTER(_FileTime), ctypes.POINTER(_FileTime)]
+    _psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(_ProcessMemoryCounters), wintypes.DWORD]
+
+    def windows_usage(pid):
+        handle = _kernel32.OpenProcess(0x1000 | 0x0400, False, pid)
+        if not handle:
+            return None
+        try:
+            counters = _ProcessMemoryCounters()
+            counters.cb = ctypes.sizeof(counters)
+            if not _psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+                return None
+            creation, exit_time, kernel, user = (_FileTime() for _ in range(4))
+            if not _kernel32.GetProcessTimes(handle, ctypes.byref(creation), ctypes.byref(exit_time), ctypes.byref(kernel), ctypes.byref(user)):
+                return {'rss_bytes': int(counters.working_set)}
+            def filetime_ms(value):
+                return ((value.high << 32) | value.low) / 10000.0
+            return {
+                'rss_bytes': int(counters.working_set),
+                'user_ms': filetime_ms(user),
+                'system_ms': filetime_ms(kernel),
+            }
+        finally:
+            _kernel32.CloseHandle(handle)
+else:
+    windows_usage = None
+
 
 def percentile(values, p):
     if not values:
@@ -43,7 +91,11 @@ def main():
         'processor': platform.processor(),
         'python': platform.python_version(),
         'cpu_count': os.cpu_count(),
-        'child_resource_accounting': 'posix-resource' if resource is not None else 'unavailable',
+        'child_resource_accounting': (
+            'posix-resource' if resource is not None
+            else 'windows-psapi' if windows_usage is not None
+            else 'unavailable'
+        ),
     }
 
     def child_usage():
@@ -68,6 +120,36 @@ def main():
             'child_max_rss_bytes_high_water': after['max_rss_bytes'],
         }
 
+    def run_once():
+        if windows_usage is None:
+            return subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout_seconds,
+            ), {}
+        started = time.monotonic()
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        peak_rss = 0
+        last_usage = None
+        while proc.poll() is None:
+            last_usage = windows_usage(proc.pid) or last_usage
+            if last_usage:
+                peak_rss = max(peak_rss, last_usage.get('rss_bytes', 0))
+            if time.monotonic() - started >= args.timeout_seconds:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                raise subprocess.TimeoutExpired(command, args.timeout_seconds, output=stdout, stderr=stderr)
+            time.sleep(0.02)
+        stdout, stderr = proc.communicate()
+        final_usage = windows_usage(proc.pid) or last_usage or {}
+        usage = {
+            'child_user_ms': final_usage.get('user_ms', 0.0),
+            'child_system_ms': final_usage.get('system_ms', 0.0),
+            'child_max_rss_bytes_high_water': max(peak_rss, final_usage.get('rss_bytes', 0)),
+        }
+        return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr), usage
+
     for _ in range(args.warmups):
         subprocess.run(
             command,
@@ -82,13 +164,9 @@ def main():
     for i in range(args.runs):
         t0 = time.perf_counter_ns()
         usage_before = child_usage()
+        native_usage = {}
         try:
-            proc = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                timeout=args.timeout_seconds,
-            )
+            proc, native_usage = run_once()
         except subprocess.TimeoutExpired as exc:
             elapsed_ms = (time.perf_counter_ns() - t0) / 1_000_000
             runs.append({
@@ -100,7 +178,7 @@ def main():
                     (exc.stderr or '') +
                     f'benchmark command timed out after {args.timeout_seconds:g}s'
                 )[-4096:],
-                **usage_delta(usage_before, child_usage()),
+                **(native_usage or usage_delta(usage_before, child_usage())),
             })
             samples_ms.append(elapsed_ms)
             break
@@ -114,7 +192,7 @@ def main():
             'returncode': proc.returncode,
             'stdout': proc.stdout[-4096:],
             'stderr': proc.stderr[-4096:],
-            **usage_delta(usage_before, usage_after),
+            **(native_usage or usage_delta(usage_before, usage_after)),
         })
         if proc.returncode != 0:
             break
