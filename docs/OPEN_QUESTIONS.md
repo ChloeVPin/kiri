@@ -52,9 +52,11 @@ form (`PathScope::canonicalize` on Windows will produce `C:\...` paths).
 
 ## Q-005: backpressure policy for the webview → host channel
 
-T006 requires bounded IPC backpressure. Current design notes in
-`docs/research/` assume a high-water mark plus drop policy; the exact
-semantics (drop-newest vs. block vs. error frame) are not fixed.
+T006 requires bounded IPC backpressure. The native WebSocket transport now
+uses bounded command and inbound queues: outbound saturation returns `busy`,
+while newest inbound frames are dropped when the delivery queue is full. This
+is a bounded transport policy, but it does not prove a bounded WebView2
+`WebMessageReceived` queue.
 
 - Needed evidence: Level A - WebView2 `WebMessageReceived` delivery model
   (postMessage is async; does the host side see a bounded queue?), plus a

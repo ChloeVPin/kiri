@@ -32,7 +32,7 @@ that result and prefer the simpler path.
 ## Verification gates (run all before committing)
 
 ```sh
-cargo test --workspace                                  # 220 core + 56 runtime + 2 integration tests
+cargo test --workspace                                  # 220 core + 57 runtime + 2 integration tests
 cargo fmt --all -- --check
 cargo build -p kiri-runtime --bins                      # native host (macOS/Linux)
 ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json

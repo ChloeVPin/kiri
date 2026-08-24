@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -25,8 +25,10 @@ enum Command {
     Close,
 }
 
+const CHANNEL_CAPACITY: usize = 64;
+
 struct ActiveConnection {
-    commands: Sender<Command>,
+    commands: SyncSender<Command>,
     inbound: Receiver<WsMessage>,
 }
 
@@ -50,7 +52,7 @@ impl Default for NativeWsBackend {
 fn worker(
     mut socket: WebSocket<MaybeTlsStream<TcpStream>>,
     commands: Receiver<Command>,
-    inbound: Sender<WsMessage>,
+    inbound: SyncSender<WsMessage>,
 ) {
     if let MaybeTlsStream::Plain(stream) = socket.get_mut() {
         let _ = stream.set_nonblocking(true);
@@ -71,11 +73,12 @@ fn worker(
         }
         match socket.read() {
             Ok(Message::Text(message)) => {
-                if inbound
-                    .send(WsMessage { direction: "in".to_string(), payload: message.to_string() })
-                    .is_err()
-                {
-                    return;
+                match inbound.try_send(WsMessage {
+                    direction: "in".to_string(),
+                    payload: message.to_string(),
+                }) {
+                    Ok(()) | Err(TrySendError::Full(_)) => {}
+                    Err(TrySendError::Disconnected(_)) => return,
                 }
             }
             Ok(Message::Binary(_))
@@ -99,8 +102,8 @@ impl WsBackend for NativeWsBackend {
         let (socket, _) = connect(url)
             .map_err(|e| Error::service_unavailable(format!("kiri.ws.connect failed: {e}")))?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let (commands, command_rx) = mpsc::channel();
-        let (inbound_tx, inbound_rx) = mpsc::channel();
+        let (commands, command_rx) = mpsc::sync_channel(CHANNEL_CAPACITY);
+        let (inbound_tx, inbound_rx) = mpsc::sync_channel(CHANNEL_CAPACITY);
         thread::Builder::new()
             .name(format!("kiri-ws-{id}"))
             .spawn(move || worker(socket, command_rx, inbound_tx))
@@ -121,8 +124,13 @@ impl WsBackend for NativeWsBackend {
                 Error::resource_not_found(format!("kiri.ws unknown connection {conn_id}"))
             })?
             .commands
-            .send(Command::Send(message.to_string()))
-            .map_err(|_| Error::service_unavailable("kiri.ws connection closed"))
+            .try_send(Command::Send(message.to_string()))
+            .map_err(|error| match error {
+                TrySendError::Full(_) => Error::busy("kiri.ws outbound queue is full"),
+                TrySendError::Disconnected(_) => {
+                    Error::service_unavailable("kiri.ws connection closed")
+                }
+            })
     }
 
     fn close(&self, conn_id: u64) -> Result<()> {
@@ -134,7 +142,7 @@ impl WsBackend for NativeWsBackend {
         // A peer may have already closed the socket and dropped the worker's
         // receiver. Local close is still complete in that state because the
         // host has removed the connection from its table.
-        let _ = connection.commands.send(Command::Close);
+        let _ = connection.commands.try_send(Command::Close);
         Ok(())
     }
 
@@ -156,6 +164,16 @@ impl WsBackend for NativeWsBackend {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn transport_queues_are_bounded_and_report_saturation() {
+        let (sender, _receiver) = mpsc::sync_channel::<Command>(1);
+        sender.try_send(Command::Send("one".to_string())).expect("first slot");
+        assert!(matches!(
+            sender.try_send(Command::Send("two".to_string())),
+            Err(TrySendError::Full(_))
+        ));
+    }
 
     #[test]
     fn loopback_server_roundtrips_a_text_message() {

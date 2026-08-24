@@ -26,8 +26,8 @@ The authoritative per-platform verification record is
 execution, cross-compilation, soft probes, and blocked hardware-dependent
 checks separately.
 
-The current local workspace gate passes 278 tests (220 `kiri-core`, 2
-integration, and 56 `kiri-runtime`), formatting, native clippy, Windows target
+The current local workspace gate passes 279 tests (220 `kiri-core`, 2
+integration, and 57 `kiri-runtime`), formatting, native clippy, Windows target
 check/clippy, and both standalone baseline checks. The native macOS build,
 smoke run, and three-cycle stress run also pass. These results describe the
 current worktree and should be refreshed after substantive changes.
