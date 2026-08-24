@@ -112,6 +112,12 @@ Windows through-webview vs Tauri is measured in the hosted T009 run. T008's
 shared-buffer path and crossover evidence are documented in
 [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md).
 
+Latest bounded probe after the cross-host IPC completion fix: the Kiri
+one-size/one-run path completed and wrote its artifact, but the same local run
+failed all startup marker watchdogs and produced no Tauri IPC artifact. It is
+useful regression evidence for benchmark completion, not a Kiri-versus-Tauri
+winner and does not replace the table above.
+
 ## Tauri baseline fix (so the comparison is honest)
 
 The Tauri baseline previously never armed its smoke because of two real bugs,
