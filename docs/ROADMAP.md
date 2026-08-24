@@ -20,7 +20,8 @@ The product goal and acceptance criteria are defined in
 - Complete the remaining hosted performance comparison and retain platform and
   environment details with every result.
 - Publish replacement releases as the launcher, native capability, and
-  cross-platform workflow changes are validated; v0.1.5 is the current public
+  cross-platform workflow changes are validated; v0.1.6 is the current release
+  candidate and v0.1.4 remains the last published release until its gates pass.
   launcher-bearing release and later runtime changes remain unreleased until
   their platform gates pass.
 - Improve signed packaging and platform-native distribution when signing

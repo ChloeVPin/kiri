@@ -58,7 +58,7 @@ predates these launcher changes.
 - [x] Verify v0.1.4 through the POSIX scaffold and native Windows PowerShell
   scaffold smoke test in correctness run `32686438971`.
 
-The v0.1.5 release is the next release candidate for the native filesystem
+The v0.1.6 release is the next release candidate for the native filesystem
 watcher, bounded local WebSocket transport, benchmark resource metrics, and
 accessibility baseline changes. It must pass the same three-platform package,
 manifest, and scaffold gates before publication.

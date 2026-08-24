@@ -131,10 +131,11 @@ impl WsBackend for NativeWsBackend {
         let connection = active.remove(&conn_id).ok_or_else(|| {
             Error::resource_not_found(format!("kiri.ws unknown connection {conn_id}"))
         })?;
-        connection
-            .commands
-            .send(Command::Close)
-            .map_err(|_| Error::service_unavailable("kiri.ws connection closed"))
+        // A peer may have already closed the socket and dropped the worker's
+        // receiver. Local close is still complete in that state because the
+        // host has removed the connection from its table.
+        let _ = connection.commands.send(Command::Close);
+        Ok(())
     }
 
     fn drain(&self, conn_id: u64) -> Vec<WsMessage> {
