@@ -266,6 +266,9 @@ pub(crate) struct HostRuntime {
     pub webview_token: i64,
     pub navigation_token: i64,
     pub resource_token: i64,
+    pub menu_dispatcher: crate::menu_dispatch::MenuDispatcher,
+    pub menu_runner: std::sync::Arc<dyn kiri_core::app_menu::MenuRunner>,
+    pub native_menu: crate::native_menu_windows::NativeMenuWindows,
     /// Set once the first animation frame arrived in smoke mode; the smoke
     /// timer then posts WM_QUIT after `exit_after_ready_ms`.
     pub smoke_armed: bool,
@@ -351,6 +354,21 @@ unsafe extern "system" fn wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    if let Some(rt) = unsafe { get_runtime(hwnd) } {
+        let native_menu = &mut rt.native_menu;
+        let _ = rt.menu_dispatcher.drain(|operation| native_menu.replace(hwnd, operation));
+        while let Ok(event) = muda::MenuEvent::receiver().try_recv() {
+            if let Some((id, action)) = native_menu.action_for(&event.id) {
+                let payload = serde_json::json!({ "id": id, "action": action });
+                if let Ok(serialized) = serde_json::to_string(&payload) {
+                    exec_script(
+                        &rt.webview,
+                        &format!("window.kiri && window.kiri.onMenuAction && window.kiri.onMenuAction({serialized});"),
+                    );
+                }
+            }
+        }
+    }
     match msg {
         WM_CLOSE => {
             // The runtime stays alive until teardown after the message loop
@@ -435,6 +453,17 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
     ]
 }
 
+fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
+    tray_items()
+        .into_iter()
+        .map(|item| kiri_core::app_menu::MenuItem {
+            id: item.id,
+            label: item.label,
+            action: item.action,
+        })
+        .collect()
+}
+
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
@@ -458,6 +487,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let caller_caps = kiri_core::security::trusted_frontend_capabilities();
     let diagnostics = Diagnostics::new();
     let events = EventBus::new();
+    let (menu_dispatcher, menu_runner) = crate::menu_dispatch::MenuDispatcher::new();
     // Shared generational resource table owned by the host. The resources plugin
     // binds this exact instance via the ABI context, so kiri.open/kiri.close
     // mutate it and keep the diagnostics open-resource count honest and dynamic.
@@ -632,7 +662,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 delete window.kiri.pending[id];
                 cb(resp);
               }
-            }
+            },
+            onMenuAction: function (_action) {}
           };
           if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
             window.chrome.webview.addEventListener('message', function (e) {
@@ -797,6 +828,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         webview_token,
         navigation_token,
         resource_token,
+        menu_dispatcher,
+        menu_runner: std::sync::Arc::new(menu_runner),
+        native_menu: crate::native_menu_windows::NativeMenuWindows::new(),
         smoke_armed: false,
         ipc_bench_injected: false,
         exit_code: 0,
@@ -1124,8 +1158,8 @@ fn attach_windows_surface(
             kiri_core::limits::Limits::default(),
         )),
         Surface::Menu => router.with_menu(kiri_core::app_menu::MenuService::new(
-            std::sync::Arc::new(kiri_core::app_menu::DisabledMenu),
-            kiri_core::app_menu::MenuAllowlist::new(vec![]),
+            rt.menu_runner.clone(),
+            kiri_core::app_menu::MenuAllowlist::new(menu_items()),
             kiri_core::limits::Limits::default(),
         )),
     }

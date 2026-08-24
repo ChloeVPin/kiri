@@ -24,6 +24,8 @@ pub mod markers;
 pub mod menu_dispatch;
 #[cfg(not(target_os = "windows"))]
 pub mod native_menu;
+#[cfg(target_os = "windows")]
+pub mod native_menu_windows;
 pub mod notification_ctl;
 pub mod opener_ctl;
 pub mod output;
