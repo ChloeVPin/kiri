@@ -151,20 +151,32 @@ def main():
         return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr), usage
 
     warmup_samples_ms = []
+    warmup_error = None
     for _ in range(args.warmups):
         warmup_t0 = time.perf_counter_ns()
-        subprocess.run(
-            command,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            timeout=args.timeout_seconds,
-        )
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=args.timeout_seconds,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            elapsed_ms = (time.perf_counter_ns() - warmup_t0) / 1_000_000
+            warmup_samples_ms.append(elapsed_ms)
+            if isinstance(exc, subprocess.TimeoutExpired):
+                warmup_error = (
+                    f'benchmark warmup timed out after {args.timeout_seconds:g}s'
+                )
+            else:
+                warmup_error = f'benchmark warmup exited with return code {exc.returncode}'
+            break
         warmup_samples_ms.append((time.perf_counter_ns() - warmup_t0) / 1_000_000)
 
     samples_ms = []
     runs = []
-    for i in range(args.runs):
+    for i in range(args.runs) if warmup_error is None else []:
         t0 = time.perf_counter_ns()
         usage_before = child_usage()
         native_usage = {}
@@ -206,6 +218,7 @@ def main():
         'command': command,
         'created_unix_ns': time.time_ns(),
         'environment': env,
+        'status': 'incomplete' if warmup_error else 'complete',
         'warmups': {
             'requested': args.warmups,
             'samples_ms': warmup_samples_ms,
@@ -223,6 +236,8 @@ def main():
         },
         'runs': runs,
     }
+    if warmup_error:
+        result['error'] = warmup_error
     resource_runs = [run for run in runs if 'child_user_ms' in run]
     if resource_runs:
         result['summary'].update({
@@ -236,7 +251,7 @@ def main():
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps(result['summary'], indent=2))
-    if any(run['returncode'] != 0 for run in runs):
+    if warmup_error or any(run['returncode'] != 0 for run in runs):
         raise SystemExit(1)
 
 
