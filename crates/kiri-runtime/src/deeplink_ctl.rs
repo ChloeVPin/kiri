@@ -36,7 +36,10 @@ impl HostDeeplink {
 
 impl DeeplinkRunner for HostDeeplink {
     fn register(&self, scheme: &str) -> Result<()> {
-        self.schemes.lock().unwrap().push(scheme.to_string());
+        let mut schemes = self.schemes.lock().unwrap();
+        if !schemes.iter().any(|existing| existing == scheme) {
+            schemes.push(scheme.to_string());
+        }
         Ok(())
     }
 }

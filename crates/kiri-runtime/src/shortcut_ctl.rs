@@ -50,10 +50,15 @@ fn record(registry: &Arc<ShortcutRegistry>, accelerator: &str, action: &str) -> 
     // wry/tao event loop on macOS/Linux, RegisterHotKey on Windows). The security
     // contract is already satisfied by the core allowlist; this store is the
     // host-owned side of the binding and is safe to exercise headless.
-    registry.bindings.lock().unwrap().push(RegisteredShortcut {
-        accelerator: accelerator.to_string(),
-        action: action.to_string(),
-    });
+    let mut bindings = registry.bindings.lock().unwrap();
+    if let Some(existing) = bindings.iter_mut().find(|b| b.accelerator == accelerator) {
+        existing.action = action.to_string();
+    } else {
+        bindings.push(RegisteredShortcut {
+            accelerator: accelerator.to_string(),
+            action: action.to_string(),
+        });
+    }
     Ok(())
 }
 
