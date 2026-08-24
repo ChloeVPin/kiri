@@ -41,8 +41,14 @@ All three targets expose the same smoke contract:
 - retain raw samples
 - retain warm-up samples separately; do not mix them into cold/sample summaries
 - do not gate wall-clock regressions on a shared hosted runner
-- treat any non-zero or timed-out benchmark sample as a failed benchmark after
-  writing its diagnostic artifact; invalid comparison data must not look green
+- treat any non-zero or timed-out warm-up or measured sample as a failed
+  benchmark after writing its diagnostic artifact; invalid comparison data must
+  not look green
+
+When a warm-up cannot complete, `harness.py` writes `status: "incomplete"`, an
+`error` field, the partial warm-up timing, and an empty measured sample set
+before returning nonzero. Consumers must reject incomplete artifacts as
+comparisons while retaining them for diagnosis.
 
 ## Asset-delivery comparability
 
