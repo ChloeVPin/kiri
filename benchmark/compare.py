@@ -290,6 +290,12 @@ def print_ipc(ipc):
         values = [v for v in entry.get("rtt_ms", []) if isinstance(v, (int, float))]
         return percentile(values, 0.95), percentile(values, 0.99)
 
+    def concurrent_percentiles(entry):
+        if not entry:
+            return None, None
+        values = [v for v in entry.get("concurrent_batch_ms", []) if isinstance(v, (int, float))]
+        return percentile(values, 0.95), percentile(values, 0.99)
+
     for size in sizes:
         km = batch_mean(kiri.get(size))
         tm = batch_mean(tauri.get(size))
@@ -302,6 +308,11 @@ def print_ipc(ipc):
         k_tail = f"{kp95:.3f}/{kp99:.3f}" if kp95 is not None else "n/a"
         t_tail = f"{tp95:.3f}/{tp99:.3f}" if tp95 is not None else "n/a"
         print("  rtt p95/p99".ljust(14) + k_tail.ljust(18) + t_tail)
+        kc95, kc99 = concurrent_percentiles(kiri.get(size))
+        tc95, tc99 = concurrent_percentiles(tauri.get(size))
+        k_concurrent = f"{kc95:.3f}/{kc99:.3f}" if kc95 is not None else "n/a"
+        t_concurrent = f"{tc95:.3f}/{tc99:.3f}" if tc95 is not None else "n/a"
+        print("  concurrent p95/p99".ljust(20) + k_concurrent.ljust(18) + t_concurrent)
     print("\nPer-call performance.now() samples are often 0 or 1 ms on WKWebView;")
     print("batch-mean (total batch time / N) is the comparable figure.")
 

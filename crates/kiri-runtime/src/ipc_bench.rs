@@ -14,6 +14,8 @@ use serde_json::{json, Value};
 pub const DEFAULT_RUNS: u32 = 30;
 /// Warmup pings discarded from the sample set.
 pub const DEFAULT_WARMUP: u32 = 5;
+/// Bounded parallel requests per concurrent benchmark batch.
+pub const DEFAULT_CONCURRENCY: u32 = 8;
 /// Per-call timeout inside the page, milliseconds.
 pub const CALL_TIMEOUT_MS: u32 = 30_000;
 /// Smoke/watchdog floor when an IPC bench is running.
@@ -36,6 +38,7 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
   window.__kiriIpcBenchStarted = true;
   var RUNS = {runs};
   var WARMUP = {warmup};
+  var CONCURRENCY = {concurrency};
   var SIZES = {sizes_json};
   var TIMEOUT = {timeout};
   window.__kiriIpcSeq = window.__kiriIpcSeq || 1;
@@ -129,12 +132,22 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         samples.push(performance.now() - t0);
       }}
       var batchMs = performance.now() - tBatch;
+      var concurrentBatches = [];
+      for (var c = 0; c < RUNS; c++) {{
+        var concurrentStart = performance.now();
+        var pending = [];
+        for (var j = 0; j < CONCURRENCY; j++) pending.push(ping(payload));
+        await Promise.all(pending);
+        concurrentBatches.push(performance.now() - concurrentStart);
+      }}
       var hits = (window.__kiriSharedBufferHits || 0) - hitsBefore;
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
         batch_ms: batchMs,
         mean_from_batch_ms: batchMs / RUNS,
+        concurrent_batch_ms: concurrentBatches,
+        concurrency: CONCURRENCY,
         shared_buffer_hits: hits,
         shared_buffer_used: hits > 0
       }});
@@ -147,6 +160,7 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
 }})();"#,
         runs = runs,
         warmup = warmup,
+        concurrency = DEFAULT_CONCURRENCY,
         sizes_json = sizes_json,
         timeout = CALL_TIMEOUT_MS,
     )
@@ -163,6 +177,7 @@ pub fn tauri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
   window.__kiriIpcBenchStarted = true;
   var RUNS = {runs};
   var WARMUP = {warmup};
+  var CONCURRENCY = {concurrency};
   var SIZES = {sizes_json};
   var TIMEOUT = {timeout};
   function invokeEcho(payload) {{
@@ -191,11 +206,21 @@ pub fn tauri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         samples.push(performance.now() - t0);
       }}
       var batchMs = performance.now() - tBatch;
+      var concurrentBatches = [];
+      for (var c = 0; c < RUNS; c++) {{
+        var concurrentStart = performance.now();
+        var pending = [];
+        for (var j = 0; j < CONCURRENCY; j++) pending.push(invokeEcho(payload));
+        await Promise.all(pending);
+        concurrentBatches.push(performance.now() - concurrentStart);
+      }}
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
         batch_ms: batchMs,
-        mean_from_batch_ms: batchMs / RUNS
+        mean_from_batch_ms: batchMs / RUNS,
+        concurrent_batch_ms: concurrentBatches,
+        concurrency: CONCURRENCY
       }});
     }}
     if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {{
@@ -214,6 +239,7 @@ pub fn tauri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
 }})();"#,
         runs = runs,
         warmup = warmup,
+        concurrency = DEFAULT_CONCURRENCY,
         sizes_json = sizes_json,
         timeout = CALL_TIMEOUT_MS,
     )
@@ -249,6 +275,7 @@ fn summarize(rtt_ms: &[f64]) -> Value {
         "mean_ms": mean,
         "median_ms": percentile(&sorted, 0.5),
         "p95_ms": percentile(&sorted, 0.95),
+        "p99_ms": percentile(&sorted, 0.99),
     })
 }
 
@@ -275,6 +302,9 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 .unwrap_or_default();
             let batch_ms = item.get("batch_ms").and_then(|v| v.as_f64());
             let mean_from_batch = item.get("mean_from_batch_ms").and_then(|v| v.as_f64());
+            let concurrent_batch_ms =
+                item.get("concurrent_batch_ms").cloned().unwrap_or_else(|| json!([]));
+            let concurrency = item.get("concurrency").and_then(|v| v.as_u64());
             let shared_hits = item.get("shared_buffer_hits").and_then(|v| v.as_u64());
             let shared_used = item.get("shared_buffer_used").and_then(|v| v.as_bool());
             let mut summary = summarize(&rtt);
@@ -291,6 +321,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 "rtt_ms": rtt,
                 "batch_ms": batch_ms,
                 "mean_from_batch_ms": mean_from_batch,
+                "concurrent_batch_ms": concurrent_batch_ms,
+                "concurrency": concurrency,
                 "shared_buffer_hits": shared_hits,
                 "shared_buffer_used": shared_used.unwrap_or(false),
                 "summary": summary,
@@ -352,6 +384,8 @@ mod tests {
         assert!(script.contains("type: \"ipc_bench\""));
         assert!(script.contains("1048574"));
         assert!(script.contains("shared_buffer_used"));
+        assert!(script.contains("Promise.all(pending)"));
+        assert!(script.contains("concurrent_batch_ms"));
         assert!(!script.contains("bulk_bench"));
     }
 
@@ -361,6 +395,7 @@ mod tests {
         assert!(script.contains("kiri_echo"));
         assert!(script.contains("kiri_ipc_bench_done"));
         assert!(script.contains("__TAURI_INTERNALS__"));
+        assert!(script.contains("Promise.all(pending)"));
     }
 
     #[test]

@@ -87,7 +87,8 @@ diagnostic unless the sample count and timer resolution are recorded.
 
 `compare.py` prints startup p50/p95/p99 for each marker for both Kiri's disk
 frontend and compile-time embedded frontend, and IPC batch means
-with raw round-trip p95/p99. The report must retain both views: batch means
+with raw round-trip p95/p99 plus bounded eight-request concurrent-batch p95/p99.
+The report must retain all views: batch means
 capture throughput, while tails expose contention and scheduling regressions.
 ## T007 ordinary-message bulk-path benchmark
 

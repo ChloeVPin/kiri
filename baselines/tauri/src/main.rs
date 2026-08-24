@@ -53,6 +53,14 @@ fn ipc_bench_warmup() -> u32 {
     std::env::var("KIRI_IPC_BENCH_WARMUP").ok().and_then(|v| v.parse().ok()).unwrap_or(5)
 }
 
+fn ipc_bench_concurrency() -> u32 {
+    std::env::var("KIRI_IPC_BENCH_CONCURRENCY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|v: &u32| *v > 0)
+        .unwrap_or(8)
+}
+
 fn ipc_bench_out() -> std::path::PathBuf {
     std::env::var("KIRI_IPC_BENCH_OUT")
         .map(std::path::PathBuf::from)
@@ -148,6 +156,24 @@ fn now_ns() -> u64 {
     Instant::now().duration_since(t0).as_nanos() as u64
 }
 
+fn percentile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let rank = (sorted.len() - 1) as f64 * p;
+    let lower = rank.floor() as usize;
+    let upper = (lower + 1).min(sorted.len() - 1);
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let fraction = rank - lower as f64;
+        sorted[lower] * (1.0 - fraction) + sorted[upper] * fraction
+    }
+}
+
 /// Shared marker state; recorded from the IPC command thread and read by the
 /// smoke/watchdog poll thread.
 struct MarkerState(Arc<Mutex<Markers>>);
@@ -225,6 +251,7 @@ fn tauri_ipc_bench_script(runs: u32, warmup: u32) -> String {
   window.__kiriIpcBenchStarted = true;
   var RUNS = {runs};
   var WARMUP = {warmup};
+  var CONCURRENCY = {concurrency};
   var SIZES = {sizes_json};
   function invokeEcho(payload) {{
     if (!window.__TAURI_INTERNALS__ || typeof window.__TAURI_INTERNALS__.invoke !== "function") {{
@@ -250,11 +277,21 @@ fn tauri_ipc_bench_script(runs: u32, warmup: u32) -> String {
         samples.push(performance.now() - t0);
       }}
       var batchMs = performance.now() - tBatch;
+      var concurrentBatches = [];
+      for (var c = 0; c < RUNS; c++) {{
+        var concurrentStart = performance.now();
+        var pending = [];
+        for (var j = 0; j < CONCURRENCY; j++) pending.push(invokeEcho(payload));
+        await Promise.all(pending);
+        concurrentBatches.push(performance.now() - concurrentStart);
+      }}
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
         batch_ms: batchMs,
-        mean_from_batch_ms: batchMs / RUNS
+        mean_from_batch_ms: batchMs / RUNS,
+        concurrent_batch_ms: concurrentBatches,
+        concurrency: CONCURRENCY
       }});
     }}
     await window.__TAURI_INTERNALS__.invoke("kiri_ipc_bench_done", {{
@@ -269,6 +306,7 @@ fn tauri_ipc_bench_script(runs: u32, warmup: u32) -> String {
 }})();"#,
         runs = runs,
         warmup = warmup,
+        concurrency = ipc_bench_concurrency(),
         sizes_json = sizes_json,
     )
 }
@@ -300,16 +338,25 @@ fn write_ipc_artifact(raw: &str) {
             };
             let batch_ms = item.get("batch_ms").and_then(|v| v.as_f64());
             let mean_from_batch = item.get("mean_from_batch_ms").and_then(|v| v.as_f64());
+            let concurrent_batch_ms = item
+                .get("concurrent_batch_ms")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!([]));
+            let concurrency = item.get("concurrency").and_then(|v| v.as_u64());
             results_out.push(serde_json::json!({
                 "size_bytes": item.get("size_bytes").cloned().unwrap_or(Value::from(0)),
                 "rtt_ms": rtt,
                 "batch_ms": batch_ms,
                 "mean_from_batch_ms": mean_from_batch,
+                "concurrent_batch_ms": concurrent_batch_ms,
+                "concurrency": concurrency,
                 "summary": {
                     "min_ms": sorted.first().copied().unwrap_or(0.0),
                     "max_ms": sorted.last().copied().unwrap_or(0.0),
                     "mean_ms": mean,
                     "median_ms": median,
+                    "p95_ms": percentile(&sorted, 0.95),
+                    "p99_ms": percentile(&sorted, 0.99),
                     "batch_ms": batch_ms,
                     "mean_from_batch_ms": mean_from_batch,
                 }
