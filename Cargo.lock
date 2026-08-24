@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "kiri-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "base64",
  "ed25519-dalek",
@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "kiri-runtime"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arboard",
  "kiri-core",
