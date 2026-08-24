@@ -55,8 +55,8 @@ predates these launcher changes.
 - [x] Local packaging with the production Keychain key emits a verifiable
   signed manifest.
 - [x] Publish v0.1.4 containing the current launchers.
-- [x] Verify v0.1.4 through the POSIX scaffold and native Windows CI syntax
-  validation; native PowerShell execution remains a follow-up environment test.
+- [x] Verify v0.1.4 through the POSIX scaffold and native Windows PowerShell
+  scaffold smoke test in correctness run `32686438971`.
 
 Measured startup, IPC, binary-size, and bulk-data results are maintained in
 [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) and
