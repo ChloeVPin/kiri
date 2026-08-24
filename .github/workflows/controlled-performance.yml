@@ -61,8 +61,12 @@ jobs:
       - name: Build Kiri host (release)
         run: cargo build --release -p kiri-runtime --bin kiri-host
       - name: Build Wry/Tao baseline (release)
+        timeout-minutes: 12
+        continue-on-error: true
         run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
       - name: Build Tauri baseline (release)
+        timeout-minutes: 12
+        continue-on-error: true
         run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
 
       - name: Startup benchmark (Kiri host)
@@ -89,6 +93,15 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
 
+      - name: Upload Kiri startup artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ matrix.os }}-kiri-startup
+          path: artifacts/startup-kiri*.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Startup benchmark (Kiri host, software WebView2 appendix)
         shell: pwsh
         if: runner.os == 'Windows'
@@ -98,6 +111,7 @@ jobs:
 
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
+        continue-on-error: true
         run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
       - name: Startup benchmark (Wry/Tao baseline)
         shell: pwsh
@@ -108,9 +122,11 @@ jobs:
       - name: Startup benchmark (Tauri baseline)
         shell: pwsh
         if: runner.os == 'Windows'
+        continue-on-error: true
         run: python benchmark/harness.py --name startup-tauri --runs 20 --timeout-seconds 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
       - name: Startup benchmark (Tauri baseline)
         if: runner.os == 'macOS'
+        continue-on-error: true
         run: python3 benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- ./baselines/tauri/target/release/tauri-baseline --smoke
 
       - name: Upload startup benchmark artifacts
@@ -135,6 +151,7 @@ jobs:
 
       - name: Through-webview IPC (Tauri)
         if: runner.os == 'macOS'
+        continue-on-error: true
         timeout-minutes: 8
         run: KIRI_IPC_BENCH=1 KIRI_IPC_BENCH_RUNS=20 KIRI_IPC_BENCH_OUT=artifacts/ipc-tauri.json ./baselines/tauri/target/release/tauri-baseline
       - name: Through-webview IPC (Tauri)
