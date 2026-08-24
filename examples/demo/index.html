@@ -65,6 +65,14 @@
     }
     button:hover { border-color: var(--rust); }
     button:focus-visible { outline: 2px solid var(--rust); outline-offset: 1px; }
+    .skip-link {
+      position: absolute; left: 0.75rem; top: -3rem; z-index: 2;
+      padding: 0.5rem 0.75rem; background: var(--bone); color: var(--ink);
+    }
+    .skip-link:focus { top: 0.75rem; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
     button.danger { color: var(--err); }
     .log {
       background: var(--soot); border: 1px solid var(--line); border-radius: 6px;
@@ -81,20 +89,24 @@
       border: 1px solid var(--line); border-radius: 4px; padding: 8px;
       font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical;
     }
+    label[for="notepad"] {
+      display: block; margin-bottom: 0.35rem; color: var(--bone); font-size: 12px;
+    }
     .toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ash); }
     .toggle input { accent-color: var(--rust); }
   </style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <div class="shell">
     <header>
       <img src="kiri.svg" alt="">
       <h1>Kiri</h1>
       <span class="ver" id="ver">…</span>
       <span class="spacer"></span>
-      <span class="status" id="status">connecting</span>
+      <span class="status" id="status" role="status" aria-live="polite">connecting</span>
     </header>
-    <main>
+    <main id="main-content">
       <section>
         <h2>System</h2>
         <div class="grid">
@@ -165,6 +177,7 @@
         <h2>Notepad (host-owned store)</h2>
         <div class="card">
           <p>Persisted through <code>kiri.store.set</code> in a host-approved namespace. Reload the app — the text survives.</p>
+          <label for="notepad">Notes</label>
           <textarea id="notepad" placeholder="Type here, then reload the window…"></textarea>
           <div class="actions" style="margin-top:8px">
             <button id="store-save">Save</button>
@@ -187,7 +200,7 @@
 
       <section>
         <h2>Activity log</h2>
-        <div class="log" id="log">
+        <div class="log" id="log" role="log" aria-live="polite" aria-label="Activity log">
           <div class="entry"><span class="ts">--:--:--</span> waiting for bridge…</div>
         </div>
       </section>
