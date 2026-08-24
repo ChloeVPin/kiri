@@ -71,6 +71,10 @@ fn serve_kiri(
     };
     builder.body(body).unwrap()
 }
+
+fn ipc_benchmark_ready(markers: &StartupMarkers) -> bool {
+    markers.has(Marker::FirstAnimationFrame) || markers.has(Marker::DomReady)
+}
 /// Post a control-plane response back to the page via the shared webview
 /// slot. Best-effort: if the webview is not ready yet, the message is dropped
 /// (the page can re-issue). Responses carry the request id for correlation.
@@ -628,7 +632,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::process::exit(2);
             }
             let has_frame = markers.borrow().has(Marker::FirstAnimationFrame);
-            let ipc_ready = has_frame || markers.borrow().has(Marker::DomReady);
+            let ipc_ready = ipc_benchmark_ready(&markers.borrow());
             if has_frame && !smoke_armed {
                 smoke_armed = true;
                 frame_at = Some(Instant::now());
@@ -684,6 +688,19 @@ mod host_router_regression_tests {
     use kiri_core::resources::ResourceTable;
     use kiri_core::window::{WindowController, WindowState};
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn ipc_benchmark_can_arm_after_dom_ready_without_animation_frame() {
+        let mut markers = super::StartupMarkers::new();
+        markers.record(super::Marker::DomReady, 10);
+        assert!(super::ipc_benchmark_ready(&markers));
+    }
+
+    #[test]
+    fn ipc_benchmark_does_not_arm_before_dom_or_animation_frame() {
+        let markers = super::StartupMarkers::new();
+        assert!(!super::ipc_benchmark_ready(&markers));
+    }
 
     // Headless no-op controllers so the production router can be built in a
     // test without opening a window or touching the OS clipboard.
