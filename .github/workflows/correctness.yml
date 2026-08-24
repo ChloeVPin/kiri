@@ -49,6 +49,15 @@ jobs:
             $errors | Format-List | Out-String | Write-Error
             exit 1
           }
+      - if: runner.os == 'Windows'
+        name: Scaffold app from published release
+        shell: pwsh
+        run: |
+          $destination = Join-Path $env:RUNNER_TEMP 'kiri-scaffold-smoke'
+          & "$env:GITHUB_WORKSPACE/tools/create-kiri-app.ps1" $destination
+          if (-not (Test-Path (Join-Path $destination 'bin/kiri-host.exe'))) { exit 1 }
+          if (-not (Test-Path (Join-Path $destination 'frontend/index.html'))) { exit 1 }
+          if (-not (Test-Path (Join-Path $destination 'run.cmd'))) { exit 1 }
 
       - if: runner.os == 'Linux'
         name: Install Linux system dependencies
