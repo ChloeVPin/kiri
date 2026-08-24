@@ -39,8 +39,8 @@ pub fn fs_watch_targets() -> Vec<kiri_core::fs_watch::WatchTarget> {
 }
 
 /// Host-owned WebSocket URLs. The seed keeps network use local and explicit;
-/// an application release should replace this policy with its own signed
-/// configuration rather than widening it from frontend JavaScript.
+/// an application release may add exact `wss://` URLs to its signed policy;
+/// frontend JavaScript cannot widen this list.
 pub fn ws_allow_urls() -> Vec<String> {
     vec!["ws://127.0.0.1:8765".to_string(), "ws://localhost:8765".to_string()]
 }

@@ -3,8 +3,9 @@
 //! The public service performs the exact URL allowlist check before this
 //! transport is called. Connections are owned by worker threads so WebView
 //! dispatch never blocks on network reads. This first transport intentionally
-//! supports `ws://` only; TLS URLs remain unavailable until a pinned TLS
-//! policy and certificate strategy are added.
+//! supports `ws://` and `wss://`. TLS uses the platform/native certificate
+//! roots supplied by tungstenite's rustls integration; URL authorization still
+//! comes exclusively from the host-owned exact allowlist.
 
 use std::collections::HashMap;
 use std::io::ErrorKind;
@@ -94,10 +95,8 @@ fn worker(
 
 impl WsBackend for NativeWsBackend {
     fn open(&self, url: &str) -> Result<u64> {
-        if !url.starts_with("ws://") {
-            return Err(Error::service_unavailable(
-                "kiri.ws currently supports ws:// only; TLS transport is not enabled",
-            ));
+        if !(url.starts_with("ws://") || url.starts_with("wss://")) {
+            return Err(Error::service_unavailable("kiri.ws supports ws:// and wss:// URLs only"));
         }
         let (socket, _) = connect(url)
             .map_err(|e| Error::service_unavailable(format!("kiri.ws.connect failed: {e}")))?;

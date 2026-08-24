@@ -65,8 +65,8 @@ Measured startup, IPC, binary-size, and bulk-data results are maintained in
 [`../benchmark/README.md`](../benchmark/README.md). Results must retain their
 environment and measurement method.
 
-The runtime now has native `notify` filesystem watching and bounded local
-`ws://` WebSocket transport on the desktop hosts. The application-menu command
+The runtime now has native `notify` filesystem watching and bounded `ws://` /
+`wss://` WebSocket transport on the desktop hosts. The application-menu command
 surface remains registered and allowlisted, but native menu rendering is still
 open because its platform objects are event-loop-affine.
 
