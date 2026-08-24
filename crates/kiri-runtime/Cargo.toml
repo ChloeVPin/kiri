@@ -17,6 +17,7 @@ path = "src/bin/kiri-host-stress.rs"
 kiri-core = { path = "../kiri-core" }
 serde.workspace = true
 serde_json.workspace = true
+notify = "8.2.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 arboard = "3"

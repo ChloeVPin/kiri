@@ -997,6 +997,7 @@ fn attach_windows_surface(
                 kiri_core::capabilities::PathScope::new(std::env::temp_dir().join("kiri-fs"));
             fs_scope.read = true;
             fs_scope.write = true;
+            let _ = std::fs::create_dir_all(&fs_scope.root);
             router.with_fs_service(
                 kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
                     .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
@@ -1113,8 +1114,8 @@ fn attach_windows_surface(
         Surface::Cli => router
             .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>())),
         Surface::FsWatch => router.with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
-            std::sync::Arc::new(kiri_core::fs_watch::DisabledFsWatch),
-            kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+            std::sync::Arc::new(crate::fs_watch_ctl::NativeFsWatchBackend::new()),
+            kiri_core::fs_watch::FsWatchAllowlist::new(crate::host_policy::fs_watch_targets()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Ws => router.with_ws(kiri_core::websocket::WsService::new(

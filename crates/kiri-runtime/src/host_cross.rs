@@ -191,6 +191,7 @@ pub(crate) fn build_host_router(
         kiri_core::capabilities::PathScope::new(std::env::temp_dir().join("kiri-fs"));
     fs_scope.read = true;
     fs_scope.write = true;
+    let _ = std::fs::create_dir_all(&fs_scope.root);
     crate::plugins::PluginHost::build_router_with_plugins(
         diagnostics,
         resources,
@@ -371,8 +372,8 @@ pub(crate) fn build_host_router(
     )
     .with_cli(kiri_core::cli::CliService::new(std::env::args().collect::<Vec<String>>()))
     .with_fs_watch(kiri_core::fs_watch::FsWatchService::new(
-        Arc::new(kiri_core::fs_watch::DisabledFsWatch),
-        kiri_core::fs_watch::FsWatchAllowlist::new(vec![]),
+        Arc::new(crate::fs_watch_ctl::NativeFsWatchBackend::new()),
+        kiri_core::fs_watch::FsWatchAllowlist::new(crate::host_policy::fs_watch_targets()),
         kiri_core::limits::Limits::default(),
     ))
     .with_ws(kiri_core::websocket::WsService::new(

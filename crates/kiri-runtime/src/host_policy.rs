@@ -22,6 +22,22 @@ pub fn fs_glob_patterns() -> Vec<String> {
     vec!["data/**".to_string(), "config/*.json".to_string(), "*.log".to_string()]
 }
 
+/// Host-owned filesystem-watch targets. The seed watches only the runtime's
+/// bounded temporary application directory; frontend code cannot widen it.
+pub fn fs_watch_targets() -> Vec<kiri_core::fs_watch::WatchTarget> {
+    let root = std::env::temp_dir().join("kiri-fs").to_string_lossy().into_owned();
+    vec![
+        kiri_core::fs_watch::WatchTarget {
+            path: root.clone(),
+            kind: kiri_core::fs_watch::WatchKind::All,
+        },
+        kiri_core::fs_watch::WatchTarget {
+            path: root,
+            kind: kiri_core::fs_watch::WatchKind::Modify,
+        },
+    ]
+}
+
 /// Host allowlist for `kiri.shell.run`. Default-deny: only the exact program
 /// + arg prefix below may spawn. The seed entry is a harmless readonly probe.
 pub fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
