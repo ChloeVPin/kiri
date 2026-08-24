@@ -75,6 +75,6 @@ demo (examples/demo) now ship.
 Fastest path to exceed on every winnable dimension:
 All currently implemented desktop surface gaps (G-9, G-13, G-5, G-10, and
 bounded G-11) have headless or loopback evidence. G-12 native menu transport,
-G-3 OS signing/distribution, TLS WebSockets, ecosystem breadth, and G-1 mobile
+G-3 OS signing/distribution, production `wss://` policy entries, ecosystem breadth, and G-1 mobile
 remain open.
 Mac and all preserve the security model.

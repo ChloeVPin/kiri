@@ -28,7 +28,8 @@ The product goal and acceptance criteria are defined in
   host-owned authorization model.
 - Complete native application-menu rendering and activation routing without
   weakening the event-loop/thread-affinity boundary.
-- Add pinned TLS WebSocket transport after certificate and trust policy review.
+- Add approved signed `wss://` host-policy entries after certificate and trust
+  policy review; the transport already uses native certificate roots.
 
 ## Tracking documents
 
