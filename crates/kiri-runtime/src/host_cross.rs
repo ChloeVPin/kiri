@@ -487,7 +487,13 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let ipc_bench_out = ipc_bench_out.clone();
             move |msg| {
                 if std::env::var_os("KIRI_DEBUG").is_some() {
-                    eprintln!("[kiri-debug] IPC message uri={} body={}", msg.uri(), msg.body());
+                    // Debug mode must not turn into a payload logger. IPC
+                    // bodies may contain application data or secrets.
+                    eprintln!(
+                        "[kiri-debug] IPC message uri={} body_bytes={}",
+                        msg.uri(),
+                        msg.body().len()
+                    );
                 }
                 // Origin check: wry builds the IPC Request from the calling
                 // frame's document URL (uri), with no Origin header. We judge
