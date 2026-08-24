@@ -28,6 +28,9 @@ on:
 jobs:
   # Hosted, free on public repo. Real GPU on macOS and Windows.
   hosted-comparison:
+    # A hung WebView or baseline must produce an explicit incomplete run,
+    # never an indefinitely occupied runner with no evidence artifact.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
