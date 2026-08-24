@@ -100,6 +100,10 @@ both (id 3 / id 4).
   is not treated as a stable three-way Windows comparison; Kiri/Tauri and IPC
   results are usable. The current interpretation is recorded in
   [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md).
+
+The follow-up correctness run `32730288096` and performance run
+`32730288110` both completed successfully. Their results are retained as a
+separate run because hosted startup medians vary materially between runs.
 - T008 WebView2 shared-buffer is verified on real Windows; see
   [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). T009 remains open only
   for a stable hosted comparison set.

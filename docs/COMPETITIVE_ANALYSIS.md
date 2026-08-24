@@ -248,6 +248,15 @@ Kiri is smaller than the Tauri baseline on both runners. Wry/Tao is smaller
 because it does not include Kiri's control plane and native capability layer.
 Raw artifacts are retained by the Actions run above.
 
+The subsequent bounded-queue verification run `32730288110` also completed
+both hosted jobs. Its startup medians were Kiri 851 ms versus Tauri 1,856 ms
+on macOS, and Kiri 845 ms versus Tauri 884 ms on Windows; Wry/Tao again
+produced an incomplete Windows warmup after 20 seconds. These materially
+different macOS medians demonstrate hosted-run variance, so neither run is a
+universal startup claim. The two runs together establish that the benchmark
+workflow is repeatable and that IPC/startup conclusions must retain run,
+runner, and distribution metadata.
+
 ## T009 hosted macOS + Windows (commit `6e0c6ef`, workflow `controlled-performance`)
 
 `windows-latest` and `macos-latest` after fixing WebView2 replies

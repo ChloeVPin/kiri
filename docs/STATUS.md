@@ -70,6 +70,11 @@ The runtime now has native `notify` filesystem watching and bounded local
 surface remains registered and allowlisted, but native menu rendering is still
 open because its platform objects are event-loop-affine.
 
+Correctness run `32730288096` and controlled performance run `32730288110`
+completed successfully across the hosted desktop matrix. The performance
+artifacts retain complete Kiri/Tauri startup and IPC results; Windows Wry/Tao
+startup remains explicitly incomplete after its bounded warmup timeout.
+
 The corpus task queue currently marks T001-T008 and T010 complete, with T009
 still in progress. T008's implementation and hosted evidence are summarized
 in [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). Run `32696370579`
