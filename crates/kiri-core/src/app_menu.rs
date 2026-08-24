@@ -112,6 +112,7 @@ impl MenuService {
     /// Ids that are not on the allowlist are dropped, so the frontend can never
     /// inject an unapproved item into the native menu.
     pub fn set_menu(&self, ids: &[String]) -> Result<Value> {
+        self.limits.check_menu_items(ids.len() as u32)?;
         let mut resolved: Vec<MenuItem> = Vec::with_capacity(ids.len());
         for id in ids {
             let item = self.allowlist.resolve(id).ok_or_else(|| {

@@ -17,6 +17,8 @@ pub struct Limits {
     pub max_single_bulk_bytes: u64,
     /// Open resource handles per WebView.
     pub max_open_resources: u32,
+    /// Native menu items accepted in one application-menu snapshot.
+    pub max_menu_items: u32,
 }
 
 impl Default for Limits {
@@ -27,6 +29,7 @@ impl Default for Limits {
             max_outstanding_bulk_bytes: crate::constants::DEFAULT_MAX_OUTSTANDING_BULK_BYTES,
             max_single_bulk_bytes: crate::constants::DEFAULT_MAX_SINGLE_BULK_BYTES,
             max_open_resources: crate::constants::DEFAULT_MAX_OPEN_RESOURCES,
+            max_menu_items: 64,
         }
     }
 }
@@ -80,6 +83,16 @@ impl Limits {
             return Err(Error::limit_exceeded(format!(
                 "open resource limit {} reached",
                 self.max_open_resources
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn check_menu_items(&self, current: u32) -> Result<(), Error> {
+        if current > self.max_menu_items {
+            return Err(Error::limit_exceeded(format!(
+                "menu item count {} exceeds ceiling {}",
+                current, self.max_menu_items
             )));
         }
         Ok(())
@@ -140,5 +153,15 @@ mod tests {
             ErrorCode::LimitExceeded
         );
         assert!(l.check_open_resources(0).is_ok());
+    }
+
+    #[test]
+    fn menu_item_limit_checked() {
+        let l = Limits::default();
+        assert!(l.check_menu_items(l.max_menu_items).is_ok());
+        assert_eq!(
+            l.check_menu_items(l.max_menu_items + 1).unwrap_err().code,
+            ErrorCode::LimitExceeded
+        );
     }
 }
