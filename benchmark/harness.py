@@ -150,7 +150,9 @@ def main():
         }
         return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr), usage
 
+    warmup_samples_ms = []
     for _ in range(args.warmups):
+        warmup_t0 = time.perf_counter_ns()
         subprocess.run(
             command,
             check=True,
@@ -158,6 +160,7 @@ def main():
             stderr=subprocess.DEVNULL,
             timeout=args.timeout_seconds,
         )
+        warmup_samples_ms.append((time.perf_counter_ns() - warmup_t0) / 1_000_000)
 
     samples_ms = []
     runs = []
@@ -203,6 +206,11 @@ def main():
         'command': command,
         'created_unix_ns': time.time_ns(),
         'environment': env,
+        'warmups': {
+            'requested': args.warmups,
+            'samples_ms': warmup_samples_ms,
+            'median_ms': statistics.median(warmup_samples_ms) if warmup_samples_ms else None,
+        },
         'samples_ms': samples_ms,
         'summary': {
             'count': len(samples_ms),

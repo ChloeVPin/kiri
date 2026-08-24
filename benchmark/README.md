@@ -6,6 +6,8 @@ metadata. It is deliberately generic so each baseline can expose the same
 scenario command.
 
 Each measured child records user CPU, system CPU, and an RSS high-water mark.
+Warm-up launches are timed and retained separately from measured samples, so a
+result can distinguish warm-launch behavior from the reported sample set.
 POSIX uses Python's standard `resource` module; Windows uses the native
 Kernel32/PSAPI process APIs while the child is running. POSIX `ru_maxrss` is a
 process-group high-water mark across waited-for children, not a per-sample
@@ -37,6 +39,7 @@ All three targets expose the same smoke contract:
 - record OS, CPU, memory, WebView version, compiler, project commit, and
   frontend commit where possible
 - retain raw samples
+- retain warm-up samples separately; do not mix them into cold/sample summaries
 - do not gate wall-clock regressions on a shared hosted runner
 - treat any non-zero or timed-out benchmark sample as a failed benchmark after
   writing its diagnostic artifact; invalid comparison data must not look green
