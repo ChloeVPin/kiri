@@ -60,14 +60,6 @@ jobs:
 
       - name: Build Kiri host (release)
         run: cargo build --release -p kiri-runtime --bin kiri-host
-      - name: Build Wry/Tao baseline (release)
-        timeout-minutes: 12
-        continue-on-error: true
-        run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
-      - name: Build Tauri baseline (release)
-        timeout-minutes: 12
-        continue-on-error: true
-        run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
 
       - name: Startup benchmark (Kiri host)
         shell: pwsh
@@ -93,6 +85,13 @@ jobs:
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
 
+      - name: Startup benchmark (Kiri host, software WebView2 appendix)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        env:
+          KIRI_WEBVIEW2_ARGS: --disable-gpu
+        run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+
       - name: Upload Kiri startup artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -102,12 +101,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Startup benchmark (Kiri host, software WebView2 appendix)
-        shell: pwsh
-        if: runner.os == 'Windows'
-        env:
-          KIRI_WEBVIEW2_ARGS: --disable-gpu
-        run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+      - name: Build Wry/Tao baseline (release)
+        timeout-minutes: 12
+        continue-on-error: true
+        run: cargo build --release --manifest-path baselines/wry-tao/Cargo.toml
+      - name: Build Tauri baseline (release)
+        timeout-minutes: 12
+        continue-on-error: true
+        run: cargo build --release --manifest-path baselines/tauri/Cargo.toml
 
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
