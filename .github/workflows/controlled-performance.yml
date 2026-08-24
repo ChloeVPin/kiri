@@ -108,7 +108,7 @@ jobs:
       - name: Startup benchmark (Tauri baseline)
         shell: pwsh
         if: runner.os == 'Windows'
-        run: python benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+        run: python benchmark/harness.py --name startup-tauri --runs 20 --timeout-seconds 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
       - name: Startup benchmark (Tauri baseline)
         if: runner.os == 'macOS'
         run: python3 benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- ./baselines/tauri/target/release/tauri-baseline --smoke
