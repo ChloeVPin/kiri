@@ -124,7 +124,8 @@ const BRIDGE_SCRIPT: &str = r#"
             delete window.kiri.pending[id];
             cb(resp);
           }
-        }
+        },
+        onMenuAction: function (_action) {}
       };
     })();
 "#;
@@ -650,6 +651,19 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             // Keep the webview alive for the whole loop (owned by webview_slot).
             let _ = webview_slot.borrow();
             let _ = event;
+        }
+
+        while let Ok(menu_event) = muda::MenuEvent::receiver().try_recv() {
+            if let Some((id, action)) = native_menu.borrow().action_for(&menu_event.id) {
+                let payload = serde_json::json!({ "id": id, "action": action });
+                if let Ok(serialized) = serde_json::to_string(&payload) {
+                    if let Some(webview) = webview_slot.borrow().as_ref() {
+                        let _ = webview.evaluate_script(&format!(
+                            "window.kiri && window.kiri.onMenuAction && window.kiri.onMenuAction({serialized});"
+                        ));
+                    }
+                }
+            }
         }
 
         if smoke || ipc_bench {

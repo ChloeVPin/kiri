@@ -16,7 +16,7 @@ use crate::menu_dispatch::OperationKind;
 
 pub struct NativeMenu {
     menu: Option<Menu>,
-    item_ids: HashMap<String, muda::MenuId>,
+    item_ids: HashMap<muda::MenuId, (String, String)>,
     installed: bool,
 }
 
@@ -53,7 +53,7 @@ impl NativeMenu {
         match operation {
             OperationKind::Set(items) => self.set_items(items),
             OperationKind::Invoke { id, .. } => {
-                if self.item_ids.contains_key(id) {
+                if self.item_ids.values().any(|(item, _)| item == id) {
                     Ok(())
                 } else {
                     Err(Error::service_unavailable("kiri.menu item is not installed"))
@@ -121,16 +121,18 @@ impl NativeMenu {
         self.item_ids = items
             .iter()
             .zip(native_items.iter())
-            .map(|(item, native)| (item.id.clone(), native.id().clone()))
+            .map(|(item, native)| (native.id().clone(), (item.id.clone(), item.action.clone())))
             .collect();
-        // A later host integration will remove the old native attachment
-        // before installing this replacement. Do not claim replacement here.
         self.installed = false;
         Ok(())
     }
 
     pub fn is_installed(&self) -> bool {
         self.installed
+    }
+
+    pub fn action_for(&self, id: &muda::MenuId) -> Option<(&str, &str)> {
+        self.item_ids.get(id).map(|(item, action)| (item.as_str(), action.as_str()))
     }
 }
 

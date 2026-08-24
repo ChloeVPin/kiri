@@ -567,6 +567,9 @@
       },
     },
     menu: {
+      onAction: function (callback) {
+        window.kiri.onMenuAction = typeof callback === "function" ? callback : function () {};
+      },
       set: function (ids) {
         return call("kiri.menu.set", { ids: ids }).then(function (r) {
           return { items: r.items };
