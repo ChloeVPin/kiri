@@ -141,7 +141,7 @@ Priority is by (impact on "take their customers") x (feasibility from macOS now)
       dialog/shortcut/autostart/store/deeplink/opener/window-state). T009's stable
       three-way hosted comparison remains open; T008 is verified by the Windows
       artifact and `SHARED_BUFFER_REPORT.md`. `cargo test
-      --workspace` green (276 tests: 220 kiri-core + 2 integration + 54 kiri-runtime). All of §6b's 17
+      --workspace` green (278 tests: 220 kiri-core + 2 integration + 56 kiri-runtime). All of §6b's 17
       ranked Mac-headless-runnable exceed-Tauri items are DONE and committed.
       three OSes; the only real constraint observed is transient Windows-runner
       provisioning congestion (runs queue, they do not fail for quota). Never
