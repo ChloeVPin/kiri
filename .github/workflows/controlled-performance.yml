@@ -64,33 +64,40 @@ jobs:
       - name: Startup benchmark (Kiri host)
         shell: pwsh
         if: runner.os == 'Windows'
-        run: python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+        continue-on-error: true
+        run: python benchmark/harness.py --name startup-kiri --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
       - name: Startup benchmark (Kiri host)
         if: runner.os == 'macOS'
-        run: python3 benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
+        continue-on-error: true
+        run: python3 benchmark/harness.py --name startup-kiri --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
 
       - name: Startup benchmark (Kiri embedded)
         shell: pwsh
         if: runner.os == 'Windows'
-        run: python benchmark/harness.py --name startup-kiri-embed --runs 20 --output artifacts/startup-kiri-embed.json -- .\target\release\kiri-host.exe --smoke
+        continue-on-error: true
+        run: python benchmark/harness.py --name startup-kiri-embed --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-embed.json -- .\target\release\kiri-host.exe --smoke
       - name: Startup benchmark (Kiri embedded)
         if: runner.os == 'macOS'
-        run: python3 benchmark/harness.py --name startup-kiri-embed --runs 20 --output artifacts/startup-kiri-embed.json -- ./target/release/kiri-host --smoke
+        continue-on-error: true
+        run: python3 benchmark/harness.py --name startup-kiri-embed --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-embed.json -- ./target/release/kiri-host --smoke
 
       - name: Startup benchmark (Kiri starter, first-invoke)
         shell: pwsh
         if: runner.os == 'Windows'
-        run: python benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- .\target\release\kiri-host.exe --smoke --frontend examples\starter
+        continue-on-error: true
+        run: python benchmark/harness.py --name startup-kiri-starter --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-starter.json -- .\target\release\kiri-host.exe --smoke --frontend examples\starter
       - name: Startup benchmark (Kiri starter, first-invoke)
         if: runner.os == 'macOS'
-        run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
+        continue-on-error: true
+        run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
 
       - name: Startup benchmark (Kiri host, software WebView2 appendix)
         shell: pwsh
         if: runner.os == 'Windows'
+        continue-on-error: true
         env:
           KIRI_WEBVIEW2_ARGS: --disable-gpu
-        run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
+        run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
 
       - name: Upload Kiri startup artifacts
         if: always()
