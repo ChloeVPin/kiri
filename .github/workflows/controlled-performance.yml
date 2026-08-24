@@ -156,6 +156,7 @@ jobs:
           name: perf-${{ matrix.os }}
           path: artifacts/
           if-no-files-found: warn
+          retention-days: 30
 
   # Optional: pin to a dedicated low-noise machine. Free on public repos.
   # Register a runner with labels [self-hosted, windows, x64, kiri-perf].
