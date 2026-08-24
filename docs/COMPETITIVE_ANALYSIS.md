@@ -108,8 +108,9 @@ Local macOS aarch64, release, 30 iterations after 5 warmups (this host):
 Honesty: sub-millisecond rows are inside timer noise and flip winners
 (see 1 KiB). At 256 KiB and ~1 MiB the two paths are close, with Kiri
 slightly ahead on this host. This is **not** a router's 3 GiB/s claim.
-Windows through-webview vs Tauri is still unmeasured. T008 shared-buffer
-is still blocked on real Windows hardware.
+Windows through-webview vs Tauri is measured in the hosted T009 run. T008's
+shared-buffer path and crossover evidence are documented in
+[`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md).
 
 ## Tauri baseline fix (so the comparison is honest)
 
@@ -196,36 +197,51 @@ Kiri is ~3.7× smaller than the Tauri baseline and ~1.6× larger than the
 thin wry/tao baseline (Kiri carries the control plane). Footprint vs Tauri
 is a real, measured edge.
 
-## T009 hosted Windows + macOS (commit `1ed43c6`, workflow `controlled-performance`)
+## T009 hosted macOS + Windows (commit `6e0c6ef`, workflow `controlled-performance`)
 
-`windows-latest` and `macos-latest` after skipping the hanging wry/tao
-Windows baseline and fixing WebView2 replies (`PostWebMessageAsJson`).
+`windows-latest` and `macos-latest` after fixing WebView2 replies
+(`PostWebMessageAsJson`). The Windows Wry/Tao baseline yielded one long
+sample rather than a stable comparison set.
 Harness wall-clock is process spawn → smoke exit, not `webview_ready`.
 Tauri embeds its frontend; Kiri serves `examples/blank` at runtime.
 
-Hosted **startup** medians (20 runs, process wall-clock):
+Hosted **startup** medians (20 runs, process wall-clock; Actions run
+`31988662774`):
 
 | runner | Kiri | Tauri | wry/tao |
 |--------|-----:|------:|--------:|
-| windows-latest | 2770 ms | 801 ms | skipped (hangs) |
-| macos-latest | 1724 ms | 1501 ms | 1547 ms |
+| windows-latest | 831 ms | 839 ms | one 20.7 s sample |
+| macos-latest | 1502 ms | 1584 ms | 1716 ms |
 
 Hosted **through-webview IPC** batch-means (20 runs, all 6 sizes succeeded):
 
 | Payload | Win Kiri | Win Tauri | Mac Kiri | Mac Tauri |
 |---------|---------:|----------:|---------:|----------:|
-| 0 B | 0.30 | 1.86 | 0.35 | 0.40 |
-| 64 B | 0.23 | 1.60 | 0.30 | 0.70 |
-| 1 KiB | 0.24 | 1.58 | 0.20 | 0.55 |
-| 16 KiB | 0.77 | 2.25 | 0.60 | 0.75 |
-| 256 KiB | 7.57 | 9.79 | 1.15 | 1.50 |
-| ~1 MiB | 28.3 | 36.9 | 3.20 | 3.75 |
+| 0 B | 0.18 | 1.59 | 0.35 | 1.55 |
+| 64 B | 0.13 | 1.47 | 0.55 | 1.40 |
+| 1 KiB | 0.12 | 1.93 | 0.75 | 1.50 |
+| 16 KiB | 0.92 | 2.03 | 0.75 | 2.00 |
+| 256 KiB | 4.75 | 11.08 | 2.40 | 10.70 |
+| ~1 MiB | 22.46 | 40.52 | 4.40 | 40.40 |
 
 On Windows, through-webview ping/echo is faster than Tauri invoke at every
-size. Hosted process-level startup is not: Tauri's embedded `frontendDist`
-exits the smoke path in ~0.8 s vs Kiri's ~2.8 s. Do not mix those two
-claims. Artifacts: `perf-windows-latest` / `perf-macos-latest` on the
-`1ed43c6` Actions run.
+payload size, and the current Kiri/Tauri process-level startup medians are
+within measurement variance. Wry/Tao produced one 20.7 s Windows sample and
+is not treated as a stable comparison set. Do not mix process startup and
+through-webview IPC claims. Artifacts: `perf-windows-latest` /
+`perf-macos-latest` on Actions run `31988662774`.
+
+The same run recorded release binary sizes:
+
+| runner | Kiri | Wry/Tao | Tauri |
+|--------|-----:|--------:|------:|
+| macOS | 2,411,552 | 1,661,248 | 10,043,664 |
+| Windows | 1,453,056 | 926,208 | 8,640,000 |
+
+The Windows Kiri IPC artifact reports 20 shared-buffer replies at both 256
+KiB and approximately 1 MiB, with zero fallbacks. This is evidence for the
+current shared-buffer path, not a claim that T008's separate crossover report
+is complete.
 
 From 0.1.3 the same workflow also records `startup-kiri-embed.json`:
 `kiri-host --smoke` with **no** `--frontend`. Hosted medians, 20 runs,
@@ -306,8 +322,10 @@ We are at parity with Tauri on desktop platform coverage and capability
 plus a smaller default binary. Through-webview IPC on this Mac is close
 to Tauri's invoke at 256 KiB–1 MiB and too noisy to call at tiny
 payloads. Startup on this Mac is a few percent around the wry/tao
-baseline, not a blowout. Remaining work that actually takes customers:
-mobile, bundling/signing, templates, docs, and a Windows T009 vs Tauri.
+baseline, not a blowout. Developer docs (`GETTING_STARTED.md`,
+`API_REFERENCE.md`) and an interactive demo (`examples/demo`) now ship.
+Remaining work that actually takes customers: mobile, bundling/signing,
+and a Windows T009 vs Tauri.
 
 
 ## Headless catalog-lockstep guarantee (added this session)

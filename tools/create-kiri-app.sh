@@ -80,9 +80,43 @@ esac
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-ASSET_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ASSET}"
+ASSET_URL="$(KIRI_FEED_JSON="$FEED" python3 - "$PLATFORM_OS-$PLATFORM_ARCH" <<'PY'
+import json
+import os
+import sys
+
+platform = sys.argv[1]
+feed = json.loads(os.environ["KIRI_FEED_JSON"])
+try:
+    url = feed["platforms"][platform]["url"]
+except (KeyError, TypeError):
+    raise SystemExit(f"release manifest has no URL for {platform}")
+if not url.startswith("https://"):
+    raise SystemExit("release asset URL must use https://")
+print(url)
+PY
+)"
 echo "==> download $ASSET"
 curl -fsSL -A "create-kiri-app" -o "$STAGE/$ASSET" "$ASSET_URL"
+
+echo "==> verify artifact hash"
+KIRI_FEED_JSON="$FEED" python3 - "$PLATFORM_OS-$PLATFORM_ARCH" "$STAGE/$ASSET" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+platform, artifact_path = sys.argv[1:]
+feed = json.loads(__import__("os").environ["KIRI_FEED_JSON"])
+asset = feed.get("platforms", {}).get(platform)
+if not asset or not asset.get("sha256") or not asset.get("signature"):
+    raise SystemExit(f"release manifest has no signed SHA-256 asset for {platform}")
+actual = hashlib.sha256(pathlib.Path(artifact_path).read_bytes()).hexdigest()
+expected = asset["sha256"].lower()
+if actual != expected:
+    raise SystemExit(f"release hash mismatch for {platform}: expected {expected}, got {actual}")
+print(f"    SHA-256 {actual}")
+PY
 
 echo "==> frontend"
 mkdir -p "$ABS_DEST/frontend"
@@ -157,6 +191,9 @@ A Kiri app. Edit \`frontend/\` then run again.
 
     # Linux
     ./run.sh
+
+    # Windows (Command Prompt or PowerShell)
+    .\\run.cmd
 
 The host next to this folder is Kiri $VERSION. Your UI in \`frontend/\`
 overrides the packed default. Ship from CI with the workflow in

@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiri</title>
+  <style>
+    :root {
+      --ink: #14110e;
+      --soot: #1f1a15;
+      --bone: #e8dcc8;
+      --rust: #c45c26;
+      --rust-dim: #8a3f1a;
+      --ash: #8a7a68;
+      --line: #2e2620;
+      --ok: #6abe3a;
+      --err: #d4452f;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ink);
+      color: var(--bone);
+      font: 14px/1.5 "Avenir Next", "Segoe UI", system-ui, sans-serif;
+      overflow-y: auto;
+    }
+    .shell { display: flex; flex-direction: column; min-height: 100%; }
+    header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 22px; border-bottom: 1px solid var(--line);
+    }
+    header img { width: 32px; height: 32px; }
+    header h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: -0.02em; }
+    header .ver { font-size: 11px; color: var(--ash); font-variant-numeric: tabular-nums; }
+    header .spacer { flex: 1; }
+    header .status {
+      font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+      color: var(--ash); padding: 3px 8px; border: 1px solid var(--line); border-radius: 3px;
+    }
+    header .status.ok { color: var(--ok); border-color: var(--ok); }
+    header .status.err { color: var(--err); border-color: var(--err); }
+    main { flex: 1; padding: 22px; display: grid; gap: 22px; max-width: 960px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+    section h2 {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--ash); margin: 0 0 10px; font-weight: 600;
+    }
+    .card {
+      background: var(--soot); border: 1px solid var(--line); border-radius: 6px;
+      padding: 16px; min-width: 0;
+    }
+    .card h3 { margin: 0 0 8px; font-size: 12px; color: var(--bone); font-weight: 600; }
+    .card p { margin: 0 0 10px; font-size: 12px; color: var(--ash); }
+    .row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 5px 0; font-size: 12px; border-bottom: 1px solid var(--line);
+    }
+    .row:last-child { border-bottom: none; }
+    .row .k { color: var(--ash); font-size: 11px; }
+    .row .v { color: var(--bone); font-variant-numeric: tabular-nums; word-break: break-all; text-align: right; max-width: 60%; }
+    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    button {
+      appearance: none; border: 1px solid var(--line); background: var(--ink);
+      color: var(--bone); font: inherit; font-size: 12px;
+      padding: 6px 10px; cursor: pointer; border-radius: 4px; white-space: nowrap;
+    }
+    button:hover { border-color: var(--rust); }
+    button:focus-visible { outline: 2px solid var(--rust); outline-offset: 1px; }
+    button.danger { color: var(--err); }
+    .log {
+      background: var(--soot); border: 1px solid var(--line); border-radius: 6px;
+      padding: 12px 14px; max-height: 200px; overflow-y: auto;
+      font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .log .entry { color: var(--ash); margin: 0 0 2px; word-break: break-all; }
+    .log .entry .ts { color: var(--rust-dim); }
+    .log .entry.ok { color: var(--ok); }
+    .log .entry.err { color: var(--err); }
+    .log .entry .cmd { color: var(--rust); }
+    #notepad {
+      width: 100%; min-height: 80px; background: var(--ink); color: var(--bone);
+      border: 1px solid var(--line); border-radius: 4px; padding: 8px;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical;
+    }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ash); }
+    .toggle input { accent-color: var(--rust); }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header>
+      <img src="kiri.svg" alt="">
+      <h1>Kiri</h1>
+      <span class="ver" id="ver">…</span>
+      <span class="spacer"></span>
+      <span class="status" id="status">connecting</span>
+    </header>
+    <main>
+      <section>
+        <h2>System</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Environment</h3>
+            <div class="row"><span class="k">OS</span><span class="v" id="os">…</span></div>
+            <div class="row"><span class="k">Arch</span><span class="v" id="arch">…</span></div>
+            <div class="row"><span class="k">Home</span><span class="v" id="home">…</span></div>
+            <div class="row"><span class="k">Temp</span><span class="v" id="temp">…</span></div>
+            <div class="row"><span class="k">App dir</span><span class="v" id="appdir">…</span></div>
+          </div>
+          <div class="card">
+            <h3>Window</h3>
+            <div class="row"><span class="k">Title</span><span class="v" id="wtitle">…</span></div>
+            <div class="actions" style="margin-top:8px">
+              <button id="win-min">Minimize</button>
+              <button id="win-max">Maximize</button>
+              <button id="win-restore">Restore</button>
+              <button id="win-focus">Focus</button>
+            </div>
+            <div class="actions" style="margin-top:6px">
+              <button id="win-rename">Rename</button>
+              <button id="win-save-state">Save state</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Capability demo — the security thesis</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Clipboard</h3>
+            <p>Read and write through the host-owned controller. JS never touches the OS clipboard directly.</p>
+            <div class="actions">
+              <button id="clip-read">Read</button>
+              <button id="clip-write">Copy host line</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Path operations</h3>
+            <p>Path math and OS directory discovery, capability-gated. No env vars or filesystem roots exposed.</p>
+            <div class="actions">
+              <button id="path-demo">Run path ops</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>File sandbox</h3>
+            <p>Scoped read/write inside the host sandbox. A path outside the scope is rejected.</p>
+            <div class="actions">
+              <button id="fs-write">Write test file</button>
+              <button id="fs-read">Read it back</button>
+              <button id="fs-exists">Check exists</button>
+            </div>
+          </div>
+          <div class="card">
+            <h3>HTTP allowlist</h3>
+            <p><code>kiri.http.get</code> is double-gated: the capability AND a host allowlist. An unapproved host is denied.</p>
+            <div class="actions">
+              <button id="http-blocked">Fetch evil.example.com</button>
+              <span class="v" id="http-result" style="font-size:11px">not tested</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Notepad (host-owned store)</h2>
+        <div class="card">
+          <p>Persisted through <code>kiri.store.set</code> in a host-approved namespace. Reload the app — the text survives.</p>
+          <textarea id="notepad" placeholder="Type here, then reload the window…"></textarea>
+          <div class="actions" style="margin-top:8px">
+            <button id="store-save">Save</button>
+            <button id="store-load">Reload</button>
+            <span class="v" id="store-status" style="font-size:11px"></span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Updater (host-pinned key)</h2>
+        <div class="card">
+          <p>The Ed25519 signing key is host-pinned. The frontend cannot substitute a key to accept an attacker-signed release.</p>
+          <div class="actions">
+            <button id="update-check">Check for updates</button>
+            <span class="v" id="update-status" style="font-size:11px"></span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Activity log</h2>
+        <div class="log" id="log">
+          <div class="entry"><span class="ts">--:--:--</span> waiting for bridge…</div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="kiri.js"></script>
+  <script>
+    (function () {
+      function post(o) {
+        var s = JSON.stringify(o);
+        if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+          window.chrome.webview.postMessage(s);
+        } else if (window.ipc && window.ipc.postMessage) {
+          window.ipc.postMessage(s);
+        }
+      }
+      window.addEventListener("DOMContentLoaded", function () { post({ type: "ready", phase: "dom" }); });
+      requestAnimationFrame(function () { post({ type: "ready", phase: "frame" }); });
+
+      var logEl = document.getElementById("log");
+      function ts() {
+        var d = new Date();
+        return [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (n) {
+          return String(n).padStart(2, "0");
+        }).join(":");
+      }
+      function log(msg, kind, cmd) {
+        var entry = document.createElement("div");
+        entry.className = "entry" + (kind ? " " + kind : "");
+        var prefix = cmd ? '<span class="cmd">' + cmd + "</span> " : "";
+        entry.innerHTML = '<span class="ts">' + ts() + "</span> " + prefix + msg;
+        logEl.prepend(entry);
+        while (logEl.children.length > 50) logEl.removeChild(logEl.lastChild);
+      }
+      function setStatus(text, cls) {
+        var el = document.getElementById("status");
+        el.textContent = text;
+        el.className = "status" + (cls ? " " + cls : "");
+      }
+
+      function set(id, value) { document.getElementById(id).textContent = value || "—"; }
+
+      function run(label, fn) {
+        try {
+          var result = fn();
+          if (result && typeof result.then === "function") {
+            result.then(function (r) { log(label + " ok", "ok"); return r; })
+                   .catch(function (e) { log(label + " failed: " + (e.message || e), "err"); });
+          } else {
+            log(label + " ok", "ok");
+          }
+          return result;
+        } catch (e) {
+          log(label + " threw: " + (e.message || e), "err");
+        }
+      }
+
+      var api = window.kiri;
+      if (!api || !api.platform) { setStatus("bridge missing", "err"); return; }
+
+      // Boot: fetch system info in parallel
+      Promise.all([
+        api.app.version(),
+        api.platform.os(),
+        api.platform.arch(),
+        api.os.homedir(),
+        api.os.tempdir(),
+        api.os.appDir(),
+      ]).then(function (parts) {
+        set("ver", "v" + parts[0]);
+        set("os", parts[1]);
+        set("arch", parts[2]);
+        set("home", parts[3]);
+        set("temp", parts[4]);
+        set("appdir", parts[5]);
+        window.__kiriHostLine = "Kiri " + parts[0] + " · " + parts[1] + " " + parts[2];
+        // The fs scope root is tempdir/kiri-fs. Build an absolute path so the
+        // host's PathScope containment check accepts it (relative paths are
+        // rejected as a directory-traversal defense).
+        window.__kiriFsRoot = parts[4].replace(/\/$/, "") + "/kiri-fs";
+        setStatus("live", "ok");
+        log("bridge ready: v" + parts[0] + " on " + parts[1], "ok");
+        return api.window.title();
+      }).then(function (title) {
+        set("wtitle", title);
+      }).catch(function (e) {
+        setStatus("error", "err");
+        log("boot failed: " + (e.message || e), "err");
+      });
+
+      // Load saved notepad
+      api.store.get("app.prefs", "notepad").then(function (val) {
+        if (val != null) { document.getElementById("notepad").value = val; log("loaded saved notepad", "ok"); }
+      }).catch(function () { /* first run */ });
+
+      // Window controls
+      function bind(id, label, fn) {
+        document.getElementById(id).addEventListener("click", function () { run(label, fn); });
+      }
+      bind("win-min", "window.minimize", function () { return api.window.minimize(); });
+      bind("win-max", "window.maximize", function () { return api.window.maximize(); });
+      bind("win-restore", "window.restore", function () { return api.window.restore(); });
+      bind("win-focus", "window.focus", function () { return api.window.focus(); });
+      bind("win-save-state", "window.state.save", function () {
+        return api.window.state.save({ x: 0, y: 0, width: 1024, height: 768, maximized: false });
+      });
+
+      var titles = ["Kiri", "Kiri — demo", "Kiri — live"];
+      var titleAt = 0;
+      document.getElementById("win-rename").addEventListener("click", function () {
+        titleAt = (titleAt + 1) % titles.length;
+        var next = titles[titleAt];
+        api.window.setTitle(next).then(function () {
+          set("wtitle", next);
+          log("window.title.set ok", "ok", "window");
+        }).catch(function (e) { log("window rename failed: " + (e.message || e), "err"); });
+      });
+
+      // Clipboard
+      document.getElementById("clip-read").addEventListener("click", function () {
+        api.clipboard.read().then(function (text) {
+          log("clipboard.read: " + JSON.stringify((text || "").slice(0, 60)), "ok", "clipboard");
+        }).catch(function (e) { log("clipboard.read failed: " + (e.message || e), "err"); });
+      });
+      document.getElementById("clip-write").addEventListener("click", function () {
+        var line = window.__kiriHostLine || "Kiri";
+        api.clipboard.write(line).then(function () {
+          log("clipboard.write ok", "ok", "clipboard");
+        }).catch(function (e) { log("clipboard.write failed: " + (e.message || e), "err"); });
+      });
+
+      // Path operations
+      document.getElementById("path-demo").addEventListener("click", function () {
+        var demoPath = "/Users/demo/projects/app/src/main.rs";
+        Promise.all([
+          api.path.dirname(demoPath),
+          api.path.basename(demoPath),
+          api.path.extname(demoPath),
+          api.path.stem(demoPath),
+          api.path.isAbsolute(demoPath),
+        ]).then(function (r) {
+          log("path.dirname(\"" + demoPath + "\") = " + r[0], "ok", "path");
+          log("path.basename = " + r[1] + "  ext = " + r[2] + "  stem = " + r[3] + "  abs = " + r[4], "ok", "path");
+        }).catch(function (e) { log("path demo failed: " + (e.message || e), "err"); });
+      });
+
+      // File sandbox
+      document.getElementById("fs-write").addEventListener("click", function () {
+        var testFile = (window.__kiriFsRoot || "/tmp/kiri-fs") + "/demo-test.txt";
+        var text = "Hello from Kiri at " + ts();
+        var b64 = btoa(text);
+        api.fs.write(testFile, b64, true).then(function (written) {
+          log("fs.write(\"" + testFile + "\") = " + written + " bytes", "ok", "fs");
+        }).catch(function (e) { log("fs.write failed: " + (e.message || e), "err"); });
+      });
+      document.getElementById("fs-read").addEventListener("click", function () {
+        var testFile = (window.__kiriFsRoot || "/tmp/kiri-fs") + "/demo-test.txt";
+        api.fs.read(testFile).then(function (b64) {
+          var text = atob(b64 || "");
+          log("fs.read(\"" + testFile + "\") = " + JSON.stringify(text), "ok", "fs");
+        }).catch(function (e) { log("fs.read failed: " + (e.message || e), "err"); });
+      });
+      document.getElementById("fs-exists").addEventListener("click", function () {
+        var testFile = (window.__kiriFsRoot || "/tmp/kiri-fs") + "/demo-test.txt";
+        api.fs.exists(testFile).then(function (exists) {
+          log("fs.exists(\"" + testFile + "\") = " + exists, "ok", "fs");
+        }).catch(function (e) { log("fs.exists failed: " + (e.message || e), "err"); });
+      });
+
+      // HTTP allowlist: fetch an unapproved host (should be denied)
+      document.getElementById("http-blocked").addEventListener("click", function () {
+        document.getElementById("http-result").textContent = "requesting…";
+        api.http.get("https://evil.example.com/").then(function () {
+          document.getElementById("http-result").textContent = "allowed — that is a bug";
+          log("http.get(evil.example.com) ALLOWED — security hole!", "err", "http");
+        }).catch(function (e) {
+          document.getElementById("http-result").textContent = "denied (correct)";
+          log("http.get(evil.example.com) denied: " + (e.message || e), "ok", "http");
+        });
+      });
+
+      // Store (notepad persistence)
+      document.getElementById("store-save").addEventListener("click", function () {
+        var text = document.getElementById("notepad").value;
+        api.store.set("app.prefs", "notepad", text).then(function () {
+          document.getElementById("store-status").textContent = "saved at " + ts();
+          log("store.set(\"app.prefs\", \"notepad\") ok", "ok", "store");
+        }).catch(function (e) {
+          document.getElementById("store-status").textContent = "save failed";
+          log("store.set failed: " + (e.message || e), "err");
+        });
+      });
+      document.getElementById("store-load").addEventListener("click", function () {
+        api.store.get("app.prefs", "notepad").then(function (val) {
+          document.getElementById("notepad").value = val || "";
+          document.getElementById("store-status").textContent = "loaded at " + ts();
+          log("store.get(\"app.prefs\", \"notepad\") ok", "ok", "store");
+        }).catch(function (e) {
+          document.getElementById("store-status").textContent = "load failed";
+          log("store.get failed: " + (e.message || e), "err");
+        });
+      });
+
+      // Updater (host-pinned key). The host fetches its own pinned release
+      // feed; the frontend only learns whether a newer, correctly-signed
+      // release exists. The signing key is never visible to JavaScript.
+      document.getElementById("update-check").addEventListener("click", function () {
+        document.getElementById("update-status").textContent = "checking…";
+        api.updater.check().then(function (r) {
+          if (r.available) {
+            document.getElementById("update-status").textContent = "update available: " + r.version;
+            log("updater.check: update " + r.version + " available", "ok", "updater");
+          } else {
+            document.getElementById("update-status").textContent = "up to date";
+            log("updater.check: up to date", "ok", "updater");
+          }
+        }).catch(function (e) {
+          document.getElementById("update-status").textContent = "check failed";
+          log("updater.check: " + (e.message || e), "err");
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

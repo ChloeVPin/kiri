@@ -7,11 +7,11 @@ members = [
 default-members = ["crates/kiri-core"]
 
 [workspace.package]
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.77"
-repository = "https://example.invalid/kiri"
-description = "Kiri native desktop runtime (working name, provisional)"
+repository = "https://github.com/ChloeVPin/kiri"
+description = "Kiri: a native desktop app runtime where a granted capability must not be enough"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

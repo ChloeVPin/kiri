@@ -8,6 +8,11 @@ use kiri_core::dispatch::command_id;
 
 /// One attachable control-plane surface. `Core` is ping/diag/resources/plugin.list
 /// via the plugin ABI; everything else is a `Router::with_*` builder.
+///
+/// Only consumed by the Windows lazy Router (`host_windows.rs`); the cross
+/// backend builds all surfaces eagerly. The mapping is tested on every OS so
+/// a command is never orphaned when a new surface is added.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
     Core,
@@ -38,6 +43,7 @@ pub(crate) enum Surface {
 }
 
 /// Which surface must be attached before `command_id` can dispatch.
+#[allow(dead_code)]
 pub(crate) fn surface_for_command(id: u32) -> Option<Surface> {
     use command_id::*;
     Some(match id {

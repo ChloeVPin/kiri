@@ -20,7 +20,7 @@ A person who has never cloned this repo can:
 2. Open a window that talks to the host (version, OS, a real native
    action) without a terminal cheatsheet.
 3. Ship their own UI by pointing `KIRI_EMBED_FRONTEND` at a folder and
-   producing a Mac, Windows, and Linux artifact from CI.
+   producing Linux, macOS, and Windows artifacts from CI.
 4. Read a single page of published Kiri-vs-Tauri numbers that we would
    accept: through-webview IPC, embedded startup, binary size. No
    in-process bench dressed up as user-facing IPC. No disk-frontend

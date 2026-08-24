@@ -1,13 +1,14 @@
 # Controlled startup-benchmark comparison: Kiri vs Wry/Tao vs Tauri.
 #
-# The repository is PUBLIC, so GitHub-hosted runners (ubuntu/windows/macos)
+# The repository is PUBLIC, so GitHub-hosted runners (ubuntu/macos/windows)
 # are FREE and unlimited. This workflow therefore runs the three-way startup
 # benchmark on hosted runners at $0 cost -- the previous version required a
 # nonexistent [self-hosted, windows, x64, kiri-perf] runner.
 #
 # What runs where:
-#   - macOS: Kiri + wry/tao + Tauri startup, then Kiri vs Tauri through-webview IPC.
-#   - Windows: Kiri (direct WebView2) vs Tauri. Official Kiri numbers do NOT
+#   - macOS and Windows: Kiri, Wry/Tao where supported, and Tauri startup.
+#     Kiri vs Tauri through-webview IPC is measured on each supported runner.
+#     On Windows Kiri uses direct WebView2. Official Kiri numbers do NOT
 #     set KIRI_WEBVIEW2_ARGS. A separate swrender row keeps --disable-gpu as
 #     a labeled appendix. wry-tao is re-enabled (with_html on Windows).
 #   - Linux: baselines compile; the native WebView run is a SOFT probe
@@ -25,12 +26,12 @@ on:
     branches: [main]
 
 jobs:
-  # Hosted, free on public repo. Real GPU on macOS + Windows.
+  # Hosted, free on public repo. Real GPU on macOS and Windows.
   hosted-comparison:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

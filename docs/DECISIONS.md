@@ -64,19 +64,17 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 - **Evidence**: Level A - marker schema in `docs/research/markers-schema.md`
   (written from corpus `docs/12-benchmarks.md`).
 
-## D-006: cross-platform host; direct Win32 + WebView2 backend on Windows,
-wry/tao backend on macOS and Linux
+## D-006: cross-platform host with native backends on Linux, macOS, and Windows
 
 - **Status**: decided (T001), superseded by D-009 (see note)
-- **Context**: the original corpus rule prioritized Windows ahead of the other
-  platforms. That constraint was removed (see D-009/D-010). The host now runs
-  natively on every desktop platform from one codebase, and all three platforms
-  (Windows, macOS, Linux) are equal targets. The macOS development machine is the
+- **Context**: the host runs natively on every desktop platform from one
+  codebase, and all three platforms (Linux, macOS, Windows) are equal targets.
+  The macOS development machine is the
   day-to-day verification target for the cross (wry/tao) backend, while the
   Windows direct backend is cross-checked and CI-run.
 - **Decision**: `kiri-runtime` is a platform-neutral facade. On Windows it
-  uses the direct Win32 + WebView2 host (`host_windows.rs`); on macOS and
-  Linux it uses a wry/tao host (`host_cross.rs`). Both record the same nine
+  uses a wry/tao host (`host_cross.rs`) on macOS and Linux and the direct
+  Win32 + WebView2 host (`host_windows.rs`) on Windows. Both record the same nine
   startup markers on a monotonic clock and obey the shared smoke/exit
   contract, so the benchmark compares like for like. The backend is selected
   by `cfg(target_os = "windows")` at the crate boundary; a `--backend`
@@ -125,7 +123,7 @@ wry/tao backend on macOS and Linux
 
 ## Open / deferred
 
-- D-007 (open): WebView2 runtime availability on `windows-latest` runners -
-  assume present, verify on first smoke run.
+- D-007 (closed): WebView2 runtime availability on `windows-latest` was
+  verified by native smoke and stress runs, including the shared-buffer path.
 - D-008 (open): backpressure policy for the IPC bridge (T006) - recorded in
   `OPEN_QUESTIONS.md`.

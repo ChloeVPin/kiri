@@ -139,6 +139,11 @@ case "$PLATFORM_OS" in
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
     mkdir -p "$STAGE_DIR"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN.exe"
+    cat > "$STAGE_DIR/run.cmd" <<'EOF'
+@echo off
+cd /d "%~dp0"
+kiri-host.exe
+EOF
     if command -v powershell.exe >/dev/null 2>&1 && command -v cygpath >/dev/null 2>&1; then
       WIN_STAGE_DIR="$(cygpath -w "$STAGE_DIR")"
       WIN_ARTIFACT_PATH="$(cygpath -w "$ARTIFACT_PATH")"
@@ -157,7 +162,13 @@ case "$PLATFORM_OS" in
     rm -rf "$STAGE_DIR" "$ARTIFACT_PATH"
     mkdir -p "$STAGE_DIR"
     cp "$BIN_FILE" "$STAGE_DIR/$BIN"
-    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN"
+    cat > "$STAGE_DIR/run.sh" <<'EOF'
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+exec ./kiri-host
+EOF
+    chmod +x "$STAGE_DIR/run.sh"
+    tar -czf "$ARTIFACT_PATH" -C "$STAGE_DIR" "$BIN" run.sh
     ;;
 esac
 

@@ -14,7 +14,7 @@ blocked are called out explicitly.
 
 The day-to-day verification target. Real GPU, real WebView.
 
-- `cargo test --workspace`: 217 kiri-core + 33 kiri-runtime unit tests pass (plus 2 integration tests).
+- `cargo test --workspace`: 217 kiri-core + 37 kiri-runtime unit tests pass (plus 2 integration tests).
 - `cargo build -p kiri-runtime --bins`: builds.
 - `kiri-host --smoke --frontend examples/blank`: all 9 startup markers,
   exit 0 (webview_ready, bridge_ready, dom_ready, first_animation_frame, ...).
@@ -88,8 +88,10 @@ both (id 3 / id 4).
   windows-latest (hard native gate) and ubuntu-latest (soft GPU probe) on every
   push/PR; re-run via `gh run rerun` or just push.
 - `controlled-performance.yml` now runs on public hosted macOS and Windows
-  runners, but the latest artifact at `c0a9120` predates the asynchronous
-  protocol fix. Its Windows Wry sample set also contained a timeout, so it is
-  diagnostic evidence only until rerun on the fixed commit.
-- T008 WebView2 shared-buffer: needs real Windows to implement + benchmark
-  against the T007 baseline.
+  runners. Actions run `31988662774` completed both hosted jobs and produced
+  startup, IPC, and binary-size artifacts. The Windows Wry/Tao startup sample
+  set still contains only one 20.7-second sample, so it is not treated as a
+  stable three-way Windows comparison; Kiri/Tauri and IPC results are usable.
+- T008 WebView2 shared-buffer is verified on real Windows; see
+  [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). T009 remains open only
+  for a stable hosted comparison set.

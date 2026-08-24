@@ -17,6 +17,7 @@ pub mod deeplink_ctl;
 pub mod dialog_ctl;
 pub mod embed;
 pub mod frontend;
+pub mod host_policy;
 pub mod ipc_bench;
 pub mod markers;
 pub mod notification_ctl;

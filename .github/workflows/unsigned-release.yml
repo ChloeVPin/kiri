@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       OUT_DIR: artifacts/${{ matrix.os }}
@@ -93,6 +93,8 @@ jobs:
           import hashlib
           import json
           import subprocess
+          import tarfile
+          import zipfile
           from pathlib import Path
           from urllib.parse import urlparse
 
@@ -128,6 +130,19 @@ jobs:
               actual_hash = hashlib.sha256(candidates[0].read_bytes()).hexdigest()
               if actual_hash != asset["sha256"]:
                   raise SystemExit(f"SHA-256 mismatch for {platform}: {candidates[0]}")
+              names = set()
+              if artifact_name.endswith(".tar.gz"):
+                  with tarfile.open(candidates[0]) as archive:
+                      names = {Path(name).name for name in archive.getnames()}
+                  if platform.startswith("linux-") and "run.sh" not in names:
+                      raise SystemExit(f"Linux archive lacks run.sh: {candidates[0]}")
+              elif artifact_name.endswith(".zip"):
+                  with zipfile.ZipFile(candidates[0]) as archive:
+                      names = {Path(name).name for name in archive.namelist()}
+                  if platform.startswith("windows-") and "run.cmd" not in names:
+                      raise SystemExit(f"Windows archive lacks run.cmd: {candidates[0]}")
+                  if platform.startswith("darwin-") and "Kiri.app" not in names:
+                      raise SystemExit(f"macOS archive lacks Kiri.app: {candidates[0]}")
               merged["platforms"][platform] = asset
               verify_pairs.append(f"{platform}={candidates[0]}")
 
@@ -181,7 +196,7 @@ jobs:
 
             macOS: open the `.dmg` or `.app` zip. First launch is right-click
             → Open (unsigned on purpose).
-            Windows / Linux: unzip and run `kiri-host`.
+            Linux / Windows: unzip and run `kiri-host`.
 
             RELEASES.json is Kiri's Ed25519 signature over these exact bytes.
             There is no Apple or Authenticode signature.

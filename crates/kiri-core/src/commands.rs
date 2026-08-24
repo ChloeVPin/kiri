@@ -482,19 +482,25 @@ pub fn required_capabilities(id: u32) -> CapabilityBits {
 }
 
 /// Emit a deterministic TypeScript surface for the catalog. Each command
-/// becomes a typed method on a `commands` object. The output is a pure
+/// becomes a typed method on a `KiriCommands` interface. The output is a pure
 /// function of `COMMANDS`, so re-running codegen is byte-stable.
 ///
-/// The generated `Arg` type is `unknown` by design: the concrete argument
-/// types are application-defined and supplied by the full codegen pass; this
-/// emitter covers the routing/ID/capability contract the runtime enforces.
+/// Method names use the dotted command name as a quoted property key (e.g.
+/// `"kiri.ping"`) so they match the real JS API (`window.kiri` uses the
+/// same dotted names). Dotted names are not valid bare identifiers, so they
+/// must be quoted; this is intentional and correct.
+///
+/// The generated `arg`/return type is `unknown` by design: the concrete
+/// argument types are application-defined and supplied by the full codegen
+/// pass; this emitter covers the routing/ID/capability contract the runtime
+/// enforces.
 pub fn emit_typescript() -> String {
     let mut methods = String::new();
     let mut names = String::new();
     for cmd in COMMANDS {
         methods.push_str(&format!(
-            "  /** {name} (id={id}, capability=\"{cap}\", execution=\"{exec}\") */\n  {name}(arg: unknown): Promise<unknown>;\n",
-            name = sanitize_ident(cmd.name),
+            "  /** {name} (id={id}, capability=\"{cap}\", execution=\"{exec}\") */\n  \"{name}\"(arg: unknown): Promise<unknown>;\n",
+            name = cmd.name,
             id = cmd.id,
             cap = cmd.capability,
             exec = cmd.execution,
@@ -526,12 +532,6 @@ pub fn emit_typescript() -> String {
             b
         },
     )
-}
-
-/// Sanitize a dotted command name into a valid TypeScript identifier fragment.
-/// `user.get` -> `user_get`.
-fn sanitize_ident(name: &str) -> String {
-    name.replace(['.', '-', ' '], "_")
 }
 
 #[cfg(test)]
@@ -569,7 +569,7 @@ mod tests {
         let a = emit_typescript();
         let b = emit_typescript();
         assert_eq!(a, b, "emit_typescript must be byte-stable");
-        assert!(a.contains("kiri_ping(arg: unknown)"));
+        assert!(a.contains("\"kiri.ping\"(arg: unknown)"));
         assert!(a.contains("export const KIRI_COMMAND_NAMES"));
     }
 
@@ -579,9 +579,9 @@ mod tests {
         // Basic structural sanity: balanced braces and a switch for routing.
         assert!(ts.contains("switch (name)"));
         assert!(ts.contains("case \"kiri.ping\": return 1;"));
-        // Sanity: every command name appears as a method.
+        // Sanity: every command name appears as a quoted method.
         for c in COMMANDS {
-            assert!(ts.contains(&sanitize_ident(c.name)));
+            assert!(ts.contains(&format!("\"{}\"(arg: unknown)", c.name)));
         }
     }
 

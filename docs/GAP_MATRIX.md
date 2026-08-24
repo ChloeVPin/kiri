@@ -1,12 +1,12 @@
 # Kiri vs Tauri - Gap Matrix and Exceed Roadmap
 
-Last updated: 2026-08-15. Honest, evidence-tied list of what Tauri ships that
+Last updated: 2026-08-19. Honest, evidence-tied list of what Tauri ships that
 Kiri does not, ranked by winnability and value. Levels: A = Tauri/Kiri
 source or docs; B = maintained impl; D = inference.
 
 ## Where Kiri already exceeds Tauri (keep sharpening)
 
-1. Double-gating security axis (proven). All 61 control-plane command ids are
+1. Double-gating security axis (proven). All 74 control-plane command ids are
    denied with an empty capability set and granted only with the exact
    host-assigned bit. Verified end-to-end headlessly in
    crates/kiri-core/tests/full_router_capability_enforcement.rs.
@@ -62,10 +62,12 @@ source or docs; B = maintained impl; D = inference.
 
 ## Honest bottom line
 
-Kiri cannot beat Tauri on ecosystem, docs, mobile, or community short term. It
+Kiri cannot beat Tauri on ecosystem, mobile, or community short term. It
 does beat Tauri on the security axis, startup-contract rigor, control-plane
 auditability, and (on this Mac) unstripped binary size. Startup and
 through-webview IPC on macOS are now measured and close, not a blowout.
+Developer docs (GETTING_STARTED.md, API_REFERENCE.md) and an interactive
+demo (examples/demo) now ship.
 
 Fastest path to exceed on every winnable dimension:
 All headless-runnable surface gaps (G-9, G-13, G-5, G-10, G-11, G-12) are DONE; remaining: G-3 packaging (certs) and G-1 mobile (out of scope)

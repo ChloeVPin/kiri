@@ -3,154 +3,53 @@
 
   <h1>Kiri</h1>
 
-  <p>A native desktop app runtime for Windows, macOS, and Linux.</p>
+  <p>A native desktop app runtime for Linux, macOS, and Windows.</p>
 
   <p>
     <a href="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml"><img src="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/ChloeVPin/kiri/releases/latest"><img src="https://img.shields.io/github/v/release/ChloeVPin/kiri?label=latest%20release" alt="Latest release" /></a>
-    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey" alt="Windows | macOS | Linux" />
+    <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Linux | macOS | Windows" />
   </p>
 </div>
 
-Kiri is the desktop runtime you use when a granted capability must not be
-enough. Same OS webview as Tauri; a smaller host; every native call
-double-gated (capability **and** host allowlist). The product goal and the
-definition of done live in [`docs/PRODUCT.md`](docs/PRODUCT.md).
+Kiri is a desktop runtime for applications where a granted capability must not
+be enough. Native calls are double-gated by a capability bit and a host-owned
+allowlist. The product goal and acceptance criteria are in
+[`docs/PRODUCT.md`](docs/PRODUCT.md).
 
-Startup and IPC numbers are measured, not assumed. If wry/tao is as fast
-and simpler than this host, we record that and switch.
-
-On a hosted Windows Server CI runner with software rendering, Kiri's median
-startup time to `webview_ready` is comparable to a blank Tauri baseline,
-while shipping at under 20% of the binary size and enforcing double-gated
-capabilities. That sentence is a lab result, not “Kiri is faster than Tauri
-on Windows.” The official table is the **no** `--disable-gpu` row.
-
-## Status
-
-Tasks T001-T007 and T010 are complete. T009 has a local macOS release
-measurement (startup markers + through-webview IPC + binary size). T008
-and the Windows T009 leg remain open. The runtime
-runs natively on
-every desktop platform from one codebase: the direct Win32 + WebView2 backend
-on Windows and the wry/tao backend on macOS and Linux. Both backends enforce
-the same security boundary (application-origin trust, native-assigned caller
-identity and capability authority). All three platforms are equal targets. The
-wry/tao backend is smoke/stress-verified on macOS, cross-checked on Linux, and
-the direct Win32 + WebView2 backend is smoke/stress-verified on Windows CI.
-Linux native rendering remains a soft CI probe because shared runners lack a
-usable WebKit compositor.
-
-- 256 tests pass (cargo test --workspace: 217 kiri-core + 2 integration + 37 kiri-runtime)
-- the macOS/Linux cross backend serves `kiri://` through Wry's asynchronous
-  custom-protocol path. Local release, 5-run marker medians to `webview_ready`:
-  Kiri 290 ms, wry/tao 275 ms, Tauri 312 ms. Not an 18–25% claim.
-- through-webview IPC is a real page→host→page bench (`--ipc-bench` vs Tauri
-  `kiri_echo`). On this Mac, 256 KiB / ~1 MiB batch-means are 1.00 / 2.77 ms
-  (Kiri) vs 1.07 / 3.13 ms (Tauri). Tiny payloads sit inside a 1 ms timer.
-- unstripped release binaries on this Mac: kiri-host 2.7 MiB, wry-tao 1.6 MiB,
-  Tauri baseline 10.0 MiB
-- control-plane ping + trace (T003) and caller/capability authority (T004)
-  implemented; the 10k-ping distribution is in-process, not through the webview
-- wry/tao cross backend runs natively on macOS: `kiri-host --smoke` records
-  all nine markers and exits 0; `kiri-host-stress` passes multi-cycle
-- direct Win32 + WebView2 host cross-checks clean on `x86_64-pc-windows-msvc`
-  (`cargo check` and `cargo clippy -D warnings`, zero warnings)
-- developer diagnostics panel (T010) ships: a `kiri.diag` command returns a
-  privacy-safe runtime snapshot (backend, runtime version, open-resource count,
-  recent-request latency waterfall); the `examples/panel` frontend renders it
-- capability-gated `kiri.window.*` control surface (ids 14-22) implemented across
-  both backends; every window operation is authorized by the central capability
-  authority and routed through a host-owned controller, so JS never reaches the
-  native handle (exceeds Tauri's window module on the security axis)
-- capability-gated kiri.clipboard read/write (ids 23-24) implemented across both
-  backends; clipboard access requires the CLIPBOARD capability bit and flows through a
-  host-owned ClipboardController (arboard on macOS/Linux/Windows), so JS never touches
-  the OS clipboard directly (exceeds Tauri's clipboard plugin on the security axis)
-- capability-gated `kiri.path.*` / `kiri.os.*` (ids 25-37) implemented across both
-  backends; path math (dirname/basename/extname/stem/join/isAbsolute) and read-only OS
-  directory discovery (home/temp/app config|data|cache/document/app dir) are behind the
-  PATH capability bit and never expose env vars or filesystem roots to JS (exceeds Tauri's
-  path/os plugins on the security axis: Tauri grants them by default)
-- capability-scoped `kiri.http.get` (id 38) implemented across both backends; fetches are
-  behind the HTTP capability bit AND a host allowlist (default-deny), with responses bounded
-  by the same bulk-object ceiling as `kiri.fs`. Tauri's `http` plugin allows arbitrary
-  fetches by default; Kiri refuses any host not on the explicit allowlist (exceeds Tauri's
-  http plugin on the security axis). Transport is a trait seam (`HttpClient`); the seed
-  `StdHttpClient` does loopback/plaintext for tests, a TLS client slots in unchanged.
-- Wry/Tao and Tauri baselines compile clean
-- the direct Win32 + WebView2 host runs natively on real Windows
-  (`windows-latest` CI hard gate): native smoke + 100-cycle stress pass (Q-001 closed)
+The README describes the stable product, architecture, and usage. Changing
+measurements, open questions, and planned work are maintained in
+[`docs/ROADMAP.md`](docs/ROADMAP.md) and the linked research documents.
 
 ## Architecture
 
-Three layers, one shared marker schema:
+Three layers share one control protocol and startup-marker schema:
 
 ```
-crates/kiri-core               platform-neutral logical protocol, security
-                               authority, resource table, tracing. Pure Rust,
-                               zero platform deps, 217 tests
-crates/kiri-runtime            the native host. Platform-neutral facade
-                               (`lib.rs`) dispatches to a direct Win32 +
-                               WebView2 backend on Windows
-                               (`host_windows.rs`) and a wry/tao backend on
-                               macOS/Linux (`host_cross.rs`). Bins: kiri-host
-                               (smoke runner), kiri-host-stress (launch-close
-                               loop)
-baselines/wry-tao              standalone comparator: tao 0.36 + wry 0.56,
-                               custom protocol wry://localhost
-baselines/tauri                standalone comparator: tauri 2.11,
-                               invoke command kiri_marker
-examples/blank                 shared blank frontend with a 3-way bridge
-                               adapter (native / wry / tauri)
-benchmark/                     harness.py + test-vectors.json (from corpus)
+crates/kiri-core       platform-neutral protocol, security authority,
+                       resources, tracing, and validation
+crates/kiri-runtime    native host facade and platform backends
+baselines/             standalone Wry/Tao and Tauri comparison apps
+examples/              blank, starter, demo, and diagnostics frontends
+benchmark/             startup, IPC, and bulk-data measurement tools
+docs/                  product, API, architecture, and research documentation
 ```
 
-The direct host serves the frontend over `kiri://localhost/index.html`
-(custom scheme at WebView2 environment create) and records startup markers
-on a QPC monotonic clock: `process_spawn_requested`, `native_entry`,
-`platform_initialized`, `webview_creation_requested`, `webview_ready`,
-`bridge_ready`, `dom_ready`, `app_ready`, `first_animation_frame`. Smoke
-runs exit 0 after `first_animation_frame`, exit 2 on watchdog. Schema:
-`docs/research/markers-schema.md`.
+The runtime selects a platform-native host automatically. Linux and macOS use
+the wry/tao backend; Windows uses the Win32/WebView2 backend. Both implement
+the same origin checks, native caller identity, capability authority, resource
+ownership, and control protocol.
 
-Bindings: `webview2-com` 0.39.1 with `windows` 0.62 for the direct host (the
-only line that exposes the shared-buffer interfaces needed by T008), kept
-deliberately independent of wry, which pins an older API generation.
-
-## Repository layout
-
-```
-.github/workflows/            correctness (all-OS hard gates),
-                              controlled-performance (hosted macOS/Windows)
-baselines/                    standalone comparators, own lockfiles
-benchmark/                    harness.py, test-vectors.json, README
-crates/kiri-core/             38 modules, 217 tests
-crates/kiri-runtime/         lib.rs (facade), host_windows.rs (WebView2),
-                              host_cross.rs (wry/tao), markers.rs, output.rs,
-                              bin/kiri-host, bin/kiri-host-stress
-examples/panel/               developer diagnostics frontend (T010)
-docs/                         DECISIONS.md, OPEN_QUESTIONS.md,
-                              research/markers-schema.md,
-                              13-diagnostics-observability.md
-examples/blank/               shared frontend (T001-T004)
-examples/panel/                developer diagnostics frontend (T010)
-```
-
-The execution corpus (`kiri-agent-execution-corpus/`, gitignored) is the
-authoritative source of specs, docs, and the machine-readable task queue
-(`agent/task_queue.json`). It is linked from `docs/research/README.md`.
+The shared startup contract records nine monotonic markers and exits 0 after
+`first_animation_frame` in smoke mode, or 2 when the watchdog expires. The
+schema is documented in [`docs/research/markers-schema.md`](docs/research/markers-schema.md).
 
 ## Build and verify
 
-The dev machine runs macOS (aarch64); the Windows direct host cannot execute
-locally, so it is validated by the cross-target compile. The wry/tao backend
-runs natively here and is exercised by the smoke and stress runs. Local gates:
-
 ```sh
-cargo test --workspace                       # 252 tests
+cargo test --workspace
 cargo fmt --all -- --check
-cargo build -p kiri-runtime --bins           # native host (macOS/Linux)
+cargo build -p kiri-runtime --bins
 ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
 ./target/debug/kiri-host-stress --frontend examples/blank --cycles 3
 cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
@@ -159,121 +58,41 @@ cargo check --manifest-path baselines/wry-tao/Cargo.toml
 cargo check --manifest-path baselines/tauri/Cargo.toml
 ```
 
-On Windows, the same workspace checks run natively plus the smoke contract:
+The host runs natively on the current operating system. The Windows target can
+also be cross-checked from Linux or macOS with the installed MSVC target.
+
+## Run an application
+
+The host packs a frontend at compile time. `--frontend DIR` overrides the
+frontend for local runs and benchmarks. `KIRI_FRONTEND` is also supported.
 
 ```sh
-cargo build --release -p kiri-runtime --bin kiri-host
-./target/release/kiri-host.exe --smoke --frontend examples/blank --markers-out artifacts/startup.json
-./target/release/kiri-host-stress.exe --cycles 100 --frontend examples/blank
-```
-
-On macOS/Linux the host runs natively with the wry/tao backend:
-
-```sh
-cargo build -p kiri-runtime --bin kiri-host
-./target/debug/kiri-host --smoke --frontend examples/blank --markers-out artifacts/startup.json
-./target/debug/kiri-host-stress --cycles 100 --frontend examples/blank
-```
-
-Baselines follow the same smoke contract (exit 0 + one JSON document on
-stdout, exit 2 on watchdog) so the harness can drive all three:
-
-```sh
-python benchmark/harness.py --name startup-kiri --runs 20 --output artifacts/startup-kiri.json \
-  -- ./target/release/kiri-host --smoke --frontend examples/blank
-```
-
-## Download
-
-Unsigned builds: [latest release](https://github.com/ChloeVPin/kiri/releases/latest).
-
-macOS: open the `.dmg`. First launch is right-click → Open. There is no
-Apple signature. Windows and Linux zips are the same host with the UI packed
-in; run `kiri-host`.
-
-## Run a complete app
-
-The host packs a frontend at compile time (same idea as Tauri `frontendDist`).
-`--frontend DIR` still wins for benches. With no flag, `kiri-host` serves the
-packed UI.
-
-```sh
-# default packed UI is examples/blank (smoke/bench stable)
 cargo build -p kiri-runtime --bin kiri-host
 ./target/debug/kiri-host --smoke
 
-# ship the starter as a double-clickable Mac app + dmg (unsigned)
-./tools/packaging/make-app.sh --frontend examples/starter
-./tools/packaging/make-dmg.sh
-open artifacts/Kiri.app
+# Build and run the interactive demo.
+KIRI_EMBED_FRONTEND="$PWD/examples/demo" cargo build --release -p kiri-runtime --bin kiri-host
+./target/release/kiri-host
 
-# start a runnable app (downloads the latest release; no git tree required)
+# Scaffold an application without owning this repository.
 ./tools/create-kiri-app.sh ~/Desktop/my-kiri-app
-# or:
-# curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ~/Desktop/my-kiri-app
 ```
 
-`kiri-host` also looks at `KIRI_FRONTEND` and a `frontend/` folder next to the
-binary. Rebuild with `KIRI_EMBED_FRONTEND=/path/to/ui` to change what is packed.
-
-## CI
-
-- `correctness`: fmt, clippy, tests on windows/macos/ubuntu; the Windows
-  runtime is cross-checked on non-Windows runners
-- `controlled-performance`: hosted macOS (Kiri + wry/tao + Tauri) and Windows
-  (Kiri vs Tauri only; wry/tao hangs on windows-latest and is skipped);
-  through-webview IPC plus embedded `kiri-host --smoke` (no `--frontend`)
-- `unsigned-release`: tag/manual packaging on macOS, Windows, and Linux from
-  one script; artifacts are intentionally unsigned at the OS level, while
-  `RELEASES.json` signs and verifies their exact bytes with Kiri's Ed25519 key.
-  The workflow requires the `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret;
-  no Apple Developer license or native OS signing certificate is required.
-  Configure the secret from the local Keychain with:
-  `./tools/packaging/setup-release-key.sh`
-
-## Roadmap
-
-Task queue is maintained in the corpus (`agent/task_queue.json`, status
-mirrored in this repo's docs):
-
-- T001-T007 done (bootstrap, lifecycle, control-plane, authority, codegen,
-  resource table, bulk benchmark)
-- T008 WebView2 read-only shared-buffer path (blocked: needs real Windows)
-- T009 macOS local release comparison recorded (startup + through-webview IPC +
-  size). Windows T009 vs Tauri and a hosted rerun of the async protocol are still
-  open.
-- T010 minimal diagnostics panel (done, macOS-runnable)
+See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for application
+scaffolding, frontend bridges, packaging, and release usage.
 
 ## Documentation
 
-- `docs/DECISIONS.md`: architectural decisions with evidence levels
-  (webview2-com 0.39.1, no DLL copy on MSVC, standalone baselines, virtual
-  host mapping, marker schema, cross-platform backends)
-- `docs/OPEN_QUESTIONS.md`: unresolved items and the evidence needed to close
-  them (WebView2 runtime on CI runners, first real Windows run, Tauri IPC
-  marker comparability, backpressure policy)
-- `docs/research/markers-schema.md`: the shared measurement contract
+- [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md): build and run an app
+- [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md): control-plane commands
+- [`docs/PRODUCT.md`](docs/PRODUCT.md): product goal and acceptance criteria
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): planned work and product gaps
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): architecture decisions
+- [`docs/research/markers-schema.md`](docs/research/markers-schema.md): marker contract
 
-## Agent operations
+## Project rules
 
-`AGENTS.md` at the repository root carries the operating contract for
-agents working on this repo: read the relevant spec before editing, evidence
-levels, stop conditions, the cross-platform verification contract, and the
-exact verification commands. `docs/HANDOFF` style handoffs are written into the corpus
-(`agent/HANDOFF.md`).
-
-## Rules of the project
-
-- The host runs natively on every desktop platform (Windows via the direct
-  Win32 + WebView2 backend, macOS and Linux via the wry/tao backend). Keep
-  platform transport behind narrow interfaces; do not let one engine's
-  quirks leak into the shared control protocol.
-- Every backend enforces the same security boundary: the application origin is
-  trusted, remote navigation is denied, and caller identity plus capability
-  authority are assigned by native code only (never by JavaScript).
-- Never optimize away capability checks, origin checks, bounds checks,
-  ownership checks, or backpressure to produce a better benchmark.
-- Never convert a hypothesis into a fact because an implementation seems
-  plausible. Record environment and failure mode for every failed
-  experiment.
-- No emojis or decorative prose in docs, no unmeasured performance claims.
+- Keep Linux, macOS, and Windows as equal desktop targets.
+- Keep platform transport behind narrow interfaces.
+- Enforce origin, capability, bounds, ownership, and backpressure checks.
+- Do not turn an unmeasured hypothesis into a performance claim.

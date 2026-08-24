@@ -7,13 +7,12 @@ this summary.
 ## Project
 
 Kiri is a cross-platform native desktop app runtime. The product goal is
-`docs/PRODUCT.md`. A direct Win32 plus
-WebView2 host on Windows and a wry/tao host on macOS and Linux are compared
+`docs/PRODUCT.md`. Platform-native hosts on Linux, macOS, and Windows are compared
 against Tauri and Wry/Tao baselines on a shared startup-marker schema and a
 control-plane protocol defined in the corpus
 (`kiri-agent-execution-corpus/`, gitignored, see `docs/research/README.md`).
-The host runs natively on every desktop platform; the direct backend is
-Windows-only, the wry/tao backend covers macOS and Linux.
+The host runs natively on every desktop platform. The Win32/WebView2 backend is
+Windows-only; the wry/tao backend covers macOS and Linux.
 
 The direct platform ownership is a hypothesis to be tested, not a goal. If a
 baseline matches or beats the direct host on the measured contract, record
@@ -25,7 +24,7 @@ that result and prefer the simpler path.
 - `x86_64-pc-windows-msvc` target is installed locally.
 - Windows binaries cannot execute on this machine. The Windows runtime is
   validated by compile cross-checks locally and by the
-  `windows-host-smoke` CI workflow on real Windows.
+  `correctness` CI workflow on real Windows.
 - The corpus is authoritative: specs, task queue, evidence policy. Do not
   edit corpus docs except task status and handoff notes.
 - Nothing is committed until a coherent unit is done and every gate is green.
@@ -33,7 +32,7 @@ that result and prefer the simpler path.
 ## Verification gates (run all before committing)
 
 ```sh
-cargo test --workspace                                  # kiri-core: 45 tests
+cargo test --workspace                                  # kiri-core: 217 tests
 cargo fmt --all -- --check
 cargo build -p kiri-runtime --bins                      # native host (macOS/Linux)
 ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
@@ -79,8 +78,8 @@ depend on `kiri-core`.
 ## Current state and next work
 
 Product goal: `docs/PRODUCT.md`. Status: T001 through T007 and T010 are complete and committed. The runtime
-runs natively on every desktop platform from one codebase (direct Win32 +
-WebView2 on Windows, wry/tao on macOS and Linux), and the Mac-headless gates
+runs natively on every desktop platform from one codebase (wry/tao on macOS and
+Linux, Win32 + WebView2 on Windows), and the Mac-headless gates
 are green. The Windows direct backend is cross-checked locally and exercised
 on real Windows by CI. The unsigned G-3 release path is implemented in
 `tools/packaging/package.sh` and `.github/workflows/unsigned-release.yml`:
@@ -88,21 +87,22 @@ native OS signing is deliberately out of scope, while the application-level
 Ed25519 manifest signs the exact artifact bytes. The release workflow requires
 the `KIRI_UPDATE_SIGNING_KEY_HEX` repository secret and rejects the known test
 key for publication.
-The queue lives in the corpus at `agent/task_queue.json` (T001 through T010)
-and is mirrored in `README.md`. Handoff notes are written to
+The queue lives in the corpus at `agent/task_queue.json` and current evidence
+is summarized in `docs/STATUS.md`. Handoff notes are written to
 `kiri-agent-execution-corpus/agent/HANDOFF.md` at session end.
 
 Next work: Windows T009 numbers come from hosted `windows-latest` (no local
-Windows box required); wry/tao is skipped there because it hangs. T008
-(WebView2 shared-buffer) still needs real Windows to implement. Local macOS
+Windows box required); wry/tao is not yet a stable Windows comparison. T008
+(WebView2 shared-buffer) is implemented and verified on real Windows. Local macOS
 can ship an unsigned `.app` / `.dmg` via `tools/packaging/make-app.sh` and
 `make-dmg.sh` (frontend is compile-time packed). `./tools/create-kiri-app.sh DIR`
-copies the starter UI. G-1 mobile
-and G-2 ecosystem breadth remain larger roadmap items. A fresh update public key is now pinned
-in the runtime; its private half must be supplied to GitHub as
-`KIRI_UPDATE_SIGNING_KEY_HEX` before the first public release tag. The
-`correctness` workflow is the native all-OS correctness path; it includes the
-Windows smoke/stress acceptance on `windows-latest`.
+copies the starter UI. An interactive demo ships at `examples/demo`.
+Developer docs are in `docs/GETTING_STARTED.md` and `docs/API_REFERENCE.md`.
+G-1 mobile and G-2 ecosystem breadth remain larger roadmap items. A fresh
+update public key is now pinned in the runtime; its private half must be
+supplied to GitHub as `KIRI_UPDATE_SIGNING_KEY_HEX` before the first public
+release tag. The `correctness` workflow is the native all-OS correctness
+path; it includes the Windows smoke/stress acceptance on `windows-latest`.
 
 ## Conventions
 
