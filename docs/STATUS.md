@@ -43,7 +43,7 @@ rehearsal. The release producer verified the generated Ed25519 manifest against
 the pinned public key, and the launcher-bearing macOS archive hash matched the
 manifest. This validates the signing path without publishing the artifact.
 
-The published v0.1.4 release contains the launcher-bearing Linux and Windows
+The published v0.1.6 release contains the launcher-bearing Linux and Windows
 archives and the signed three-platform manifest. The older v0.1.3 release
 predates these launcher changes.
 
@@ -55,13 +55,11 @@ predates these launcher changes.
 - [x] Local packaging with the production Keychain key emits a verifiable
   signed manifest.
 - [x] Publish v0.1.4 containing the current launchers.
+- [x] Publish v0.1.6 with native filesystem watching and bounded WebSocket
+  transport; live manifest and all three platform archives verified.
 - [x] Verify v0.1.4 through the POSIX scaffold and native Windows PowerShell
   scaffold smoke test in correctness run `32686438971`.
 
-The v0.1.6 release is the next release candidate for the native filesystem
-watcher, bounded local WebSocket transport, benchmark resource metrics, and
-accessibility baseline changes. It must pass the same three-platform package,
-manifest, and scaffold gates before publication.
 
 Measured startup, IPC, binary-size, and bulk-data results are maintained in
 [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) and

@@ -186,7 +186,7 @@ direction of the result. If it cannot, the claim is narrowed or rejected.
 ## Current evidence and known risks
 
 The repository already has a double-gated control plane, cross-platform
-startup markers, a signed manifest verifier, launcher-bearing v0.1.4 release
+startup markers, a signed manifest verifier, launcher-bearing v0.1.6 release
 artifacts, and a broad native command catalog. Current evidence shows a real
 Kiri IPC advantage in the hosted samples and a footprint advantage over the
 Tauri baseline, but startup is workload- and runner-sensitive. Tauri still has
