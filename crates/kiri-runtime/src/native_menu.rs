@@ -62,6 +62,39 @@ impl NativeMenu {
         }
     }
 
+    pub fn replace(
+        &mut self,
+        window: &tao::window::Window,
+        operation: OperationKind<'_>,
+    ) -> Result<()> {
+        if self.installed {
+            self.remove(window)?;
+        }
+        self.apply(operation)?;
+        self.install(window)
+    }
+
+    fn remove(&mut self, window: &tao::window::Window) -> Result<()> {
+        let menu = self
+            .menu
+            .as_ref()
+            .ok_or_else(|| Error::service_unavailable("kiri.menu has no native menu to remove"))?;
+        #[cfg(target_os = "macos")]
+        {
+            let _ = window;
+            menu.remove_for_nsapp();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            use tao::platform::unix::WindowExtUnix;
+            menu.remove_for_gtk_window(window.gtk_window()).map_err(|e| {
+                Error::service_unavailable(format!("kiri.menu GTK removal failed: {e}"))
+            })?;
+        }
+        self.installed = false;
+        Ok(())
+    }
+
     fn set_items(&mut self, items: &[MenuItem]) -> Result<()> {
         let native_items: Vec<muda::MenuItem> = items
             .iter()

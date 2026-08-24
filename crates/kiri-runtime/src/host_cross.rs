@@ -175,6 +175,17 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
     ]
 }
 
+fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
+    tray_items()
+        .into_iter()
+        .map(|item| kiri_core::app_menu::MenuItem {
+            id: item.id,
+            label: item.label,
+            action: item.action,
+        })
+        .collect()
+}
+
 /// Build the production control-plane router shared by the live host and
 /// the registration regression test. Takes the window and clipboard
 /// controllers so the test can pass headless no-op stubs without opening a
@@ -186,6 +197,7 @@ pub(crate) fn build_host_router(
     diagnostics: &Diagnostics,
     resources: &std::sync::Arc<Mutex<kiri_core::resources::ResourceTable<()>>>,
     options: &HostOptions,
+    menu_runner: std::sync::Arc<dyn kiri_core::app_menu::MenuRunner>,
 ) -> kiri_core::dispatch::Router {
     let events = kiri_core::platform::EventBus::new();
     let caller = CallerRegistry::new().register();
@@ -386,8 +398,8 @@ pub(crate) fn build_host_router(
         kiri_core::limits::Limits::default(),
     ))
     .with_menu(kiri_core::app_menu::MenuService::new(
-        Arc::new(kiri_core::app_menu::DisabledMenu),
-        kiri_core::app_menu::MenuAllowlist::new(vec![]),
+        menu_runner,
+        kiri_core::app_menu::MenuAllowlist::new(menu_items()),
         kiri_core::limits::Limits::default(),
     ))
 }
@@ -411,6 +423,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 1
             })?,
     );
+    let (menu_dispatcher, menu_runner) = crate::menu_dispatch::MenuDispatcher::new();
+    let native_menu =
+        std::rc::Rc::new(std::cell::RefCell::new(crate::native_menu::NativeMenu::new()));
     record(&markers, Marker::PlatformInit);
 
     record(&markers, Marker::WebViewCreationRequested);
@@ -480,6 +495,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let router_cell = router_cell.clone();
             let window_for_router = window.clone();
             let options_for_router = options.clone();
+            let menu_runner = menu_runner.clone();
             let webview_slot = webview_slot.clone();
             let diagnostics = diagnostics.clone();
             let resources = resources.clone();
@@ -550,6 +566,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                             &diagnostics,
                             &resources,
                             &options_for_router,
+                            Arc::new(menu_runner.clone()),
                         ));
                     }
                     let response = router_cell.borrow().as_ref().unwrap().dispatch(
@@ -612,6 +629,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     }
 
     event_loop.run(move |event, _, control_flow| {
+        let native_menu = native_menu.clone();
+        let window_for_menu = window.clone();
+        menu_dispatcher
+            .drain(|operation| native_menu.borrow_mut().replace(&window_for_menu, operation));
         // IPC benchmark injection and completion are checked outside the
         // WebView callback. Wake periodically so a quiet WebView cannot starve
         // those checks after the first animation frame.
@@ -742,6 +763,7 @@ mod host_router_regression_tests {
             &Diagnostics::new(),
             &std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new())),
             &HostOptions::default(),
+            Arc::new(kiri_core::app_menu::DisabledMenu),
         );
 
         // Iterate the single source of truth for the command catalog. Every
@@ -767,6 +789,7 @@ mod host_router_regression_tests {
             &Diagnostics::new(),
             &std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new())),
             &HostOptions::default(),
+            Arc::new(kiri_core::app_menu::DisabledMenu),
         );
 
         // The four surfaces that were previously only wired in the test-only
