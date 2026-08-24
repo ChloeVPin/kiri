@@ -14,7 +14,7 @@ blocked are called out explicitly.
 
 The day-to-day verification target. Real GPU, real WebView.
 
-- `cargo test --workspace`: 220 kiri-core + 54 kiri-runtime unit tests pass (plus 2 integration tests).
+- `cargo test --workspace`: 220 kiri-core + 56 kiri-runtime unit tests pass (plus 2 integration tests).
 - `cargo build -p kiri-runtime --bins`: builds.
 - `kiri-host --smoke --frontend examples/blank`: all 9 startup markers,
   exit 0 (webview_ready, bridge_ready, dom_ready, first_animation_frame, ...).
@@ -25,6 +25,12 @@ The day-to-day verification target. Real GPU, real WebView.
   path, so frontend file reads do not block the WebView event thread. The
   change is verified by the native smoke/stress gates below and by a local
   release benchmark; hosted performance must be rerun after publication.
+
+The smoke/stress bullets above refer to the last successful native gate. A
+fresh local macOS retry on 2026-08-24 hit the startup watchdog before
+`webview_ready`; this is retained as incomplete local evidence because the
+same host's WebView environment has previously failed to initialize. It does
+not replace the successful hosted correctness evidence.
 
 T011 added here: `kiri.open` (id 3) / `kiri.close` (id 4) control-plane
 commands backed by a real `ResourceTable<()>`, so the diagnostics panel's
