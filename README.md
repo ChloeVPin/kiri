@@ -85,6 +85,8 @@ scaffolding, frontend bridges, packaging, and release usage.
 
 - [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md): build and run an app
 - [`docs/API_REFERENCE.md`](docs/API_REFERENCE.md): control-plane commands
+- [`docs/ARCHITECTURE_MENU.md`](docs/ARCHITECTURE_MENU.md): native menu
+  threading and platform acceptance contract
 - [`docs/PRODUCT.md`](docs/PRODUCT.md): product goal and acceptance criteria
 - [`docs/ROADMAP.md`](docs/ROADMAP.md): planned work and product gaps
 - [`docs/DECISIONS.md`](docs/DECISIONS.md): architecture decisions
