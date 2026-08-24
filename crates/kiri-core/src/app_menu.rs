@@ -20,6 +20,7 @@
 //! the native host injects a real backend; tests use a `StubMenu` and assert
 //! allowlist enforcement and capability gating without touching the OS.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -113,8 +114,14 @@ impl MenuService {
     /// inject an unapproved item into the native menu.
     pub fn set_menu(&self, ids: &[String]) -> Result<Value> {
         self.limits.check_menu_items(ids.len() as u32)?;
+        let mut seen = HashSet::with_capacity(ids.len());
         let mut resolved: Vec<MenuItem> = Vec::with_capacity(ids.len());
         for id in ids {
+            if !seen.insert(id) {
+                return Err(Error::invalid_argument(format!(
+                    "kiri.menu.set: duplicate item id: {id}"
+                )));
+            }
             let item = self.allowlist.resolve(id).ok_or_else(|| {
                 Error::scope_denied(format!("kiri.menu.set: item id not on allowlist: {id}"))
             })?;
@@ -257,6 +264,14 @@ mod tests {
         let out =
             dispatch(&r, command_id::MENU_SET, serde_json::json!({ "ids": ["new", "wipe-cache"] }));
         assert!(!out["error"].is_null());
+    }
+
+    #[test]
+    fn duplicate_items_are_rejected_before_native_apply() {
+        let r = router();
+        let out = dispatch(&r, command_id::MENU_SET, serde_json::json!({ "ids": ["new", "new"] }));
+        assert!(!out["error"].is_null());
+        assert_eq!(out["error"]["code"], "invalid_argument");
     }
 
     #[test]
