@@ -37,6 +37,15 @@ second `set` while the first is pending, duplicate IDs, and a timeout. The
 last successfully applied snapshot should remain the authoritative state for
 diagnostics, but it must not be presented as native state after an apply error.
 
+This boundary is required by the native menu library itself: `muda::Menu` is
+not `Send` or `Sync`, macOS menu operations must run on the main thread,
+Windows menu accelerators depend on the native message loop, and Linux menu
+installation requires a GTK window. See the maintained [`muda::Menu` API]
+and its [platform notes].
+
+[`muda::Menu` API]: https://docs.rs/muda/latest/muda/struct.Menu.html
+[platform notes]: https://docs.rs/muda/latest/muda/#platform-specific-notes
+
 ## Platform adapters
 
 - macOS: map the validated snapshot to the application menu on the main
