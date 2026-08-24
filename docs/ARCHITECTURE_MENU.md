@@ -1,8 +1,10 @@
 # Native Application Menu Architecture
 
 This document defines the implementation boundary for Kiri's application-menu
-surface. The command contract and security policy are already implemented in
-`kiri-core`; native rendering and event delivery remain a runtime task.
+surface. The command contract and security policy are implemented in
+`kiri-core`. The runtime now contains the thread-affine `muda` adapter and
+bounded dispatcher; host lifecycle wiring and native event delivery remain
+the integration task.
 
 ## Contract
 
@@ -56,9 +58,10 @@ and its [platform notes].
   desktop environments do not have identical menu semantics, so unsupported
   roles must be rejected rather than silently approximated.
 
-The first implementation should support ordinary clickable items and a
-host-owned Quit action. Submenus, checkboxes, radio items, roles, icons, and
-accelerators require separate acceptance tests per platform.
+The current adapter supports ordinary host-owned clickable items and stable
+IDs. It does not claim replacement-safe reinstallation, event forwarding, or
+support for submenus, checkboxes, radio items, roles, icons, and accelerators;
+each requires separate acceptance tests per platform.
 
 ## Acceptance evidence
 
