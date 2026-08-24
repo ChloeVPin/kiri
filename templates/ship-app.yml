@@ -16,10 +16,13 @@ jobs:
         include:
           - os: macos-latest
             asset: darwin-aarch64.zip
+            platform: darwin-aarch64
           - os: windows-latest
             asset: windows-x86_64.zip
+            platform: windows-x86_64
           - os: ubuntu-latest
             asset: linux-x86_64.tar.gz
+            platform: linux-x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -31,8 +34,12 @@ jobs:
           ver="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])' <<<"$feed")"
           echo "KIRI_VERSION=$ver" >> "$GITHUB_ENV"
           mkdir -p dist/host
-          url="https://github.com/ChloeVPin/kiri/releases/download/v${ver}/kiri-${ver}-${{ matrix.asset }}"
+          url="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["platforms"]["${{ matrix.platform }}"]["url"])' <<<"$feed")"
+          expected="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["platforms"]["${{ matrix.platform }}"]["sha256"])' <<<"$feed")"
+          test -n "$url" && test -n "$expected"
           curl -fsSL -A ship-app -o /tmp/kiri-host.bin "$url"
+          actual="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' /tmp/kiri-host.bin)"
+          test "$actual" = "$expected"
           case "${{ matrix.asset }}" in
             *.zip) unzip -q /tmp/kiri-host.bin -d dist/host ;;
             *.tar.gz) tar -xzf /tmp/kiri-host.bin -C dist/host ;;
