@@ -81,8 +81,13 @@ Kiri measures `window.kiri.send` → host router → `evaluate_script(onResponse
 Tauri measures `__TAURI_INTERNALS__.invoke('kiri_echo')`. Payload content
 sizes match `control_payload_bytes` except the last size is 1_048_574 so the
 JSON string stays under the 1 MiB control ceiling. Report **batch-mean**
-(total batch time / N); per-call `performance.now()` on WKWebView is often
-0 or 1 ms.
+(total batch time / N) and the raw per-call p95/p99 values. Per-call
+`performance.now()` on WKWebView is often 0 or 1 ms, so the tail values are
+diagnostic unless the sample count and timer resolution are recorded.
+
+`compare.py` prints startup p50/p95/p99 for each marker and IPC batch means
+with raw round-trip p95/p99. The report must retain both views: batch means
+capture throughput, while tails expose contention and scheduling regressions.
 ## T007 ordinary-message bulk-path benchmark
 
 `crates/kiri-core/examples/bulk_bench.rs` measures the kiri-core JSON control

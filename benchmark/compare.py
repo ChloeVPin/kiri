@@ -68,6 +68,20 @@ def median(xs):
     return statistics.median(xs) if xs else None
 
 
+def percentile(xs, p):
+    if not xs:
+        return None
+    values = sorted(xs)
+    if len(values) == 1:
+        return values[0]
+    rank = (len(values) - 1) * p
+    lower = int(rank)
+    upper = min(lower + 1, len(values) - 1)
+    if lower == upper:
+        return values[lower]
+    return values[lower] + (values[upper] - values[lower]) * (rank - lower)
+
+
 def bin_size(path: Path):
     try:
         return path.stat().st_size
@@ -202,9 +216,10 @@ def run_ipc(bins, runs: int, timeout: int):
 
 
 def print_startup(results, errors, runs):
-    print(f"\nmacOS-native startup comparison (median of up to {runs} runs, ns since first marker)\n")
+    print(f"\nmacOS-native startup comparison (p50/p95/p99 of up to {runs} runs, ns since first marker)\n")
     labels = list(results)
-    hdr = "marker".ljust(26) + "".join(l.split()[0].ljust(22) for l in labels)
+    column_width = 34
+    hdr = "marker".ljust(26) + "".join(l.split()[0].ljust(column_width) for l in labels)
     print(hdr)
     for name in COMPARABLE + FLAGGED:
         row = name.ljust(26)
@@ -212,9 +227,13 @@ def print_startup(results, errors, runs):
             samples = results.get(label) or []
             vals = [s.get(name) for s in samples if s.get(name) is not None]
             if not vals:
-                row += "n/a".ljust(22)
+                row += "n/a".ljust(column_width)
             else:
-                row += f"{int(median(vals)):,}".ljust(22)
+                row += (
+                    f"{int(median(vals)):,}/"
+                    f"{int(percentile(vals, 0.95)):,}/"
+                    f"{int(percentile(vals, 0.99)):,}"
+                ).ljust(column_width)
         tag = ""
         if name in COMPARABLE:
             tag = "  [comparable]"
@@ -256,6 +275,12 @@ def print_ipc(ipc):
             or summary.get("median_ms")
         )
 
+    def rtt_percentiles(entry):
+        if not entry:
+            return None, None
+        values = [v for v in entry.get("rtt_ms", []) if isinstance(v, (int, float))]
+        return percentile(values, 0.95), percentile(values, 0.99)
+
     for size in sizes:
         km = batch_mean(kiri.get(size))
         tm = batch_mean(tauri.get(size))
@@ -263,6 +288,11 @@ def print_ipc(ipc):
         ktxt = f"{km:.3f}" if isinstance(km, (int, float)) else "n/a"
         ttxt = f"{tm:.3f}" if isinstance(tm, (int, float)) else "n/a"
         print(f"{size}".ljust(14) + ktxt.ljust(18) + ttxt.ljust(18) + ratio)
+        kp95, kp99 = rtt_percentiles(kiri.get(size))
+        tp95, tp99 = rtt_percentiles(tauri.get(size))
+        k_tail = f"{kp95:.3f}/{kp99:.3f}" if kp95 is not None else "n/a"
+        t_tail = f"{tp95:.3f}/{tp99:.3f}" if tp95 is not None else "n/a"
+        print("  rtt p95/p99".ljust(14) + k_tail.ljust(18) + t_tail)
     print("\nPer-call performance.now() samples are often 0 or 1 ms on WKWebView;")
     print("batch-mean (total batch time / N) is the comparable figure.")
 
