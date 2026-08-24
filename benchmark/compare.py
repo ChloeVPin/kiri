@@ -130,7 +130,7 @@ def run_startup(bins, runs: int, timeout: int):
     artifacts = ROOT / "artifacts"
     artifacts.mkdir(exist_ok=True)
     specs = {
-        "NATIVE (kiri-host)": {
+        "NATIVE disk (kiri-host)": {
             "cmd": [
                 str(bins["kiri"]),
                 "--smoke",
@@ -140,6 +140,15 @@ def run_startup(bins, runs: int, timeout: int):
                 str(artifacts / "startup-kiri-once.json"),
             ],
             "out": artifacts / "startup-kiri-once.json",
+        },
+        "NATIVE embedded": {
+            "cmd": [
+                str(bins["kiri"]),
+                "--smoke",
+                "--markers-out",
+                str(artifacts / "startup-kiri-embedded-once.json"),
+            ],
+            "out": artifacts / "startup-kiri-embedded-once.json",
         },
         "WRY-TAO baseline": {
             "cmd": [str(bins["wry"])],
@@ -219,7 +228,7 @@ def print_startup(results, errors, runs):
     print(f"\nmacOS-native startup comparison (p50/p95/p99 of up to {runs} runs, ns since first marker)\n")
     labels = list(results)
     column_width = 34
-    hdr = "marker".ljust(26) + "".join(l.split()[0].ljust(column_width) for l in labels)
+    hdr = "marker".ljust(26) + "".join(l[:column_width].ljust(column_width) for l in labels)
     print(hdr)
     for name in COMPARABLE + FLAGGED:
         row = name.ljust(26)

@@ -85,7 +85,8 @@ JSON string stays under the 1 MiB control ceiling. Report **batch-mean**
 `performance.now()` on WKWebView is often 0 or 1 ms, so the tail values are
 diagnostic unless the sample count and timer resolution are recorded.
 
-`compare.py` prints startup p50/p95/p99 for each marker and IPC batch means
+`compare.py` prints startup p50/p95/p99 for each marker for both Kiri's disk
+frontend and compile-time embedded frontend, and IPC batch means
 with raw round-trip p95/p99. The report must retain both views: batch means
 capture throughput, while tails expose contention and scheduling regressions.
 ## T007 ordinary-message bulk-path benchmark
