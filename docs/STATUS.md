@@ -44,21 +44,20 @@ the pinned public key, and the launcher-bearing macOS archive hash matched the
 manifest. This validates the signing path without publishing the artifact.
 
 The published v0.1.6 release contains the launcher-bearing Linux and Windows
-archives and the signed three-platform manifest. The older v0.1.3 release
-predates these launcher changes.
+archives and the signed three-platform manifest. Earlier pre-launcher releases
+predate these archive changes.
 
 ## Public release acceptance checklist
 
-- [x] Three platform archive entries exist in the public v0.1.3 manifest.
+- [x] Three platform archive entries exist in the public v0.1.6 manifest.
 - [x] Scaffolders require a signed platform asset and verify its SHA-256.
 - [x] Future release CI rejects archives without platform launchers.
 - [x] Local packaging with the production Keychain key emits a verifiable
   signed manifest.
-- [x] Publish v0.1.4 containing the current launchers.
 - [x] Publish v0.1.6 with native filesystem watching and bounded WebSocket
   transport; live manifest and all three platform archives verified.
-- [x] Verify v0.1.4 through the POSIX scaffold and native Windows PowerShell
-  scaffold smoke test in correctness run `32686438971`.
+- [x] Verify the v0.1.6 POSIX scaffold and native Windows PowerShell scaffold
+  paths in the correctness workflow.
 
 
 Measured startup, IPC, binary-size, and bulk-data results are maintained in

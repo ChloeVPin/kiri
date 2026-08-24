@@ -19,11 +19,9 @@ The product goal and acceptance criteria are defined in
 
 - Complete the remaining hosted performance comparison and retain platform and
   environment details with every result.
-- Publish replacement releases as the launcher, native capability, and
-  cross-platform workflow changes are validated; v0.1.6 is the current
-  published release.
-  launcher-bearing release and later runtime changes remain unreleased until
-  their platform gates pass.
+- Publish replacement releases as launcher, native-capability, and
+  cross-platform workflow changes pass their platform gates. v0.1.6 is the
+  current published release.
 - Improve signed packaging and platform-native distribution when signing
   credentials and release policy are available.
 - Continue evaluating ecosystem breadth only where it preserves Kiri's
