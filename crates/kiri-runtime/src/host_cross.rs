@@ -482,6 +482,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let ipc_bench_done = ipc_bench_done.clone();
             let ipc_bench_out = ipc_bench_out.clone();
             move |msg| {
+                if std::env::var_os("KIRI_DEBUG").is_some() {
+                    eprintln!("[kiri-debug] IPC message uri={} body={}", msg.uri(), msg.body());
+                }
                 // Origin check: wry builds the IPC Request from the calling
                 // frame's document URL (uri), with no Origin header. We judge
                 // the request URI instead. Only messages whose document URL is
@@ -599,7 +602,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     }
 
     event_loop.run(move |event, _, control_flow| {
-        *control_flow = ControlFlow::Wait;
+        // IPC benchmark injection and completion are checked outside the
+        // WebView callback. Wake periodically so a quiet WebView cannot starve
+        // those checks after the first animation frame.
+        *control_flow = if ipc_bench {
+            // Benchmark injection/completion must continue even when the
+            // WebView emits no native events between asynchronous callbacks.
+            ControlFlow::Poll
+        } else {
+            ControlFlow::Wait
+        };
 
         if let Event::WindowEvent { event: WindowEvent::CloseRequested, .. } = event {
             *control_flow = ControlFlow::Exit;
@@ -616,13 +628,17 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                 std::process::exit(2);
             }
             let has_frame = markers.borrow().has(Marker::FirstAnimationFrame);
+            let ipc_ready = has_frame || markers.borrow().has(Marker::DomReady);
             if has_frame && !smoke_armed {
                 smoke_armed = true;
                 frame_at = Some(Instant::now());
             }
-            if ipc_bench && has_frame && !ipc_bench_injected.get() {
+            if ipc_bench && ipc_ready && !ipc_bench_injected.get() {
                 if let Some(webview) = webview_slot.borrow().as_ref() {
                     ipc_bench_injected.set(true);
+                    if std::env::var_os("KIRI_DEBUG").is_some() {
+                        eprintln!("[kiri-debug] injecting IPC benchmark");
+                    }
                     let script = crate::ipc_bench::kiri_script(
                         ipc_bench_runs,
                         crate::ipc_bench::DEFAULT_WARMUP,
