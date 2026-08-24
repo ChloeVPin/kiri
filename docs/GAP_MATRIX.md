@@ -52,8 +52,10 @@ source or docs; B = maintained impl; D = inference.
 2. ~~G-13 Updater JS binding~~ DONE: kiri.updater.check (id 61) already wired (audit-18).
 3. ~~G-5 cli~~ DONE: kiri.cli.args structured + allowlist-scoped (exceeds Tauri).
 4. ~~G-10 fs watch~~ DONE: kiri.fs.watch host-allowlisted (exceeds Tauri).
-5. ~~G-11 WebSocket~~ DONE: kiri.ws host-allowlisted URL (exceeds Tauri).
-6. ~~G-12 App menu~~ DONE: kiri.menu host-owned item allowlist (exceeds Tauri).
+5. ~~G-11 WebSocket~~ DONE for bounded `ws://` transport: `kiri.ws` remains
+   host-allowlisted; TLS transport is a documented follow-up.
+6. G-12 App menu: host-owned command and allowlist exist, but native menu
+   rendering and activation transport remain open.
 7. G-3 Packaging - once signing certs exist, build MSI/dmg/AppImage and wire the
    signed-update verifier into release.
 8. G-1 Mobile - out of scope until desktop dominant; record as hypothesis.
@@ -70,5 +72,8 @@ Developer docs (GETTING_STARTED.md, API_REFERENCE.md) and an interactive
 demo (examples/demo) now ship.
 
 Fastest path to exceed on every winnable dimension:
-All headless-runnable surface gaps (G-9, G-13, G-5, G-10, G-11, G-12) are DONE; remaining: G-3 packaging (certs) and G-1 mobile (out of scope)
+All currently implemented desktop surface gaps (G-9, G-13, G-5, G-10, and
+bounded G-11) have headless or loopback evidence. G-12 native menu transport,
+G-3 OS signing/distribution, TLS WebSockets, ecosystem breadth, and G-1 mobile
+remain open.
 Mac and all preserve the security model.

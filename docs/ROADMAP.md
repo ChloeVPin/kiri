@@ -19,13 +19,17 @@ The product goal and acceptance criteria are defined in
 
 - Complete the remaining hosted performance comparison and retain platform and
   environment details with every result.
-- Publish a replacement release after the launcher-bearing archive workflow
-  passes with the production update-signing secret; v0.1.3 remains the old
-  public artifact set.
+- Publish replacement releases as the launcher, native capability, and
+  cross-platform workflow changes are validated; v0.1.4 is the current public
+  launcher-bearing release and later runtime changes remain unreleased until
+  their platform gates pass.
 - Improve signed packaging and platform-native distribution when signing
   credentials and release policy are available.
 - Continue evaluating ecosystem breadth only where it preserves Kiri's
   host-owned authorization model.
+- Complete native application-menu rendering and activation routing without
+  weakening the event-loop/thread-affinity boundary.
+- Add pinned TLS WebSocket transport after certificate and trust policy review.
 
 ## Tracking documents
 

@@ -26,8 +26,8 @@ The authoritative per-platform verification record is
 execution, cross-compilation, soft probes, and blocked hardware-dependent
 checks separately.
 
-The current local workspace gate passes 270 tests (218 `kiri-core`, 2
-integration, and 50 `kiri-runtime`), formatting, native clippy, Windows target
+The current local workspace gate passes 272 tests (218 `kiri-core`, 2
+integration, and 52 `kiri-runtime`), formatting, native clippy, Windows target
 check/clippy, and both standalone baseline checks. The native macOS build,
 smoke run, and three-cycle stress run also pass. These results describe the
 current worktree and should be refreshed after substantive changes.
@@ -62,6 +62,11 @@ Measured startup, IPC, binary-size, and bulk-data results are maintained in
 [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) and
 [`../benchmark/README.md`](../benchmark/README.md). Results must retain their
 environment and measurement method.
+
+The runtime now has native `notify` filesystem watching and bounded local
+`ws://` WebSocket transport on the desktop hosts. The application-menu command
+surface remains registered and allowlisted, but native menu rendering is still
+open because its platform objects are event-loop-affine.
 
 The corpus task queue currently marks T001-T008 and T010 complete, with T009
 still in progress. T008's implementation and hosted evidence are summarized
