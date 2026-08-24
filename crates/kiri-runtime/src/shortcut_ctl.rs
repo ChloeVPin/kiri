@@ -24,7 +24,7 @@ use kiri_core::shortcut::ShortcutRunner;
 
 /// Shared, host-owned record of currently registered shortcuts. The frontend
 /// supplies only the allowlisted accelerator; the action is the host's mapping.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RegisteredShortcut {
     pub accelerator: String,
     pub action: String,
@@ -60,6 +60,25 @@ fn record(registry: &Arc<ShortcutRegistry>, accelerator: &str, action: &str) -> 
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_accelerator_replaces_action() {
+        let registry = ShortcutRegistry::new();
+        record(&registry, "CmdOrCtrl+K", "first").unwrap();
+        record(&registry, "CmdOrCtrl+K", "second").unwrap();
+        assert_eq!(
+            registry.list(),
+            vec![RegisteredShortcut {
+                accelerator: "CmdOrCtrl+K".to_string(),
+                action: "second".to_string(),
+            }]
+        );
+    }
 }
 
 #[cfg(not(target_os = "windows"))]

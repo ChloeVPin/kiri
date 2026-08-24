@@ -44,6 +44,19 @@ impl DeeplinkRunner for HostDeeplink {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn duplicate_scheme_registration_is_idempotent() {
+        let host = HostDeeplink::new();
+        host.register("kiri").unwrap();
+        host.register("kiri").unwrap();
+        assert_eq!(host.schemes.lock().unwrap().as_slice(), &["kiri"]);
+    }
+}
+
 #[cfg(not(target_os = "windows"))]
 pub mod cross_deeplink {
     use super::*;
