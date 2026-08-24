@@ -92,7 +92,8 @@ fn main() {
                      \x20  [--ipc-bench] [--ipc-bench-runs N] [--ipc-bench-out PATH]\n\
                      \x20  [--ipc-bench-sizes 0,64,1024,...]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
-                     \x20  [--exit-after-ready-ms N] [--watchdog-ms N]"
+                     \x20  [--exit-after-ready-ms N] [--watchdog-ms N]\n\
+                     \x20  watchdog-ms 0 disables the ready watchdog"
                 );
                 std::process::exit(0);
             }

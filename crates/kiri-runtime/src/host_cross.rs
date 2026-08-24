@@ -588,7 +588,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     // runs when events arrive; if the loop is starved (headless display with
     // no frame pumping) it would never fire and the smoke run would hang.
     // This thread guarantees the process terminates after watchdog_ms.
-    if smoke || ipc_bench {
+    if (smoke || ipc_bench) && options.watchdog_ms > 0 {
         let wd_ms = options.watchdog_ms as u64;
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(wd_ms));
@@ -610,7 +610,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
 
         if smoke || ipc_bench {
             let elapsed = t0.elapsed().as_millis();
-            if elapsed > watchdog_ms {
+            if watchdog_ms > 0 && elapsed > watchdog_ms {
                 eprintln!("[kiri] watchdog: ready state not reached within the watchdog");
                 std::process::exit(2);
             }

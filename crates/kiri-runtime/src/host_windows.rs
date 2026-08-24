@@ -807,7 +807,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         eprintln!("[kiri] WebView2 runtime version: {version}");
     }
     // Watchdog armed for smoke runs so CI cannot hang.
-    if runtime.options.smoke || runtime.options.ipc_bench {
+    if (runtime.options.smoke || runtime.options.ipc_bench) && runtime.options.watchdog_ms > 0 {
         let _ =
             unsafe { SetTimer(Some(hwnd), WATCHDOG_TIMER_ID, runtime.options.watchdog_ms, None) };
     }
