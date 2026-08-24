@@ -21,6 +21,7 @@ pub mod fs_watch_ctl;
 pub mod host_policy;
 pub mod ipc_bench;
 pub mod markers;
+pub mod menu_dispatch;
 pub mod notification_ctl;
 pub mod opener_ctl;
 pub mod output;
