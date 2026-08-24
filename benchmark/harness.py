@@ -2,6 +2,11 @@
 import argparse, json, os, platform, statistics, subprocess, time
 from pathlib import Path
 
+try:
+    import resource
+except ImportError:  # Windows does not expose POSIX child accounting.
+    resource = None
+
 
 def percentile(values, p):
     if not values:
@@ -38,7 +43,30 @@ def main():
         'processor': platform.processor(),
         'python': platform.python_version(),
         'cpu_count': os.cpu_count(),
+        'child_resource_accounting': 'posix-resource' if resource is not None else 'unavailable',
     }
+
+    def child_usage():
+        if resource is None:
+            return None
+        usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+        return {
+            'user_ms': usage.ru_utime * 1000.0,
+            'system_ms': usage.ru_stime * 1000.0,
+            # ru_maxrss is bytes on macOS and KiB on Linux/BSD.
+            'max_rss_bytes': int(usage.ru_maxrss if platform.system() == 'Darwin' else usage.ru_maxrss * 1024),
+        }
+
+    def usage_delta(before, after):
+        if before is None or after is None:
+            return {}
+        return {
+            'child_user_ms': max(0.0, after['user_ms'] - before['user_ms']),
+            'child_system_ms': max(0.0, after['system_ms'] - before['system_ms']),
+            # ru_maxrss is the maximum over all waited-for children, so it is
+            # retained as an observed high-water mark, not a per-run delta.
+            'child_max_rss_bytes_high_water': after['max_rss_bytes'],
+        }
 
     for _ in range(args.warmups):
         subprocess.run(
@@ -53,6 +81,7 @@ def main():
     runs = []
     for i in range(args.runs):
         t0 = time.perf_counter_ns()
+        usage_before = child_usage()
         try:
             proc = subprocess.run(
                 command,
@@ -71,11 +100,13 @@ def main():
                     (exc.stderr or '') +
                     f'benchmark command timed out after {args.timeout_seconds:g}s'
                 )[-4096:],
+                **usage_delta(usage_before, child_usage()),
             })
             samples_ms.append(elapsed_ms)
             break
         t1 = time.perf_counter_ns()
         elapsed_ms = (t1 - t0) / 1_000_000
+        usage_after = child_usage()
         samples_ms.append(elapsed_ms)
         runs.append({
             'index': i,
@@ -83,6 +114,7 @@ def main():
             'returncode': proc.returncode,
             'stdout': proc.stdout[-4096:],
             'stderr': proc.stderr[-4096:],
+            **usage_delta(usage_before, usage_after),
         })
         if proc.returncode != 0:
             break
@@ -105,6 +137,15 @@ def main():
         },
         'runs': runs,
     }
+    resource_runs = [run for run in runs if 'child_user_ms' in run]
+    if resource_runs:
+        result['summary'].update({
+            'mean_child_user_ms': statistics.fmean(r['child_user_ms'] for r in resource_runs),
+            'mean_child_system_ms': statistics.fmean(r['child_system_ms'] for r in resource_runs),
+            'child_max_rss_bytes_high_water': max(
+                r['child_max_rss_bytes_high_water'] for r in resource_runs
+            ),
+        })
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2), encoding='utf-8')
