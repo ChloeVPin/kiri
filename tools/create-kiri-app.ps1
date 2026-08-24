@@ -31,12 +31,12 @@ try {
 
   $unpack = Join-Path $stage "unpack"
   Expand-Archive -Path $archive -DestinationPath $unpack
-  $host = Get-ChildItem -Path $unpack -Filter "kiri-host.exe" -Recurse | Select-Object -First 1
-  if (-not $host) { throw "Release archive did not contain kiri-host.exe" }
+  $hostBinary = Get-ChildItem -Path $unpack -Filter "kiri-host.exe" -Recurse | Select-Object -First 1
+  if (-not $hostBinary) { throw "Release archive did not contain kiri-host.exe" }
 
   New-Item -ItemType Directory -Force -Path (Join-Path $destinationPath "bin") | Out-Null
   New-Item -ItemType Directory -Force -Path (Join-Path $destinationPath "frontend") | Out-Null
-  Copy-Item $host.FullName (Join-Path $destinationPath "bin\kiri-host.exe")
+  Copy-Item $hostBinary.FullName (Join-Path $destinationPath "bin\kiri-host.exe")
 
   $starterBase = "https://raw.githubusercontent.com/$repo/main/examples/starter"
   foreach ($file in @("index.html", "kiri.js", "kiri.svg")) {
