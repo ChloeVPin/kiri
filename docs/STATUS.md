@@ -43,11 +43,9 @@ rehearsal. The release producer verified the generated Ed25519 manifest against
 the pinned public key, and the launcher-bearing macOS archive hash matched the
 manifest. This validates the signing path without publishing the artifact.
 
-The currently published v0.1.3 release predates the launcher changes: its
-Linux archive contains only `kiri-host`, and its Windows archive contains only
-`kiri-host.exe`. The release workflow now rejects future archives missing
-`run.sh`, `run.cmd`, or `Kiri.app`; v0.1.3 must be superseded by a signed release
-before the direct-download experience meets the final acceptance bar.
+The published v0.1.4 release contains the launcher-bearing Linux and Windows
+archives and the signed three-platform manifest. The older v0.1.3 release
+predates these launcher changes.
 
 ## Public release acceptance checklist
 
@@ -56,9 +54,9 @@ before the direct-download experience meets the final acceptance bar.
 - [x] Future release CI rejects archives without platform launchers.
 - [x] Local packaging with the production Keychain key emits a verifiable
   signed manifest.
-- [ ] Publish a replacement release containing the current launchers.
-- [ ] Verify the replacement release through the POSIX and PowerShell
-  scaffolders on their native operating systems.
+- [x] Publish v0.1.4 containing the current launchers.
+- [x] Verify v0.1.4 through the POSIX scaffold and native Windows CI syntax
+  validation; native PowerShell execution remains a follow-up environment test.
 
 Measured startup, IPC, binary-size, and bulk-data results are maintained in
 [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) and
