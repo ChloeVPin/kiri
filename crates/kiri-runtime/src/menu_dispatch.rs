@@ -226,9 +226,9 @@ mod tests {
 
     #[test]
     fn concurrent_mixed_set_invoke_no_partial_state() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::atomic::AtomicUsize;
         let (dispatcher, runner) = MenuDispatcher::new();
-        let applied = Arc::new(Mutex::new(Vec::new()));
+        let applied = Arc::new(Mutex::new(Vec::<String>::new()));
         let count = Arc::new(AtomicUsize::new(0));
         let mut workers = Vec::new();
         for n in 0..16 {
@@ -254,7 +254,7 @@ mod tests {
                     }
                     OperationKind::Invoke { id, action } => {
                         assert_eq!(id, action);
-                        assert!(id == &"quit" || id == &"show");
+                        assert!(*id == *"quit" || *id == *"show");
                     }
                 }
                 Ok(())

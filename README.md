@@ -8,7 +8,10 @@
   <p>
     <a href="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml"><img src="https://github.com/ChloeVPin/kiri/actions/workflows/correctness.yml/badge.svg" alt="CI" /></a>
     <a href="https://github.com/ChloeVPin/kiri/releases/latest"><img src="https://img.shields.io/github/v/release/ChloeVPin/kiri?label=latest%20release" alt="Latest release" /></a>
+    <a href="https://github.com/ChloeVPin/kiri/blob/main/LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue" alt="License: MIT OR Apache-2.0" /></a>
+    <a href="https://github.com/ChloeVPin/kiri/blob/main/docs/COMPETITIVE_ANALYSIS.md"><img src="https://img.shields.io/badge/benchmarks-Kiri%20vs%20Tauri-informational" alt="Benchmarks" /></a>
     <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey" alt="Linux | macOS | Windows" />
+    <img src="https://img.shields.io/badge/security-double--gated-critical" alt="Security: double-gated" />
   </p>
 </div>
 

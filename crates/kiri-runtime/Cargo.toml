@@ -4,6 +4,13 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description = "Native host for Kiri for Linux, macOS, and Windows (wry/tao on Linux and macOS, Win32 + WebView2 on Windows)"
+license.workspace = true
+readme.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [[bin]]
 name = "kiri-host"
@@ -14,7 +21,7 @@ name = "kiri-host-stress"
 path = "src/bin/kiri-host-stress.rs"
 
 [dependencies]
-kiri-core = { path = "../kiri-core" }
+kiri-core = { path = "../kiri-core", version = "0.1.6" }
 serde.workspace = true
 serde_json.workspace = true
 notify = "8.2.0"

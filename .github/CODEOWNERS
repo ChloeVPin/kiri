@@ -1,0 +1,7 @@
+# Default owners for the Kiri runtime and product docs.
+* @ChloeVPin
+/docs/ @ChloeVPin
+/crates/kiri-core/ @ChloeVPin
+/crates/kiri-runtime/ @ChloeVPin
+/.github/workflows/ @ChloeVPin
+/tools/packaging/ @ChloeVPin

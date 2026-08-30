@@ -11,6 +11,12 @@ version = "0.1.6"
 edition = "2021"
 rust-version = "1.77"
 repository = "https://github.com/ChloeVPin/kiri"
+homepage = "https://github.com/ChloeVPin/kiri"
+documentation = "https://github.com/ChloeVPin/kiri/blob/main/docs/GETTING_STARTED.md"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+keywords = ["tauri", "desktop", "webview", "security", "cross-platform"]
+categories = ["gui", "development-tools"]
 description = "Kiri: a native desktop app runtime where a granted capability must not be enough"
 
 [workspace.dependencies]

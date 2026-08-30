@@ -1,0 +1,10 @@
+Kiri is licensed under either of
+
+ * MIT License (LICENSE-MIT)
+ * Apache License, Version 2.0 (LICENSE-APACHE)
+
+at your option.
+
+This is the same dual license as the Rust project itself and matches Tauri's
+Apache-2.0 / MIT dual, ensuring maximum corporate adoption while preserving
+permissiveness.
