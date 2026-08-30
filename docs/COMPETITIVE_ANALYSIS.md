@@ -1,5 +1,7 @@
 # Competitive Analysis: Kiri vs Tauri
 
+> **Current hosted scoreboard:** `controlled-performance` run `32730288110` (commit `0d7e9a6`, `macos-latest` + `windows-latest`, 20 runs, 3 warmups/45 s for Wry/Tao) is the single current source. Historical tables below are retained but superseded; do not cherry-pick. See `CROSS_PLATFORM_STATUS.md:98` for Wry/Tao Windows caveat.
+
 Scope: where Kiri can *honestly* beat Tauri, where it is at parity, and where
 it cannot win. This is the strategy for "exceed them in every way that is
 winnable." Claims here are tied to verified gates, not aspirations.
