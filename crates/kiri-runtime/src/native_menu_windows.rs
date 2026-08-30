@@ -37,24 +37,47 @@ impl NativeMenuWindows {
     }
 
     pub fn replace(&mut self, hwnd: HWND, operation: OperationKind<'_>) -> Result<()> {
-        if self.installed {
-            let menu = self.menu.as_ref().ok_or_else(|| {
-                Error::service_unavailable("kiri.menu has no native menu to remove")
-            })?;
-            unsafe { menu.remove_for_hwnd(hwnd.0 as isize) }.map_err(|e| {
-                Error::service_unavailable(format!("kiri.menu removal failed: {e}"))
-            })?;
-            self.installed = false;
+        match operation {
+            OperationKind::Set(items) => {
+                if items.is_empty() {
+                    if self.installed {
+                        let menu = self.menu.as_ref().ok_or_else(|| {
+                            Error::service_unavailable("kiri.menu has no native menu to remove")
+                        })?;
+                        unsafe { menu.remove_for_hwnd(hwnd.0 as isize) }.map_err(|e| {
+                            Error::service_unavailable(format!("kiri.menu removal failed: {e}"))
+                        })?;
+                        self.installed = false;
+                    }
+                    self.menu = None;
+                    self.actions.clear();
+                    self.installed = false;
+                    return Ok(());
+                }
+                let mut pending = Self::new();
+                pending.set_items(items)?;
+                if self.installed {
+                    let menu = self.menu.as_ref().ok_or_else(|| {
+                        Error::service_unavailable("kiri.menu has no native menu to remove")
+                    })?;
+                    unsafe { menu.remove_for_hwnd(hwnd.0 as isize) }.map_err(|e| {
+                        Error::service_unavailable(format!("kiri.menu removal failed: {e}"))
+                    })?;
+                    self.installed = false;
+                }
+                self.menu = pending.menu;
+                self.actions = pending.actions;
+                let menu = self.menu.as_ref().ok_or_else(|| {
+                    Error::service_unavailable("kiri.menu cannot install an empty native menu")
+                })?;
+                unsafe { menu.init_for_hwnd(hwnd.0 as isize) }.map_err(|e| {
+                    Error::service_unavailable(format!("kiri.menu installation failed: {e}"))
+                })?;
+                self.installed = true;
+                Ok(())
+            }
+            OperationKind::Invoke { .. } => self.apply(operation),
         }
-        self.apply(operation)?;
-        let menu = self.menu.as_ref().ok_or_else(|| {
-            Error::service_unavailable("kiri.menu cannot install an empty native menu")
-        })?;
-        unsafe { menu.init_for_hwnd(hwnd.0 as isize) }.map_err(|e| {
-            Error::service_unavailable(format!("kiri.menu installation failed: {e}"))
-        })?;
-        self.installed = true;
-        Ok(())
     }
 
     pub fn action_for(&self, id: &MenuId) -> Option<(&str, &str)> {

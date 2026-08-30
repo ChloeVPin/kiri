@@ -31,8 +31,7 @@ integration, and 57 `kiri-runtime`), formatting, native clippy, Windows target
 check/clippy, and both standalone baseline checks. The native macOS build,
 smoke run, and three-cycle stress run passed on the last successful native gate;
 a fresh local retry on 2026-08-24 hit the watchdog before `webview_ready` (see
-`CROSS_PLATFORM_STATUS.md` — retained as incomplete local evidence, hosted
-`macos-latest` correctness remains green). These results describe the current
+`CROSS_PLATFORM_STATUS.md` — retained as **incomplete local evidence vs hosted green**; hosted `macos-latest` + `windows-latest` correctness remains green). The single current performance scoreboard is the hosted run `32730288110` table in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) (historical tables archived at `docs/archive/COMPETITIVE_HISTORY.md`). These results describe the current
 worktree and should be refreshed after substantive changes.
 
 Local archive assembly was inspected successfully, including the macOS app
@@ -63,10 +62,8 @@ predate these archive changes.
   paths in the correctness workflow.
 
 
-Measured startup, IPC, binary-size, and bulk-data results are maintained in
-[`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) and
-[`../benchmark/README.md`](../benchmark/README.md). Results must retain their
-environment and measurement method.
+Measured startup, IPC, binary-size, and bulk-data results are maintained as a **single current scoreboard** in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) (hosted run `32730288110`, 20 runs, 3 warmups/45 s) and [`../benchmark/README.md`](../benchmark/README.md). Results must retain their
+environment and measurement method; historical tables are archived at `docs/archive/COMPETITIVE_HISTORY.md`.
 
 The runtime now has native `notify` filesystem watching and bounded `ws://` /
 `wss://` WebSocket transport on the desktop hosts. The application-menu command
@@ -74,16 +71,16 @@ surface remains registered and allowlisted, but native menu rendering is still
 open because its platform objects are event-loop-affine.
 
 Correctness run `32730288096` and controlled performance run `32730288110`
-completed successfully across the hosted desktop matrix. The performance
+(20 runs, `macos-latest` + `windows-latest`) completed successfully across the hosted desktop matrix. The performance
 artifacts retain complete Kiri/Tauri startup and IPC results; Windows Wry/Tao
-startup remains explicitly incomplete after its bounded warmup timeout.
+startup remains explicitly **incomplete after its 45 s warmup timeout** (soft, `continue-on-error: true` in `controlled-performance.yml:117,122`) until proven stable — see `COMPETITIVE_ANALYSIS.md` current scoreboard and `CROSS_PLATFORM_STATUS.md:98`.
 
 The corpus task queue currently marks T001-T008 and T010 complete, with T009
 still in progress. T008's implementation and hosted evidence are summarized
-in [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). Run `32696370579`
-provides complete macOS and Windows Kiri/Tauri startup and IPC artifacts, but
-the Windows Wry/Tao startup baseline is incomplete after its 20-second warmup
-timeout, so T009 remains open for a stable three-way set.
+in [`SHARED_BUFFER_REPORT.md`](SHARED_BUFFER_REPORT.md). Runs `32696370579`/`32730288110`
+provide complete macOS and Windows Kiri/Tauri startup and IPC artifacts, but
+the Windows Wry/Tao startup baseline is **incomplete after its 45 s warmup
+timeout** (soft), so T009 remains open and **awaits the next hosted `controlled-performance` run** for a stable three-way set.
 
 ## Open work
 

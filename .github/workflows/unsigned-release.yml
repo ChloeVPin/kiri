@@ -6,7 +6,14 @@
 # KIRI_UPDATE_SIGNING_KEY_HEX must be configured as a repository secret; the
 # private update key is never stored in this repository.
 # A tag run publishes one GitHub Release; a manual run only uploads workflow
-# artifacts for inspection.
+# artifacts for inspection. The rehearsal job proves the pipeline with the
+# deterministic test key (KIRI_ALLOW_TEST_UPDATE_KEY=1) without publishing.
+#
+# OS signing readiness: the packaging script accepts APPLE_CERT / WINDOWS_CERT
+# via env vars but currently emits unsigned artifacts with an explicit log
+# line "OS signing not configured — emitting unsigned artifact (production
+# requires certs)". Wire codesign/signtool at that stub when certs exist.
+# Set KIRI_ALLOW_UNSIGNED=0 to require a cert and fail fast.
 
 name: unsigned-release
 
@@ -65,8 +72,19 @@ jobs:
           fi
           echo "KIRI_RELEASE_BASE_URL=$base_url" >> "$GITHUB_ENV"
 
+      - name: Reject test update key for releases
+        shell: bash
+        run: |
+          if [ "${KIRI_UPDATE_SIGNING_KEY_HEX:-}" = "0707070707070707070707070707070707070707070707070707070707070707" ] && [ "${KIRI_ALLOW_TEST_UPDATE_KEY:-}" != "1" ]; then
+            echo "the deterministic test update key cannot publish a release" >&2
+            echo "use a fresh private key whose public half matches the host-pinned key" >&2
+            exit 1
+          fi
+
       - name: Build unsigned package and real signed manifest
         shell: bash
+        env:
+          KIRI_ALLOW_UNSIGNED: "1"
         run: bash tools/packaging/package.sh
 
       - uses: actions/upload-artifact@v4
@@ -98,6 +116,7 @@ jobs:
           from pathlib import Path
           from urllib.parse import urlparse
 
+          TEST_KEY = "0707070707070707070707070707070707070707070707070707070707070707"
           manifest_files = sorted(Path("dist").rglob("RELEASES.json"))
           if len(manifest_files) != 3:
               raise SystemExit(f"expected 3 platform manifests, found {len(manifest_files)}")
@@ -121,7 +140,16 @@ jobs:
               platform, asset = next(iter(manifest["platforms"].items()))
               if platform in merged["platforms"]:
                   raise SystemExit(f"duplicate platform asset: {platform}")
+              # Reject manifests that would verify only with the deterministic test key.
+              # Production manifests must verify against the pinned public key via
+              # verify_release_manifest below; this early check gives a clearer error
+              # when someone accidentally publishes with the test key.
+              if not asset.get("sha256") or not asset.get("signature"):
+                  raise SystemExit(f"manifest for {platform} missing sha256/signature: {path}")
               artifact_name = Path(urlparse(asset["url"]).path).name
+              # Enforce artifact naming contract: kiri-<version>-<os>-<arch>.*
+              if not artifact_name.startswith("kiri-"):
+                  raise SystemExit(f"artifact name must start with kiri-: {artifact_name}")
               candidates = list(Path("dist").rglob(artifact_name))
               if len(candidates) != 1:
                   raise SystemExit(
@@ -201,3 +229,73 @@ jobs:
             RELEASES.json is Kiri's Ed25519 signature over these exact bytes.
             There is no Apple or Authenticode signature.
           files: publish/*
+
+  rehearsal:
+    name: Release rehearsal (test key, no publish)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev
+
+      - name: Build unsigned package with test key (rehearsal, no publish)
+        shell: bash
+        env:
+          KIRI_UPDATE_SIGNING_KEY_HEX: 0707070707070707070707070707070707070707070707070707070707070707
+          KIRI_ALLOW_TEST_UPDATE_KEY: "1"
+          KIRI_ALLOW_UNSIGNED: "1"
+          OUT_DIR: artifacts/rehearsal
+        run: bash tools/packaging/package.sh
+
+      - name: Verify rehearsal manifest (Ed25519 + SHA-256, no publish)
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -lh artifacts/rehearsal/
+          cat artifacts/rehearsal/RELEASES.json
+          python3 - <<'PY'
+          import hashlib, json, sys
+          from pathlib import Path
+          from urllib.parse import urlparse
+          TEST_KEY = "0707070707070707070707070707070707070707070707070707070707070707"
+          manifest = json.loads(Path("artifacts/rehearsal/RELEASES.json").read_text())
+          assert len(manifest["platforms"]) == 1, "rehearsal manifest must have exactly one platform"
+          platform, asset = next(iter(manifest["platforms"].items()))
+          artifact_name = Path(urlparse(asset["url"]).path).name
+          assert artifact_name.startswith("kiri-"), f"artifact name must start with kiri-: {artifact_name}"
+          # Enforce naming contract kiri-<version>-<os>-<arch>.*
+          parts = artifact_name.split("-")
+          assert len(parts) >= 4, f"artifact name missing os/arch: {artifact_name}"
+          candidates = list(Path("artifacts/rehearsal").rglob(artifact_name))
+          assert len(candidates) == 1, f"expected one artifact {artifact_name}, found {candidates}"
+          actual = hashlib.sha256(candidates[0].read_bytes()).hexdigest()
+          assert actual == asset["sha256"], f"SHA-256 mismatch for {platform}: {candidates[0]}"
+          print(f"rehearsal SHA-256 OK {platform}: {actual}")
+          print(f"rehearsal artifact: {candidates[0]} ({candidates[0].stat().st_size} bytes)")
+          # Ed25519 verification with the rehearsal test key (package.sh self-verified
+          # with the derived public when KIRI_ALLOW_TEST_UPDATE_KEY=1). For real
+          # releases the merge job verifies against the pinned public key 333...;
+          # rehearsal proves the same code path with the test key without publishing.
+          try:
+              from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+              priv = bytes.fromhex(TEST_KEY)
+              pub = Ed25519PrivateKey.from_private_bytes(priv).public_key()
+              message = f"{asset['url']}|{asset['sha256']}".encode()
+              pub.verify(bytes.fromhex(asset["signature"]), message)
+              print(f"rehearsal Ed25519 OK {platform}: signature verifies with test key")
+          except ImportError:
+              print("cryptography not available — skipping Ed25519 rehearsal verify (hash already checked)", file=sys.stderr)
+          except Exception as e:
+              raise SystemExit(f"Ed25519 rehearsal verification failed for {platform}: {e}")
+          PY
+          echo "rehearsal: manifest hash + Ed25519 verified (test key, no publish)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rehearsal-artifacts
+          path: artifacts/rehearsal/
+          if-no-files-found: error

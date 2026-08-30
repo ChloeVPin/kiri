@@ -82,6 +82,26 @@ else
 fi
 ARTIFACT_STEM="kiri-$PKG_VERSION-$PLATFORM_KEY"
 
+# ---------------------------------------------------------------------------
+# OS signing readiness (native signing is out of scope for G-3 unsigned)
+# ---------------------------------------------------------------------------
+# Native OS signing (Apple codesign + notarization, Windows Authenticode) is
+# intentionally absent: Kiri has no Apple Developer account and the pipeline
+# does not attempt codesign. This stub is ready to accept certificates via
+# APPLE_CERT / WINDOWS_CERT without changing the Ed25519 application-level
+# signature. When certs are absent we emit an unsigned artifact; set
+# KIRI_ALLOW_UNSIGNED=0 to require a cert and fail fast.
+if [ -n "${APPLE_CERT:-}" ] || [ -n "${WINDOWS_CERT:-}" ]; then
+  echo "OS signing certificate detected (APPLE_CERT/WINDOWS_CERT) — stub: native signing not yet implemented" >&2
+  echo "Continuing with unsigned artifact; wire codesign/signtool here when certs are provisioned" >&2
+else
+  echo "OS signing not configured — emitting unsigned artifact (production requires certs)" >&2
+  if [ "${KIRI_ALLOW_UNSIGNED:-1}" != "1" ]; then
+    echo "KIRI_ALLOW_UNSIGNED=0 but no OS signing cert provided (APPLE_CERT/WINDOWS_CERT)" >&2
+    exit 2
+  fi
+fi
+
 echo "==> Kiri unsigned packaging ($OS/$ARCH, version $PKG_VERSION)"
 
 # ---------------------------------------------------------------------------

@@ -46,7 +46,7 @@ Canonical order is now `Linux, macOS, and Windows` everywhere, matching `README.
 | Task | Files | Verify |
 |---|---|---|
 | Freeze single source of truth: keep `PRODUCT.md`, `ROADMAP.md`, `STATUS.md`, `CROSS_PLATFORM_STATUS.md`, `COMPETITIVE_ANALYSIS.md`, `ARCHITECTURE_MENU.md`; mark `DEEP_AUDIT_TAURI.md` + `EXCEED_TAURI_PLAN.md` as `docs/archive/*` with header `superseded by GAP_MATRIX.md + ROADMAP.md` | `docs/*.md`, `AGENTS.md:82` T-queue line | `cargo fmt --check` still passes, `docs/ROADMAP.md:34` tracking list updated |
-| Reconcile numbers: set one canonical `279` total, fix `DEEP_AUDIT_TAURI.md:172` `252`, reconcile `STATUS.md:33` vs `CROSS_PLATFORM_STATUS.md:29` with dated note `local 2026-08-24 incomplete vs hosted green` | `docs/STATUS.md`, `docs/CROSS_PLATFORM_STATUS.md`, `docs/COMPETITIVE_ANALYSIS.md:43` | `grep -rn "252 pass\|279"` clean |
+| Reconcile numbers: set one canonical `279` total, fix `DEEP_AUDIT_TAURI.md:172` `252`, reconcile `STATUS.md:33` vs `CROSS_PLATFORM_STATUS.md:29` with dated note `local 2026-08-24 incomplete vs hosted green` | `docs/STATUS.md`, `docs/CROSS_PLATFORM_STATUS.md`, `docs/COMPETITIVE_ANALYSIS.md:43` | `grep -rn "279"` clean (no stale 252 remaining) |
 | Normalize platform order to `Linux, macOS, and Windows` lint: add `grep` check to CI | `.github/workflows/correctness.yml` | CI fails if Windows-first slash order reappears |
 
 **Exit:** `docs/*.md` ≤ 10 active files, no contradictory median/weight claims, `cargo test --workspace` count matches docs.

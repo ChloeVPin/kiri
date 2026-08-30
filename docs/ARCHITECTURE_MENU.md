@@ -2,9 +2,10 @@
 
 This document defines the implementation boundary for Kiri's application-menu
 surface. The command contract and security policy are implemented in
-`kiri-core`. The runtime now contains the thread-affine `muda` adapter and
-bounded dispatcher; host lifecycle wiring and native event delivery remain
-the integration task.
+`kiri-core`. The runtime contains the thread-affine `muda` adapter and
+bounded dispatcher, and both hosts wire it on the event-loop thread and
+forward native selection to `window.kiri.onMenuAction`; the remaining work
+is manual keyboard/screen-reader verification.
 
 ## Contract
 
@@ -59,10 +60,9 @@ and its [platform notes].
   roles must be rejected rather than silently approximated.
 
 The current adapter supports ordinary host-owned clickable items and stable
-IDs via `muda 0.19.3` (`native_menu.rs` on macOS/Linux, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:32` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:427` `MenuDispatcher::new()` + `host_cross.rs:636` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction`. The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu` — the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`.
+IDs via `muda 0.19.3` (`native_menu.rs` on macOS/Linux, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:11` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:428` `MenuDispatcher::new()` + `host_cross.rs:648` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction` (`host_cross.rs:669`, `host_windows.rs:360`). The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu` — the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`. `replace` is replacement-safe: it builds the new menu off-thread-local state first, then removes the old OS menu before installing the new one, handles empty-set as clear (`native_menu.rs:65`, `native_menu_windows.rs:39`), and treats `invoke` as validation without reinstall.
 
-It does not claim replacement-safe reinstallation, event forwarding, or
-support for submenus, checkboxes, radio items, roles, icons, and accelerators;
+It does not claim support for submenus, checkboxes, radio items, roles, icons, and accelerators;
 each requires separate acceptance tests per platform.
 
 ## Acceptance evidence
@@ -79,4 +79,4 @@ The feature is complete only when all of the following are demonstrated:
 - hosted correctness tests exercise native menu creation and activation on each
   OS rather than only compiling the adapter.
 
-Current status: dispatcher + adapters are implemented and wired. Unit tests cover bounded queue, timeout, duplicate-ID, unknown-ID, and thread-affine `replace`/`install` (`menu_dispatch.rs:150`, `kiri_core::app_menu::tests`, `host_cross.rs:771` production-router catalog). Hosted native smoke (visible menu + activation) remains the open proof. Until that hosted eye-test is green on `macos-latest` and `windows-latest`, the scoreboard in `CROSS_PLATFORM_STATUS.md` carries the `incomplete` caveat.
+Current status: dispatcher + adapters are wired and smoke-tested. Unit tests cover bounded queue (32), 2 s timeout, closed-queue, concurrent set/invoke serialization, duplicate-ID, unknown-ID, and thread-affine `replace`/`install` (`menu_dispatch.rs:150`, `kiri_core::app_menu::tests`, `host_cross.rs:771` production-router catalog). Hosted through-webview smoke exercises `kiri.menu.set` (72) + `kiri.menu.invoke` (73) via the real bridge and fails the run on `menu_smoke.ok == false` (`examples/menu-smoke/index.html:32`, `host_cross.rs:541`, `host_windows.rs:955`); it is wired in `correctness.yml` on `macos-latest` and `windows-latest` (`correctness.yml:134`, `correctness.yml:161`). What remains is the manual human eye-test: visible native menu, keyboard navigation, and screen-reader announcement per platform. Until that manual check is recorded, `CROSS_PLATFORM_STATUS.md` marks menu as wired-but-unseen.

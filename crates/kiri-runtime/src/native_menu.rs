@@ -67,11 +67,28 @@ impl NativeMenu {
         window: &tao::window::Window,
         operation: OperationKind<'_>,
     ) -> Result<()> {
-        if self.installed {
-            self.remove(window)?;
+        match operation {
+            OperationKind::Set(items) => {
+                if items.is_empty() {
+                    if self.installed {
+                        self.remove(window)?;
+                    }
+                    self.menu = None;
+                    self.item_ids.clear();
+                    self.installed = false;
+                    return Ok(());
+                }
+                let mut pending = Self::new();
+                pending.set_items(items)?;
+                if self.installed {
+                    self.remove(window)?;
+                }
+                self.menu = pending.menu;
+                self.item_ids = pending.item_ids;
+                self.install(window)
+            }
+            OperationKind::Invoke { .. } => self.apply(operation),
         }
-        self.apply(operation)?;
-        self.install(window)
     }
 
     fn remove(&mut self, window: &tao::window::Window) -> Result<()> {

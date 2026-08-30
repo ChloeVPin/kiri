@@ -208,4 +208,94 @@ mod tests {
         let error = runner.invoke("quit", "quit").unwrap_err();
         assert_eq!(error.code, ErrorCode::ServiceUnavailable);
     }
+
+    #[test]
+    fn close_completes_queued_operations_without_deadlock() {
+        let (dispatcher, runner) = MenuDispatcher::new();
+        let runner2 = runner.clone();
+        let handle = thread::spawn(move || runner2.set_menu(&[item()]).unwrap_err());
+        // Give the worker time to enqueue.
+        thread::sleep(Duration::from_millis(50));
+        dispatcher.close();
+        let err = handle.join().unwrap();
+        assert_eq!(err.code, ErrorCode::ServiceUnavailable);
+        // Future submits fail fast without blocking.
+        let err2 = runner.set_menu(&[item()]).unwrap_err();
+        assert_eq!(err2.code, ErrorCode::ServiceUnavailable);
+    }
+
+    #[test]
+    fn concurrent_mixed_set_invoke_no_partial_state() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (dispatcher, runner) = MenuDispatcher::new();
+        let applied = Arc::new(Mutex::new(Vec::new()));
+        let count = Arc::new(AtomicUsize::new(0));
+        let mut workers = Vec::new();
+        for n in 0..16 {
+            let r = runner.clone();
+            let item_id = if n % 2 == 0 { "quit" } else { "show" };
+            let show = MenuItem { id: "show".into(), label: "Show".into(), action: "show".into() };
+            workers.push(thread::spawn(move || {
+                if n % 2 == 0 {
+                    let _ = r.set_menu(&[item(), show]);
+                } else {
+                    let _ = r.invoke(item_id, item_id);
+                }
+            }));
+        }
+        // Drain until all workers finish or queue empties repeatedly.
+        let mut drained_total = 0;
+        for _ in 0..200 {
+            let n = dispatcher.drain(|op| {
+                match op {
+                    OperationKind::Set(items) => {
+                        assert!(!items.is_empty());
+                        assert!(items.iter().all(|i| i.id == "quit" || i.id == "show"));
+                    }
+                    OperationKind::Invoke { id, action } => {
+                        assert_eq!(id, action);
+                        assert!(id == &"quit" || id == &"show");
+                    }
+                }
+                Ok(())
+            });
+            drained_total += n;
+            if workers.iter().all(|w| w.is_finished()) && n == 0 {
+                break;
+            }
+            thread::yield_now();
+        }
+        // Ensure at least some ops were applied and no panic/partial state.
+        for w in workers {
+            let _ = w.join();
+        }
+        dispatcher.drain(|_| Ok(()));
+        assert!(drained_total > 0, "expected at least one drained operation");
+        // Verify close is still safe after concurrent load.
+        dispatcher.close();
+        let _ = applied;
+        let _ = count;
+    }
+
+    #[test]
+    fn operation_timeout_is_bounded() {
+        // Verify that a submit without a draining UI thread times out
+        // within OPERATION_TIMEOUT (2s) with a Busy/ServiceUnavailable,
+        // rather than blocking forever. We use the real 2s timeout;
+        // the test budgets 3s total.
+        let (_dispatcher, runner) = MenuDispatcher::new();
+        // Intentionally never drain; the worker should time out.
+        let start = std::time::Instant::now();
+        let handle = thread::spawn(move || runner.set_menu(&[item()]));
+        let err = handle.join().unwrap().unwrap_err();
+        let elapsed = start.elapsed();
+        assert!(
+            err.code == ErrorCode::Busy || err.code == ErrorCode::ServiceUnavailable,
+            "expected busy/service_unavailable on timeout, got {:?}",
+            err.code
+        );
+        // Should have timed out near 2s, not hung indefinitely.
+        assert!(elapsed >= Duration::from_millis(1800), "timeout fired too early: {elapsed:?}");
+        assert!(elapsed < Duration::from_secs(5), "timeout took too long: {elapsed:?}");
+    }
 }

@@ -12,6 +12,8 @@
 use std::env;
 use std::fs;
 
+use ed25519_dalek::SigningKey;
+
 const HOST_PINNED_UPDATE_PUBLIC_KEY: &str =
     "333d58ae1e42ba2025b035666528d36430e0c14e13f3d5006c7f0fe22a9d3af6";
 
@@ -49,8 +51,21 @@ fn main() {
     fs::write(out_path, &json).expect("write manifest");
 
     let manifest = kiri_core::update::UpdateManifest::parse_json(&json).expect("parse manifest");
+    let verify_key = if env::var("KIRI_ALLOW_TEST_UPDATE_KEY").as_deref() == Ok("1") {
+        let raw = hex::decode(&signing_key_hex).expect("decode signing key for rehearsal");
+        if raw.len() != 32 {
+            eprintln!("KIRI_UPDATE_SIGNING_KEY_HEX must be 32 bytes hex");
+            std::process::exit(2);
+        }
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&raw);
+        let sk = SigningKey::from_bytes(&seed);
+        hex::encode(sk.verifying_key().to_bytes())
+    } else {
+        HOST_PINNED_UPDATE_PUBLIC_KEY.to_string()
+    };
     let verified = manifest
-        .verify_asset_for(platform, HOST_PINNED_UPDATE_PUBLIC_KEY, &artifact)
+        .verify_asset_for(platform, &verify_key, &artifact)
         .expect("manifest must verify against pinned key");
     assert_eq!(verified.version, kiri_core::update::Version::parse(version).unwrap());
 
