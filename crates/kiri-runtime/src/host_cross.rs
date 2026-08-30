@@ -452,6 +452,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let watchdog_ms = options.watchdog_ms as u128;
     let ipc_bench_done = Rc::new(Cell::new(false));
     let ipc_bench_injected = Rc::new(Cell::new(false));
+    let menu_smoke_done = Rc::new(Cell::new(false));
 
     // Shared slot so the IPC handler can post responses back to the webview
     // once it exists (the handler is created on the builder before build()).
@@ -503,6 +504,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let resources = resources.clone();
             let ipc_bench_done = ipc_bench_done.clone();
             let ipc_bench_out = ipc_bench_out.clone();
+            let menu_smoke_done = menu_smoke_done.clone();
             move |msg| {
                 if std::env::var_os("KIRI_DEBUG").is_some() {
                     // Debug mode must not turn into a payload logger. IPC
@@ -533,6 +535,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                             eprintln!("[kiri] through-webview ipc bench failed: {e}");
                             std::process::exit(1);
                         }
+                    }
+                    return;
+                }
+                if value.get("type").and_then(|t| t.as_str()) == Some("menu_smoke") {
+                    let ok = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+                    if ok {
+                        menu_smoke_done.set(true);
+                    } else {
+                        eprintln!("[kiri] menu smoke failed: {}", value);
+                        std::process::exit(1);
                     }
                     return;
                 }

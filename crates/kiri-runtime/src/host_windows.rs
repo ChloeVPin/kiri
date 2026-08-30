@@ -952,6 +952,19 @@ fn handle_web_message(
         return;
     }
 
+    if value.get("type").and_then(|t| t.as_str()) == Some("menu_smoke") {
+        let ok = value.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if ok {
+            // Menu through-webview exercised successfully; keep running so
+            // the normal smoke markers (dom/frame) still gate exit.
+        } else {
+            eprintln!("[kiri] menu smoke failed: {}", value);
+            rt.exit_code = 1;
+            unsafe { PostQuitMessage(1) };
+        }
+        return;
+    }
+
     // Control-plane command: dispatch through kiri-core and post the
     // wire response back to the page (T003).
     if let Some(req_val) = value.get("request") {
