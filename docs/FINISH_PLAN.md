@@ -27,7 +27,7 @@ Canonical order is now `Linux, macOS, and Windows` everywhere, matching `README.
 
 1. `cargo test --workspace` + `cargo fmt --check` + native `cargo clippy -D warnings` + `cargo check/clippy --target x86_64-pc-windows-msvc` + baselines `cargo check` on all three OSes (already in `correctness.yml`).
 2. Hosted `controlled-performance` produces a stable three-way set (Kiri vs wry/tao vs Tauri) for startup + IPC on macOS **and** Windows — no `incomplete` Wry/Tao warmup.
-3. Native menu visible + activatable on macOS, Windows, Linux with allowlist enforcement and hosted correctness coverage (`ARCHITECTURE_MENU.md:68`).
+3. Native menu visible + activatable on Linux, macOS, and Windows with allowlist enforcement and hosted correctness coverage (`ARCHITECTURE_MENU.md:68`).
 4. `tools/create-kiri-app.sh` and `.ps1` produce bit-identical verifier behavior (SHA check) and documented parity/FORCE fallback.
 5. One page of published numbers (`COMPETITIVE_ANALYSIS.md` current table) claims only what hosted artifacts show, with runner + distribution metadata.
 

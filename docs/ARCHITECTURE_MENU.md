@@ -60,7 +60,7 @@ and its [platform notes].
   roles must be rejected rather than silently approximated.
 
 The current adapter supports ordinary host-owned clickable items and stable
-IDs via `muda 0.19.3` (`native_menu.rs` on macOS/Linux, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:11` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:428` `MenuDispatcher::new()` + `host_cross.rs:648` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction` (`host_cross.rs:669`, `host_windows.rs:360`). The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu` — the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`. `replace` is replacement-safe: it builds the new menu off-thread-local state first, then removes the old OS menu before installing the new one, handles empty-set as clear (`native_menu.rs:65`, `native_menu_windows.rs:39`), and treats `invoke` as validation without reinstall.
+IDs via `muda 0.19.3` (`native_menu.rs` on Linux/macOS, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:11` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:428` `MenuDispatcher::new()` + `host_cross.rs:648` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction` (`host_cross.rs:669`, `host_windows.rs:360`). The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu` — the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`. `replace` is replacement-safe: it builds the new menu off-thread-local state first, then removes the old OS menu before installing the new one, handles empty-set as clear (`native_menu.rs:65`, `native_menu_windows.rs:39`), and treats `invoke` as validation without reinstall.
 
 It does not claim support for submenus, checkboxes, radio items, roles, icons, and accelerators;
 each requires separate acceptance tests per platform.
@@ -69,7 +69,7 @@ each requires separate acceptance tests per platform.
 
 The feature is complete only when all of the following are demonstrated:
 
-- a real native menu is visible on macOS, Windows, and Linux;
+- a real native menu is visible on Linux, macOS, and Windows;
 - an allowlisted item invokes its host action and reaches the correct window;
 - an unknown ID cannot create or invoke an item;
 - concurrent `set` and `invoke` calls cannot observe a partially applied menu;

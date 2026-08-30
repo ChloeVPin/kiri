@@ -138,6 +138,6 @@ KIRI_BULK_RUNS=20 KIRI_BULK_OUT=artifacts/bulk-ordinary.json \
 ```
 
 This is the "ordinary message" path. The WebView2 read-only shared-buffer
-fast path (T008) and the macOS/Linux custom-scheme streaming experiment are
+fast path (T008) and the Linux/macOS custom-scheme streaming experiment are
 separate, later work; the bulk ordinary-message numbers here are the baseline
 the shared-buffer path must beat to justify its added complexity.

@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 
 # Support --template flag: create-kiri-app.ps1 --template starter-vite DIR
 if ($Destination -eq "--template" -and $Template -ne "starter") {
-  # PowerShell already bound $Template as second positional; keep it
+  if ($args.Count -ge 1) { $Destination = $args[0] } else { throw "usage: create-kiri-app.ps1 [--template starter|starter-vite|blank] DIR" }
 } elseif ($Destination -eq "--template") {
   if ($args.Count -ge 1) {
     $Template = $args[0]
@@ -67,7 +67,12 @@ try {
     Remove-Item -Path (Join-Path $destinationPath "frontend\README.md") -ErrorAction SilentlyContinue
   } else {
     $starterBase = "https://raw.githubusercontent.com/$repo/main/examples/$Template"
-    foreach ($file in @("index.html", "kiri.js", "kiri.svg")) {
+    $remoteFiles = switch ($Template) {
+      "blank" { @("index.html", "kiri.js") }
+      "starter-vite" { @("index.html", "kiri.js", "kiri.svg", "package.json", "vite.config.js") }
+      default { @("index.html", "kiri.js", "kiri.svg") }
+    }
+    foreach ($file in $remoteFiles) {
       Invoke-WebRequest -Uri "$starterBase/$file" -OutFile (Join-Path $destinationPath "frontend\$file") -Headers @{ "User-Agent" = "create-kiri-app" }
     }
   }

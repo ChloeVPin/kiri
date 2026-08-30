@@ -73,7 +73,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
   day-to-day verification target for the cross (wry/tao) backend, while the
   Windows direct backend is cross-checked and CI-run.
 - **Decision**: `kiri-runtime` is a platform-neutral facade. On Windows it
-  uses a wry/tao host (`host_cross.rs`) on macOS and Linux and the direct
+  uses a wry/tao host (`host_cross.rs`) on Linux and macOS and the direct
   Win32 + WebView2 host (`host_windows.rs`) on Windows. Both record the same nine
   startup markers on a monotonic clock and obey the shared smoke/exit
   contract, so the benchmark compares like for like. The backend is selected
@@ -88,7 +88,7 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 
 - **Status**: decided (T001)
 - **Context**: the cross backend needs a stable application origin on
-  macOS/Linux so the shared blank frontend loads and posts markers the same
+  Linux/macOS so the shared blank frontend loads and posts markers the same
   way it does against the Windows virtual host mapping.
 - **Decision**: serve `index.html` from `HostOptions.frontend_dir` over a
   custom `kiri` protocol at `kiri://localhost/index.html`, inject the same

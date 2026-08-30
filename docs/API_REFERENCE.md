@@ -4,8 +4,8 @@ The Kiri frontend API (`kiri.js`) exposes 74 control-plane commands (ids
 1–74) organized by surface. Every command is double-gated: a capability bit
 AND a host allowlist. JavaScript never supplies the capability mask.
 
-The API is served over `kiri://localhost` and works identically on Windows
-(direct Win32 + WebView2), macOS (wry/tao), and Linux (wry/tao).
+The API is served over `kiri://localhost` and works identically on Linux
+(wry/tao), macOS (wry/tao), and Windows (direct Win32 + WebView2).
 
 ## How to call
 

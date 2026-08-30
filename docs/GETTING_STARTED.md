@@ -66,7 +66,7 @@ KIRI_EMBED_FRONTEND="$PWD/examples/demo" cargo build --release -p kiri-runtime -
 ```
 
 The dev machine is macOS aarch64. The host runs natively on every desktop
-platform: wry/tao on macOS and Linux, and Win32 + WebView2 on Windows.
+platform: wry/tao on Linux and macOS, and Win32 + WebView2 on Windows.
 
 ## 3. Ship your own UI
 

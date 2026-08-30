@@ -23,7 +23,7 @@ source or docs; B = maintained impl; D = inference.
 | G-1 | Mobile (iOS/Android) | Absent (desktop only) | Hard / long |
 | G-2 | 50+ official plugins + ecosystem | ABI implemented (R-2) + host-owned external plugin loader + manifest wired into startup (default-deny JSON manifest + name->descriptor registry). Third-party plugins load only when host-approved by name and only expose allowlisted commands (fail-closed). Exceeds Tauri's plugin model (trusts any plugin on path) on the security axis. Ecosystem breadth (50+ plugins, catalogs) still absent. | Medium |
 | G-3 | Bundler + autoupdater | Signed-update verifier done; no packaging/signing (needs certs) | Medium / blocked on certs |
-| G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on macOS/Linux; Windows parity pending real hardware | Medium |
+| G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on Linux/macOS; Windows parity pending real hardware | Medium |
 | G-5 | JS API breadth (cli, process) | DONE: kiri.cli.args (id 66) structured + allowlist-scoped, exceeds Tauri process.argv; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
 | G-9 | HTTP verbs beyond GET | DONE: kiri.http.post/put/patch/delete with body + method allowlist (exceeds Tauri) | Easy/Medium |
 | G-10 | fs watch | Native `notify` backend now wires `kiri.fs.watch/unwatch` (ids 67/68) to a host-allowlisted path inside PathScope on all desktop builds; event payloads retain only the approved target path and bounded event kind. | Medium |
@@ -35,7 +35,7 @@ source or docs; B = maintained impl; D = inference.
 ## Where Tauri is currently better (do not fake)
 
 - F-1 Asset loading maturity: Tauri embeds `frontendDist` assets at build time
-  and serves them through its asset resolver. Kiri's macOS/Linux `kiri://`
+  and serves them through its asset resolver. Kiri's Linux/macOS `kiri://`
   path retains runtime filesystem support, MIME/range/ETag/origin checks, and
   now resolves asynchronously so disk reads do not block the WebView event
   thread. Windows uses WebView2 folder mapping; embedded-asset parity remains

@@ -12,7 +12,7 @@ against Tauri and Wry/Tao baselines on a shared startup-marker schema and a
 control-plane protocol defined in the corpus
 (`kiri-agent-execution-corpus/`, gitignored, see `docs/research/README.md`).
 The host runs natively on every desktop platform. The Win32/WebView2 backend is
-Windows-only; the wry/tao backend covers macOS and Linux.
+Windows-only; the wry/tao backend covers Linux and macOS.
 
 The direct platform ownership is a hypothesis to be tested, not a goal. If a
 baseline matches or beats the direct host on the measured contract, record
@@ -34,7 +34,7 @@ that result and prefer the simpler path.
 ```sh
 cargo test --workspace                                  # 220 core + 57 runtime + 2 integration tests
 cargo fmt --all -- --check
-cargo build -p kiri-runtime --bins                      # native host (macOS/Linux)
+cargo build -p kiri-runtime --bins                      # native host (Linux/macOS)
 ./target/debug/kiri-host --smoke --frontend examples/blank --markers-out /tmp/kiri-startup.json
 ./target/debug/kiri-host-stress --frontend examples/blank --cycles 3
 cargo check --target x86_64-pc-windows-msvc -p kiri-runtime --all-targets
@@ -44,7 +44,7 @@ cargo check --manifest-path baselines/wry-tao/Cargo.toml
 cargo check --manifest-path baselines/tauri/Cargo.toml
 ```
 
-The host runs natively on macOS/Linux via the wry/tao backend, so its clippy
+The host runs natively on Linux/macOS via the wry/tao backend, so its clippy
 and smoke/stress runs are part of the local gate. Do not run
 `cargo clippy --workspace --all-targets`: the Windows direct backend has no
 `main` off Windows, so it fails with E0601 by design; it is checked with the
@@ -78,8 +78,8 @@ depend on `kiri-core`.
 ## Current state and next work
 
 Product goal: `docs/PRODUCT.md`. Status: T001 through T008 and T010 are complete and committed (T009 in progress). The runtime
-runs natively on every desktop platform from one codebase (wry/tao on macOS and
-Linux, Win32 + WebView2 on Windows), and the Mac-headless gates
+runs natively on every desktop platform from one codebase (wry/tao on Linux and
+macOS, Win32 + WebView2 on Windows), and the Mac-headless gates
 are green. The Windows direct backend is cross-checked locally and exercised
 on real Windows by CI. The unsigned G-3 release path is implemented in
 `tools/packaging/package.sh` and `.github/workflows/unsigned-release.yml`:

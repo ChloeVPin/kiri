@@ -60,7 +60,7 @@ VERIFIED on `windows-latest` (correctness run #19, after repo went public):
 native smoke reached all required startup markers, 100-cycle stress ran 0
 failures. Q-001 (WebView2 Evergreen runtime present on windows-latest) is
 CLOSED - no install step was required. Cross-checks (`cargo check`/`clippy`
-against `x86_64-pc-windows-msvc`) remain green on macOS/Linux runners.
+against `x86_64-pc-windows-msvc`) remain green on Linux/macOS runners.
 
 G-12 menu (Windows): same `MenuDispatcher` + `NativeMenuWindows`
 (`native_menu_windows.rs:39`, `host_windows.rs:358` wnd_proc drain +

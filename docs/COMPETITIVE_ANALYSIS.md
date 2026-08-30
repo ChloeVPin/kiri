@@ -8,8 +8,8 @@ winnable." Claims here are tied to verified gates, not aspirations.
 
 ## What we cannot beat, and will not pretend to
 
-- **Rendering quality / raw WebView performance.** Both Kiri (WebView2 on
-  Windows, system WebView via wry on macOS/Linux) and Tauri render through the
+- **Rendering quality / raw WebView performance.** Both Kiri (system WebView
+  via wry on Linux/macOS, WebView2 on Windows) and Tauri render through the
   *same* OS web engines. We do not fork or replace the engine. Any claim that
   Kiri "renders faster" than Tauri is false; it is the same WebKit/WKWebView/
   WebView2 underneath. The winnable war is everything *around* the engine:
@@ -406,7 +406,7 @@ they are product surface area. Each is tracked with an evidence level.
 ## What we have VERIFIED we exceed Tauri on (security axis)
 
 The structural win is double-gating: every capability-gated command also requires a
-host-owned allowlist, and BOTH backends (`host_cross.rs` macOS/Linux, `host_windows.rs`
+host-owned allowlist, and BOTH backends (`host_cross.rs` Linux/macOS, `host_windows.rs`
 Windows) wire the identical allowlist set. Verified this session (headless, double-gating
 audit): no capability-gated command is missing a warranted host allowlist in either backend.
 This inverts Tauri's trust model, where a granted capability is often sufficient by itself.

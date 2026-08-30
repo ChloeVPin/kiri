@@ -134,9 +134,23 @@ if [ -n "$LOCAL_STARTER" ]; then
   rm -f "$ABS_DEST/frontend/README.md"
 else
   BASE="https://raw.githubusercontent.com/${REPO}/main/examples/$TEMPLATE"
-  curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/index.html" "$BASE/index.html"
-  curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/kiri.js" "$BASE/kiri.js"
-  curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/kiri.svg" "$BASE/kiri.svg"
+  case "$TEMPLATE" in
+    blank)
+      for f in index.html kiri.js; do
+        curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/$f" "$BASE/$f"
+      done
+      ;;
+    starter-vite)
+      for f in index.html kiri.js kiri.svg package.json vite.config.js; do
+        curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/$f" "$BASE/$f"
+      done
+      ;;
+    *)
+      for f in index.html kiri.js kiri.svg; do
+        curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/$f" "$BASE/$f"
+      done
+      ;;
+  esac
 fi
 
 echo "==> assemble"
