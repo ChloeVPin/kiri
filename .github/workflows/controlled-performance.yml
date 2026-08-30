@@ -24,6 +24,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+  pull_request:
 
 concurrency:
   group: controlled-performance-${{ github.ref }}
@@ -64,37 +65,30 @@ jobs:
       - name: Startup benchmark (Kiri host)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         run: python benchmark/harness.py --name startup-kiri --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
       - name: Startup benchmark (Kiri host)
         if: runner.os == 'macOS'
-        continue-on-error: true
         run: python3 benchmark/harness.py --name startup-kiri --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri.json -- ./target/release/kiri-host --smoke --frontend examples/blank
 
       - name: Startup benchmark (Kiri embedded)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         run: python benchmark/harness.py --name startup-kiri-embed --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-embed.json -- .\target\release\kiri-host.exe --smoke
       - name: Startup benchmark (Kiri embedded)
         if: runner.os == 'macOS'
-        continue-on-error: true
         run: python3 benchmark/harness.py --name startup-kiri-embed --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-embed.json -- ./target/release/kiri-host --smoke
 
       - name: Startup benchmark (Kiri starter, first-invoke)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         run: python benchmark/harness.py --name startup-kiri-starter --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-starter.json -- .\target\release\kiri-host.exe --smoke --frontend examples\starter
       - name: Startup benchmark (Kiri starter, first-invoke)
         if: runner.os == 'macOS'
-        continue-on-error: true
         run: python3 benchmark/harness.py --name startup-kiri-starter --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-starter.json -- ./target/release/kiri-host --smoke --frontend examples/starter
 
       - name: Startup benchmark (Kiri host, software WebView2 appendix)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         env:
           KIRI_WEBVIEW2_ARGS: --disable-gpu
         run: python benchmark/harness.py --name startup-kiri-swrender --runs 20 --timeout-seconds 25 --output artifacts/startup-kiri-swrender.json -- .\target\release\kiri-host.exe --smoke --frontend examples\blank
@@ -105,7 +99,7 @@ jobs:
         with:
           name: perf-${{ matrix.os }}-kiri-startup
           path: artifacts/startup-kiri*.json
-          if-no-files-found: warn
+          if-no-files-found: error
           retention-days: 30
 
       - name: Build Wry/Tao baseline (release)
@@ -120,22 +114,20 @@ jobs:
       - name: Startup benchmark (Wry/Tao baseline)
         if: runner.os == 'macOS'
         continue-on-error: true
-        run: python3 benchmark/harness.py --name startup-wry --runs 20 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
+        run: python3 benchmark/harness.py --name startup-wry --runs 20 --warmups 3 --timeout-seconds 45 --output artifacts/startup-wry.json -- ./baselines/wry-tao/target/release/wry-tao-baseline --smoke
       - name: Startup benchmark (Wry/Tao baseline)
         shell: pwsh
         if: runner.os == 'Windows'
         continue-on-error: true
-        run: python benchmark/harness.py --name startup-wry --runs 20 --warmups 1 --timeout-seconds 20 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
+        run: python benchmark/harness.py --name startup-wry --runs 20 --warmups 3 --timeout-seconds 45 --output artifacts/startup-wry.json -- .\baselines\wry-tao\target\release\wry-tao-baseline.exe
 
       - name: Startup benchmark (Tauri baseline)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
-        run: python benchmark/harness.py --name startup-tauri --runs 20 --timeout-seconds 20 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
+        run: python benchmark/harness.py --name startup-tauri --runs 20 --timeout-seconds 25 --output artifacts/startup-tauri.json -- .\baselines\tauri\target\release\tauri-baseline.exe
       - name: Startup benchmark (Tauri baseline)
         if: runner.os == 'macOS'
-        continue-on-error: true
-        run: python3 benchmark/harness.py --name startup-tauri --runs 20 --output artifacts/startup-tauri.json -- ./baselines/tauri/target/release/tauri-baseline --smoke
+        run: python3 benchmark/harness.py --name startup-tauri --runs 20 --timeout-seconds 25 --output artifacts/startup-tauri.json -- ./baselines/tauri/target/release/tauri-baseline --smoke
 
       - name: Upload startup benchmark artifacts
         if: always()
@@ -153,19 +145,16 @@ jobs:
       - name: Through-webview IPC (Kiri)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         timeout-minutes: 8
         run: .\target\release\kiri-host.exe --frontend examples\blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-out artifacts\ipc-kiri.json --markers-out artifacts\startup-kiri-ipc.json
 
       - name: Through-webview IPC (Tauri)
         if: runner.os == 'macOS'
-        continue-on-error: true
         timeout-minutes: 8
         run: KIRI_IPC_BENCH=1 KIRI_IPC_BENCH_RUNS=20 KIRI_IPC_BENCH_OUT=artifacts/ipc-tauri.json ./baselines/tauri/target/release/tauri-baseline
       - name: Through-webview IPC (Tauri)
         shell: pwsh
         if: runner.os == 'Windows'
-        continue-on-error: true
         timeout-minutes: 8
         run: |
           $env:KIRI_IPC_BENCH = "1"
