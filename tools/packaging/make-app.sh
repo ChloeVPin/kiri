@@ -9,6 +9,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+# shellcheck source=tools/packaging/lib-icon.sh
+source "$ROOT/tools/packaging/lib-icon.sh"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "make-app.sh is macOS-only. On Windows/Linux use tools/packaging/package.sh" >&2
@@ -54,18 +56,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp target/release/kiri-host "$APP/Contents/MacOS/kiri-host"
 
-if [ -f assets/kiri.png ] && command -v sips >/dev/null && command -v iconutil >/dev/null; then
-  ICONSET="$(mktemp -d)/kiri.iconset"
-  mkdir -p "$ICONSET"
-  for size in 16 32 64 128 256 512; do
-    sips -z "$size" "$size" assets/kiri.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z "$double" "$double" assets/kiri.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-  done
-  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/kiri.icns"
-  rm -rf "$(dirname "$ICONSET")"
-elif [ -f assets/kiri.icns ]; then
-  cp assets/kiri.icns "$APP/Contents/Resources/kiri.icns"
+if ! make_icns "$ROOT/assets/kiri.png" "$APP/Contents/Resources/kiri.icns" 2>/dev/null; then
+  true
 fi
 
 sed "s/@KIRI_VERSION@/$PKG_VERSION/g" tools/packaging/Info.plist \

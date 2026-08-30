@@ -19,6 +19,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+# shellcheck source=tools/packaging/lib-icon.sh
+source "$ROOT/tools/packaging/lib-icon.sh"
 
 OUT_DIR="${OUT_DIR:-artifacts}"
 mkdir -p "$OUT_DIR"
@@ -116,18 +118,7 @@ case "$PLATFORM_OS" in
     rm -rf "$APP_DIR" "$ARTIFACT_PATH" "$DMG_PATH"
     mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
     cp "$BIN_FILE" "$APP_DIR/Contents/MacOS/$BIN"
-    if [ -f assets/kiri.png ] && command -v sips >/dev/null && command -v iconutil >/dev/null; then
-      ICONSET="$(mktemp -d)/kiri.iconset"
-      mkdir -p "$ICONSET"
-      for size in 16 32 64 128 256 512; do
-        sips -z "$size" "$size" assets/kiri.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-        sips -z $((size * 2)) $((size * 2)) assets/kiri.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-      done
-      iconutil -c icns "$ICONSET" -o "$APP_DIR/Contents/Resources/kiri.icns"
-      rm -rf "$(dirname "$ICONSET")"
-    elif [ -f assets/kiri.icns ]; then
-      cp assets/kiri.icns "$APP_DIR/Contents/Resources/kiri.icns"
-    fi
+    make_icns "$ROOT/assets/kiri.png" "$APP_DIR/Contents/Resources/kiri.icns" 2>/dev/null || true
     sed "s/@KIRI_VERSION@/$PKG_VERSION/g" tools/packaging/Info.plist \
       > "$APP_DIR/Contents/Info.plist"
     ditto -c -k --keepParent "$APP_DIR" "$ARTIFACT_PATH"

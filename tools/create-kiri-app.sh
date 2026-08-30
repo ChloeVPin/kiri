@@ -8,13 +8,22 @@
 set -euo pipefail
 
 REPO="${KIRI_REPO:-ChloeVPin/kiri}"
+TEMPLATE="starter"
+if [ "${1:-}" = "--template" ]; then
+  TEMPLATE="${2:-}"
+  shift 2
+fi
 DEST="${1:-}"
 
 if [ -z "$DEST" ] || [ "$DEST" = "-h" ] || [ "$DEST" = "--help" ]; then
-  echo "usage: create-kiri-app.sh DIR"
+  echo "usage: create-kiri-app.sh [--template starter|starter-vite|blank] DIR"
   echo "  builds a runnable app in DIR using the latest Kiri release"
   exit 2
 fi
+case "$TEMPLATE" in
+  starter|starter-vite|blank) ;;
+  *) echo "unknown template: $TEMPLATE (starter|starter-vite|blank)" >&2; exit 2 ;;
+esac
 
 if [ -e "$DEST" ] && [ ! -d "$DEST" ]; then
   echo "not a directory: $DEST" >&2
@@ -27,8 +36,8 @@ NAME="$(basename "$ABS_DEST")"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
 LOCAL_STARTER=""
-if [ -n "${SCRIPT_DIR}" ] && [ -f "$SCRIPT_DIR/../examples/starter/index.html" ]; then
-  LOCAL_STARTER="$(cd "$SCRIPT_DIR/../examples/starter" && pwd)"
+if [ -n "${SCRIPT_DIR}" ] && [ -f "$SCRIPT_DIR/../examples/$TEMPLATE/index.html" ]; then
+  LOCAL_STARTER="$(cd "$SCRIPT_DIR/../examples/$TEMPLATE" && pwd)"
 fi
 
 need() {
@@ -124,7 +133,7 @@ if [ -n "$LOCAL_STARTER" ]; then
   cp -R "$LOCAL_STARTER/." "$ABS_DEST/frontend/"
   rm -f "$ABS_DEST/frontend/README.md"
 else
-  BASE="https://raw.githubusercontent.com/${REPO}/main/examples/starter"
+  BASE="https://raw.githubusercontent.com/${REPO}/main/examples/$TEMPLATE"
   curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/index.html" "$BASE/index.html"
   curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/kiri.js" "$BASE/kiri.js"
   curl -fsSL -A "create-kiri-app" -o "$ABS_DEST/frontend/kiri.svg" "$BASE/kiri.svg"
