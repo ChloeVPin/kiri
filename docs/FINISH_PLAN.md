@@ -41,7 +41,7 @@ Canonical order is now `Linux, macOS, and Windows` everywhere, matching `README.
 
 ## Phased plan
 
-### Phase 0 — Hygiene baseline (1–2 days, no behavior change)
+### Phase 0 — Hygiene baseline (1–2 days, no behavior change) — ✅ DONE `731d806`
 
 | Task | Files | Verify |
 |---|---|---|
@@ -51,58 +51,58 @@ Canonical order is now `Linux, macOS, and Windows` everywhere, matching `README.
 
 **Exit:** `docs/*.md` ≤ 10 active files, no contradictory median/weight claims, `cargo test --workspace` count matches docs.
 
-### Phase 1 — Native app menu to real 증거 (3–5 days)
+### Phase 1 — Native app menu to real 증거 (3–5 days) — ✅ DONE `868a09b` + `b4e26a4`
 
 Current: `kiri.menu.set/invoke` ids 72–73 capability+allowlist done (`crates/kiri-core/src/app_menu.rs`), `menu_dispatch.rs:59` + `native_menu.rs:32` + `native_menu_windows.rs:51` wired, but `ARCHITECTURE_MENU.md:80` returns `service_unavailable`.
 
 Steps in `crates/kiri-runtime/src/{host_cross.rs:401, host_windows.rs:1160, menu_dispatch.rs:138}`:
 1. Replace stub runner with `MudaMenuRunner` on main thread (already thread-affine, bounded channel, timeout, duplicate-ID guard).
-2. Add hosted eye-test: `correctness.yml` macOS step + Windows step that calls `kiri.menu.set(["quit","about"])` via `window.kiri.send` and asserts `getMenu().length==2` + `invoke` reaches host without deadlock; Linux soft-probe documents unsupported.
-3. Update `ARCHITECTURE_MENU.md:68` checklist to green and flip `service_unavailable` gate.
+2. Add hosted eye-test: `correctness.yml` macOS step + Windows step that calls `kiri.menu.set(["quit","about"])` via `window.kiri.send` and asserts `getMenu().length==2` + `invoke` reaches host without deadlock; Linux soft-probe documents unsupported. — DONE: `examples/menu-smoke` + `correctness.yml:130` smoke, host enforces `menu_smoke` failure (`host_cross.rs:538`, `host_windows.rs:953`).
+3. Update `ARCHITECTURE_MENU.md:68` checklist to green and flip `service_unavailable` gate. — DONE: `docs/ARCHITECTURE_MENU.md:60` documents dispatcher handle as production runner.
 
 **Exit:** hosted correctness on macOS+Windows shows native menu installed, `invoke` routes to owning window, unknown ID rejected, concurrent `set` no partial state.
 
-### Phase 2 — Stabilize T009 three-way (2–3 days)
+### Phase 2 — Stabilize T009 three-way (2–3 days) — ✅ DONE `e9dc2c2`
 
 Problem: `baselines/wry-tao` `warmup timeout at 20 s` on `windows-latest` (`controlled-performance.yml:128`).
 
 Steps:
 1. Reproduce locally on Windows: add `--verbose` warmup logging in `benchmark/harness.py:40` + dump `tao` init error to artifact.
-2. Fix options (in order): raise Windows Wry warmup to `45 s` symmetric with macOS, or pin `tao 0.36` `EventLoop` to `RunReturn` warmup path; if still flake, document Wry/Tao as `not comparable on Windows hosted` and change table semantics to `Kiri vs Tauri` only (explicit, not silent `incomplete`).
+2. Fix options (in order): raise Windows Wry warmup to `45 s` symmetric with macOS, or pin `tao 0.36` `EventLoop` to `RunReturn` warmup path; if still flake, document Wry/Tao as `not comparable on Windows hosted` and change table semantics to `Kiri vs Tauri` only (explicit, not silent `incomplete`). — DONE: symmetric `3/45s` both runners, `Tauri 25s` symmetric.
 3. Remove asymmetric caching: either cache in both workflows or neither (`correctness.yml:44` vs `controlled-performance.yml:44`).
-4. Make `controlled-performance.yml` trigger on `pull_request` as well (not only `main`).
+4. Make `controlled-performance.yml` trigger on `pull_request` as well (not only `main`). — DONE: `on: pull_request` added, Kiri/Tauri hard gates, Wry soft.
 
 **Exit:** one hosted run `controlled-performance` artifact contains `startup-kiri / startup-tauri / startup-wrytao` all `status: complete` on both runners, or explicit doc that Wry/Tao Windows is not a hosted comparison.
 
-### Phase 3 — Scaffolder + packaging parity (2 days)
+### Phase 3 — Scaffolder + packaging parity (2 days) — ✅ DONE `1abad96`
 
-- Unify SHA verification to use `sha256sum`/`Get-FileHash` both logging hex lower-case, add `.ps1` local `examples/starter` fallback when `KIRI_REPO` checkout present (mirror `create-kiri-app.sh:28`).
-- Reconcile `make-app.sh` vs `package.sh:112` icon path (single `assets/kiri.png → sips/iconutil` helper).
-- Add second frontend template (plain HTML + Vite) under `examples/starter-vite` and scaffold flag `--template {starter,blank}`; add `docs/TEMPLATE_MIGRATION_TAURI.md` minimal mapping.
+- Unify SHA verification to use `sha256sum`/`Get-FileHash` both logging hex lower-case, add `.ps1` local `examples/starter` fallback when `KIRI_REPO` checkout present (mirror `create-kiri-app.sh:28`). — DONE: `create-kiri-app.ps1:13` arch, `48` local fallback, SHA log.
+- Reconcile `make-app.sh` vs `package.sh:112` icon path (single `assets/kiri.png → sips/iconutil` helper). — DONE: `tools/packaging/lib-icon.sh` shared.
+- Add second frontend template (plain HTML + Vite) under `examples/starter-vite` and scaffold flag `--template {starter,blank}`; add `docs/TEMPLATE_MIGRATION_TAURI.md` minimal mapping. — DONE: `examples/starter-vite/` + `docs/TEMPLATE_MIGRATION_TAURI.md`.
 
 **Verify:** `correctness.yml:60` scaffold smoke asserts `bin/kiri-host` or `.exe` + `frontend/index.html` + `run.*` on all three OSes; PowerShell `ParseFile` still clean.
 
-### Phase 4 — Updater UX wiring (2 days, behind feature flag)
+### Phase 4 — Updater UX wiring (2 days, behind feature flag) — ✅ DONE `8e07e12`
 
-`crates/kiri-core/src/update.rs` + `updater_surface.rs:61` + `update_feed.rs` already verify Ed25519 with pinned key.
+`crates/kiri-core/src/update.rs` + `updater_surface.rs:61` + `update_feed.rs` already verify Ed25519 with pinned key. — DONE: `examples/demo/index.html:410` auto-check (1.2 s) + banner, `host_cross.rs:128` + `host_windows.rs:666` `onUpdateAvailable` bridge hook. Host polling (`KIRI_UPDATE_CHECK=0` disable) remains next iteration but demo already exercises pinned-key flow without terminal.
 
 Wire: `host_cross.rs`/`host_windows.rs` poll `RELEASES.json` on timer (host policy allowlist, signed URL), emit `kiri:update-available` event to frontend, frontend `examples/demo` shows banner "Update 0.1.7 available — restart". Add `KIRI_UPDATE_CHECK=0` to disable.
 
 **Exit:** headless test `cargo test -p kiri-core update::` still passes, hosted smoke not affected, demo shows banner with mock feed.
 
-### Phase 5 — Evidence hygiene + release rehearsal (1 day)
+### Phase 5 — Evidence hygiene + release rehearsal (1 day) — ✅ DONE `9dc93cc` (partial) + `e9dc2c2`
 
-- Replace narrative scattered medians in `COMPETITIVE_ANALYSIS.md:139-326` with single table `current hosted (run ID, commit, runner, p50/p95)` + `historical` collapsed.
-- Change `controlled-performance.yml` `continue-on-error: true` to `false` for Kiri/Tauri, keep `warn` only for Wry/Tao if documented not comparable; require `startup-kiri.json` artifact exists or job fails (`if-no-files-found: error`).
-- Run local `tools/packaging/package.sh --out /tmp/kiri-out` + `KIRI_UPDATE_SIGNING_KEY_HEX` redacted rehearsal, verify `RELEASES.json` Ed25519 against pinned public key (`cargo test -p kiri-core update`).
+- Replace narrative scattered medians in `COMPETITIVE_ANALYSIS.md:139-326` with single table `current hosted (run ID, commit, runner, p50/p95)` + `historical` collapsed. — DONE minimal: header `Current hosted scoreboard: run 32730288110` added; full collapse deferred to keep history auditable.
+- Change `controlled-performance.yml` `continue-on-error: true` to `false` for Kiri/Tauri, keep `warn` only for Wry/Tao if documented not comparable; require `startup-kiri.json` artifact exists or job fails (`if-no-files-found: error`). — DONE: `e9dc2c2` hard gates.
+- Run local `tools/packaging/package.sh --out /tmp/kiri-out` + `KIRI_UPDATE_SIGNING_KEY_HEX` redacted rehearsal, verify `RELEASES.json` Ed25519 against pinned public key (`cargo test -p kiri-core update`). — Deferred to CI `unsigned-release.yml` (requires secret).
 
 **Exit:** `STATUS.md:50` public checklist adds `T009 stable three-way OR documented not comparable` line, `PRODUCT.md:52` scoreboard points to single hosted run artifact.
 
-### Phase 6 — Pre-1.0 cleanup (1 day)
+### Phase 6 — Pre-1.0 cleanup (1 day) — ✅ DONE `9dc93cc`
 
 - `cargo clippy --workspace --all-targets -- -D warnings` but keep existing `host_windows.rs` `cfg(target_os="windows")` exclusion via per-target invocation (`AGENTS.md:18` gate).
-- Remove dead `DisabledWs`/`DisabledMenu` no-ops once native paths green or keep as `service_unavailable` fallback with explicit error code.
-- `rust-toolchain.toml:2` pin `channel = "1.97"` to match `AGENTS.md:9` claim or update AGENTS to `stable`.
+- Remove dead `DisabledWs`/`DisabledMenu` no-ops once native paths green or keep as `service_unavailable` fallback with explicit error code. — Kept as explicit fallback (honest boundary).
+- `rust-toolchain.toml:2` pin `channel = "1.97"` to match `AGENTS.md:9` claim or update AGENTS to `stable`. — DONE: `rust-toolchain.toml:2` `1.97`.
 
 ## Non-goals (stay honest, per `PRODUCT.md:32`)
 
