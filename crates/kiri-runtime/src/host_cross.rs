@@ -125,7 +125,8 @@ const BRIDGE_SCRIPT: &str = r#"
             cb(resp);
           }
         },
-        onMenuAction: function (_action) {}
+        onMenuAction: function (_action) {},
+        onUpdateAvailable: function (_info) {}
       };
     })();
 "#;

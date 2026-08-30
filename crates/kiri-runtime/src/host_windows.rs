@@ -663,7 +663,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
                 cb(resp);
               }
             },
-            onMenuAction: function (_action) {}
+            onMenuAction: function (_action) {},
+            onUpdateAvailable: function (_info) {}
           };
           if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
             window.chrome.webview.addEventListener('message', function (e) {

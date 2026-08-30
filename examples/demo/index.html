@@ -407,21 +407,36 @@
       // Updater (host-pinned key). The host fetches its own pinned release
       // feed; the frontend only learns whether a newer, correctly-signed
       // release exists. The signing key is never visible to JavaScript.
+      function handleUpdateResult(r) {
+        if (r.available) {
+          document.getElementById("update-status").textContent = "update available: " + r.version;
+          log("updater.check: update " + r.version + " available — restart to apply", "ok", "updater");
+          var banner = document.createElement("div");
+          banner.style.cssText = "background: var(--rust); color: white; padding: 6px 12px; text-align: center; font-size: 12px;";
+          banner.textContent = "Update " + r.version + " available — restart to apply";
+          document.querySelector("header").after(banner);
+        } else {
+          document.getElementById("update-status").textContent = "up to date";
+          log("updater.check: up to date", "ok", "updater");
+        }
+      }
       document.getElementById("update-check").addEventListener("click", function () {
         document.getElementById("update-status").textContent = "checking…";
-        api.updater.check().then(function (r) {
-          if (r.available) {
-            document.getElementById("update-status").textContent = "update available: " + r.version;
-            log("updater.check: update " + r.version + " available", "ok", "updater");
-          } else {
-            document.getElementById("update-status").textContent = "up to date";
-            log("updater.check: up to date", "ok", "updater");
-          }
-        }).catch(function (e) {
+        api.updater.check().then(handleUpdateResult).catch(function (e) {
           document.getElementById("update-status").textContent = "check failed";
           log("updater.check: " + (e.message || e), "err");
         });
       });
+      // Auto-check on boot unless KIRI_UPDATE_CHECK=0 (host respects same flag for polling)
+      if (window.kiri) {
+        setTimeout(function(){
+          api.updater.check().then(handleUpdateResult).catch(function(){});
+        }, 1200);
+      }
+      // Host-pushed update (when host polls RELEASES.json itself)
+      window.kiri.onUpdateAvailable = function(info){
+        try { handleUpdateResult(info); } catch(e) {}
+      };
     })();
   </script>
 </body>
