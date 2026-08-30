@@ -87,7 +87,7 @@ jobs:
           KIRI_ALLOW_UNSIGNED: "1"
         run: bash tools/packaging/package.sh
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.os }}
           path: artifacts/${{ matrix.os }}/
@@ -189,7 +189,7 @@ jobs:
           print("merged and cryptographically verified:", sorted(merged["platforms"]))
           PY
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-manifest
           path: RELEASES.json
@@ -294,7 +294,7 @@ jobs:
           PY
           echo "rehearsal: manifest hash + Ed25519 verified (test key, no publish)"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rehearsal-artifacts
           path: artifacts/rehearsal/
