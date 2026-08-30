@@ -59,7 +59,9 @@ and its [platform notes].
   roles must be rejected rather than silently approximated.
 
 The current adapter supports ordinary host-owned clickable items and stable
-IDs. It does not claim replacement-safe reinstallation, event forwarding, or
+IDs via `muda 0.19.3` (`native_menu.rs` on macOS/Linux, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:32` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:427` `MenuDispatcher::new()` + `host_cross.rs:636` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction`. The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu` — the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`.
+
+It does not claim replacement-safe reinstallation, event forwarding, or
 support for submenus, checkboxes, radio items, roles, icons, and accelerators;
 each requires separate acceptance tests per platform.
 
@@ -77,6 +79,4 @@ The feature is complete only when all of the following are demonstrated:
 - hosted correctness tests exercise native menu creation and activation on each
   OS rather than only compiling the adapter.
 
-Until this evidence exists, the runtime continues to return
-`service_unavailable` from its production menu runner. That is an honest
-capability boundary, not a claim of completed native-menu support.
+Current status: dispatcher + adapters are implemented and wired. Unit tests cover bounded queue, timeout, duplicate-ID, unknown-ID, and thread-affine `replace`/`install` (`menu_dispatch.rs:150`, `kiri_core::app_menu::tests`, `host_cross.rs:771` production-router catalog). Hosted native smoke (visible menu + activation) remains the open proof. Until that hosted eye-test is green on `macos-latest` and `windows-latest`, the scoreboard in `CROSS_PLATFORM_STATUS.md` carries the `incomplete` caveat.

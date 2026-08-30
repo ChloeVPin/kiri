@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Kiri menu smoke</title></head>
+<body>
+<p id="status">menu smoke: pending</p>
+<script>
+// Exercises kiri.menu.set (72) + kiri.menu.invoke (73) through the real
+// WebView bridge. Success requires both the MENU capability and the host
+// allowlist (show/quit). Failure posts to the host via the same channel as
+// the startup markers so CI can fail without a separate harness.
+(function(){
+  function post(type, extra){
+    var o = Object.assign({type: type}, extra||{});
+    var s = JSON.stringify(o);
+    if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) window.chrome.webview.postMessage(s);
+    else if (window.ipc && window.ipc.postMessage) window.ipc.postMessage(s);
+  }
+  // Wait for bridge
+  function run(){
+    if (!window.kiri || !window.kiri.send) { setTimeout(run, 50); return; }
+    // Use raw wire to avoid depending on kiri.js API shape
+    function send(id, payload, cb){
+      var req = { magic: [75,73,82,73], version:1, command_id:id, request_id: Math.floor(Math.random()*1e6), flags:0, payload: payload };
+      window.kiri.pending = window.kiri.pending || {};
+      window.kiri.pending[req.request_id] = function(resp){
+        delete window.kiri.pending[req.request_id];
+        cb(resp);
+      };
+      window.kiri.send(req);
+    }
+    // 72 = MENU_SET, 73 = MENU_INVOKE (see kiri_core::dispatch::command_id)
+    send(72, {ids:["show","quit"]}, function(r1){
+      if (r1.error) { document.getElementById("status").textContent = "set failed: "+JSON.stringify(r1.error); post("menu_smoke",{ok:false, phase:"set", error:r1.error}); return; }
+      send(73, {id:"quit"}, function(r2){
+        if (r2.error) { document.getElementById("status").textContent = "invoke failed: "+JSON.stringify(r2.error); post("menu_smoke",{ok:false, phase:"invoke", error:r2.error}); return; }
+        document.getElementById("status").textContent = "menu ok: "+JSON.stringify(r1.payload)+" -> "+JSON.stringify(r2.payload);
+        post("menu_smoke",{ok:true, set:r1.payload, invoke:r2.payload});
+      });
+    });
+  }
+  window.addEventListener("DOMContentLoaded", run);
+  // Also emit normal startup markers so smoke still needs frame
+  window.addEventListener("DOMContentLoaded", function(){ post({type:"ready", phase:"dom"}); });
+  requestAnimationFrame(function(){ post({type:"ready", phase:"frame"}); });
+})();
+</script>
+</body>
+</html>
