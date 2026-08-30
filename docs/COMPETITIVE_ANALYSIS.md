@@ -56,7 +56,7 @@ winnable." Claims here are tied to verified gates, not aspirations.
 - **Security model.** Both enforce capability/permission gating on the native
   bridge. Kiri's capability bits and Tauri's permission ACLs are different
   shapes of the same idea. Neither is "more secure" in the abstract.
-- **Platform coverage.** Both target Windows/macOS/Linux from one codebase.
+- **Platform coverage.** Both target Linux, macOS, and Windows from one codebase.
 
 ## Open competitive questions (tracked, not assumed)
 

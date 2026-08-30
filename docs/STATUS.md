@@ -29,8 +29,11 @@ checks separately.
 The current local workspace gate passes 279 tests (220 `kiri-core`, 2
 integration, and 57 `kiri-runtime`), formatting, native clippy, Windows target
 check/clippy, and both standalone baseline checks. The native macOS build,
-smoke run, and three-cycle stress run also pass. These results describe the
-current worktree and should be refreshed after substantive changes.
+smoke run, and three-cycle stress run passed on the last successful native gate;
+a fresh local retry on 2026-08-24 hit the watchdog before `webview_ready` (see
+`CROSS_PLATFORM_STATUS.md` — retained as incomplete local evidence, hosted
+`macos-latest` correctness remains green). These results describe the current
+worktree and should be refreshed after substantive changes.
 
 Local archive assembly was inspected successfully, including the macOS app
 layout and launcher-bearing archive changes. Emitting a publishable manifest

@@ -36,5 +36,8 @@ The product goal and acceptance criteria are defined in
 - [`OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md) records unresolved technical questions
   and the evidence required to close them.
 - [`GAP_MATRIX.md`](GAP_MATRIX.md) records functional gaps against Tauri.
+- [`CROSS_PLATFORM_STATUS.md`](CROSS_PLATFORM_STATUS.md) is the authoritative per-OS verification record.
+- [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) is the single current scoreboard; historical tables are collapsed there.
+- Archived: `archive/DEEP_AUDIT_TAURI.md` and `archive/EXCEED_TAURI_PLAN.md` are superseded (retained for history).
 - The task queue in `kiri-agent-execution-corpus/agent/task_queue.json` is the
   execution-level source of truth and is not part of the public README.

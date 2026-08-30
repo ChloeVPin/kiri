@@ -74,6 +74,20 @@ jobs:
 
       - run: cargo fmt --all -- --check
 
+      - name: Check platform ordering is Linux, macOS, and Windows
+        run: |
+          set -e
+          if grep -R --include="*.md" --include="*.toml" "Windows/macOS/Linux" -- docs README.md AGENTS.md crates 2>/dev/null | grep -v "docs/archive" | grep -q .; then
+            echo "Windows-first ordering 'Windows/macOS/Linux' found outside docs/archive — use 'Linux, macOS, and Windows'"
+            grep -R --include="*.md" --include="*.toml" "Windows/macOS/Linux" -- docs README.md AGENTS.md crates 2>/dev/null | grep -v "docs/archive" || true
+            exit 1
+          fi
+          if grep -R --include="*.md" "Windows, macOS" -- docs 2>/dev/null | grep -v "docs/archive" | grep -q .; then
+            echo "Windows-first ordering 'Windows, macOS' found outside docs/archive"
+            grep -R --include="*.md" "Windows, macOS" -- docs 2>/dev/null | grep -v "docs/archive" || true
+            exit 1
+          fi
+
       # The direct Win32 + WebView2 backend only compiles on Windows. On
       # macOS/Linux we cross-check it against the windows-msvc target.
       - if: runner.os != 'Windows'

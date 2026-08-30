@@ -4,8 +4,8 @@
 //! Kiri corpus (`specs/ERRORS.md`, `specs/IPC.md`, `specs/RESOURCES.md`,
 //! `specs/SECURITY.md`, `specs/TRACE.md`) as pure, testable Rust.
 //!
-//! It deliberately contains no platform transport code. Windows, macOS, and
-//! Linux backends map these contracts onto their physical WebView transports.
+//! It deliberately contains no platform transport code. Linux, macOS, and
+//! Windows backends map these contracts onto their physical WebView transports.
 
 pub mod app_menu;
 pub mod autostart;

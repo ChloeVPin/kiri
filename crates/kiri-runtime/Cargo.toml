@@ -3,7 +3,7 @@ name = "kiri-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Native host for Kiri: direct Win32 + WebView2 on Windows, wry/tao on macOS/Linux"
+description = "Native host for Kiri for Linux, macOS, and Windows (wry/tao on Linux and macOS, Win32 + WebView2 on Windows)"
 
 [[bin]]
 name = "kiri-host"

@@ -77,7 +77,7 @@ depend on `kiri-core`.
 
 ## Current state and next work
 
-Product goal: `docs/PRODUCT.md`. Status: T001 through T007 and T010 are complete and committed. The runtime
+Product goal: `docs/PRODUCT.md`. Status: T001 through T008 and T010 are complete and committed (T009 in progress). The runtime
 runs natively on every desktop platform from one codebase (wry/tao on macOS and
 Linux, Win32 + WebView2 on Windows), and the Mac-headless gates
 are green. The Windows direct backend is cross-checked locally and exercised

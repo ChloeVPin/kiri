@@ -1,3 +1,5 @@
+> **ARCHIVED — superseded by `docs/GAP_MATRIX.md` + `docs/ROADMAP.md`. Retained for history; do not update.**
+
 # Kiri exceed-Tauri program
 
 This is the working contract for the long-running effort to make Kiri a
