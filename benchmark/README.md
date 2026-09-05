@@ -93,7 +93,8 @@ KIRI_IPC_BENCH=1 KIRI_IPC_BENCH_RUNS=30 \
   ./baselines/tauri/target/release/tauri-baseline
 ```
 
-Kiri measures `window.kiri.send` → host router → `evaluate_script(onResponse)`.
+Kiri measures `window.kiri.send`, then the host router, then
+`evaluate_script(onResponse)`.
 Tauri measures `__TAURI_INTERNALS__.invoke('kiri_echo')`. Payload content
 sizes match `control_payload_bytes` except the last size is 1_048_574 so the
 JSON string stays under the 1 MiB control ceiling. Report **batch-mean**
