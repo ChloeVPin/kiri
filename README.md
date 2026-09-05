@@ -4,12 +4,12 @@ Kiri is a Rust runtime for native desktop applications on Linux, macOS, and Wind
 
 ## Repository map
 
-- `crates/kiri-core` contains the platform-neutral protocol, capability authority, resources, tracing, and validation.
-- `crates/kiri-runtime` contains the native host facade and platform backends.
-- `baselines/` contains comparison applications.
-- `examples/` contains small frontends and diagnostics.
-- `benchmark/` contains startup, IPC, and bulk-data tools.
-- `docs/` contains product, API, architecture, and research documentation.
+- [crates/kiri-core](crates/kiri-core) contains the platform-neutral protocol, capability authority, resources, tracing, and validation.
+- [crates/kiri-runtime](crates/kiri-runtime) contains the native host facade and platform backends.
+- [baselines/](baselines/) contains comparison applications.
+- [examples/](examples/) contains small frontends and diagnostics.
+- [benchmark/](benchmark/) contains startup, IPC, and bulk-data tools.
+- [docs/](docs/) contains product, API, architecture, and research documentation.
 
 The host embeds a frontend at build time. A local run can override it with `--frontend DIR` or `KIRI_FRONTEND`.
 
