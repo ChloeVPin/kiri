@@ -7,7 +7,7 @@ description = "Minimal Wry/Tao baseline host for Kiri benchmarks (docs/12-benchm
 
 [dependencies]
 tao = "0.36"
-wry = "0.56.1"
+wry = "0.57.0"
 serde_json = "1"
 
 [workspace]
