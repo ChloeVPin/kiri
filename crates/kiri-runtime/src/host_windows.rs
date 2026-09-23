@@ -34,6 +34,7 @@ use kiri_core::error::Error as KiriError;
 use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
 use kiri_core::wire::{WireRequest, WireResponse};
+use kiri_core::zc_ipc_gate::{GatedResponse, ZcIpcGate, ZcIpcGrant};
 
 use crate::markers::{Marker, StartupMarkers};
 use crate::HostOptions;
@@ -75,10 +76,22 @@ fn post_wire_response(
     env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
     webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
     response: &WireResponse,
+    grant: Option<&ZcIpcGrant>,
+    caller: CallerId,
+    command_id: u32,
 ) -> bool {
     if let Ok(json) = serde_json::to_string(response) {
-        if json.len() > 64 * 1024 && post_shared_buffer(env, webview, json.as_bytes()) {
-            return true;
+        if json.len() > 64 * 1024 {
+            // The shared-buffer reply leg is a gated object: a live ZcIpcGrant
+            // bound to this caller + command must release the bytes. Without
+            // one the post fails closed to the ordinary JSON path.
+            if let Some(bytes) =
+                grant.and_then(|g| g.reply_bytes(caller, command_id, json.as_bytes(), qpc_now_ns()))
+            {
+                if post_shared_buffer(env, webview, bytes) {
+                    return true;
+                }
+            }
         }
         let wide = to_wide(&json);
         let _ = unsafe { webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
@@ -266,7 +279,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
     let Some(state) = rt.ring.as_ref() else {
         let err =
             WireResponse::err(hint, KiriError::protocol_error("ring transport not initialized"));
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         return;
     };
     let base = state.base;
@@ -275,7 +288,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
     if slot_index >= ring::SLOT_COUNT as u64 {
         let err =
             WireResponse::err(hint, KiriError::protocol_error("ring slot index out of bounds"));
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         return;
     }
@@ -296,7 +309,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                         req.request_id,
                         KiriError::protocol_error("ring payload bounds failure"),
                     );
-                    let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                    let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                     rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                     return;
                 }
@@ -306,7 +319,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     hint,
                     KiriError::protocol_error("ring slot does not hold a valid request"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -317,7 +330,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
             hint,
             KiriError::protocol_error("ring request_id does not match control message"),
         );
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         return;
     }
@@ -329,7 +342,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     req.request_id,
                     KiriError::protocol_error("ring utf-8 payload is not valid utf-8"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -341,7 +354,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     req.request_id,
                     KiriError::protocol_error("ring json payload does not parse"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -351,7 +364,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                 req.request_id,
                 KiriError::protocol_error("unsupported ring codec"),
             );
-            let _ = post_wire_response(&rt.env, &rt.webview, &err);
+            let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
             rt.ring_fallback = rt.ring_fallback.saturating_add(1);
             return;
         }
@@ -367,19 +380,19 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         codec: req.codec,
         payload,
     };
-    let response = rt.dispatch_cmd(&request);
+    let gated = rt.dispatch_cmd(&request);
     rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
 
     // Publish the reply into the same slot. The echo fast path copies the
     // string bytes verbatim; every other response shape is serialized once
     // as JSON. Oversized replies fall back to the ordinary wire (which keeps
     // its own T008 one-shot shared-buffer path).
-    let echo = ring_echo_bytes(&response);
+    let echo = ring_echo_bytes(&gated.response);
     let json_body;
     let (flags, body): (u8, &[u8]) = match echo {
         Some(bytes) => (ring::RESP_ECHO_STRING, bytes),
         None => {
-            json_body = serde_json::to_vec(&response).unwrap_or_default();
+            json_body = serde_json::to_vec(&gated.response).unwrap_or_default();
             (ring::RESP_JSON, json_body.as_slice())
         }
     };
@@ -404,11 +417,18 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         );
         rt.ring_ok = rt.ring_ok.saturating_add(1);
     } else {
-        let used = post_wire_response(&rt.env, &rt.webview, &response);
+        let used = post_wire_response(
+            &rt.env,
+            &rt.webview,
+            &gated.response,
+            gated.grant.as_ref(),
+            rt.caller,
+            request.command_id,
+        );
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         if used {
             rt.shared_buffer_ok = rt.shared_buffer_ok.saturating_add(1);
-        } else if serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0) > 64 * 1024 {
+        } else if serde_json::to_string(&gated.response).map(|s| s.len()).unwrap_or(0) > 64 * 1024 {
             rt.shared_buffer_fallback = rt.shared_buffer_fallback.saturating_add(1);
         }
     }
@@ -544,6 +564,8 @@ pub(crate) struct HostRuntime {
     pub hwnd: HWND,
     pub caller: CallerId,
     pub caller_caps: CapabilityBits,
+    /// Fail-closed permit gate for the through-webview / shared-buffer pipe.
+    pub zc_gate: ZcIpcGate,
     /// Built on first `window.kiri.send()`, never before WebView2 init.
     pub router: Option<Router>,
     pub events: EventBus,
@@ -584,7 +606,7 @@ impl HostRuntime {
         let error = KiriError::protocol_error("command not implemented by this host slice")
             .with_command(command.unwrap_or("").to_string());
         let envelope = WireResponse::err(request_id.unwrap_or(0), error);
-        let _ = post_wire_response(&self.env, &self.webview, &envelope);
+        let _ = post_wire_response(&self.env, &self.webview, &envelope, None, self.caller, 0);
     }
 
     /// Build the core plugin router (ping/diag/resources) on first send.
@@ -629,18 +651,29 @@ impl HostRuntime {
         );
     }
 
-    fn dispatch_cmd(&mut self, request: &WireRequest) -> WireResponse {
+    fn dispatch_cmd(&mut self, request: &WireRequest) -> GatedResponse {
         if !self.markers.has(Marker::FirstInvokeDispatched) {
             self.markers.record(Marker::FirstInvokeDispatched, qpc_now_ns());
         }
         self.ensure_surface(request.command_id);
         let router = self.router.as_ref().expect("router after ensure_surface");
         let mut sink = self.diagnostics.clone();
-        let response = router.dispatch(self.caller, &self.caller_caps, request, &mut sink);
+        // The through-webview pipe is double-gated by one permit object: the
+        // capability bit AND the surface's host allowlist must both admit
+        // before dispatch runs, and the returned grant is the only authority
+        // the shared-buffer reply leg accepts.
+        let gated = self.zc_gate.dispatch_through_webview(
+            router,
+            self.caller,
+            &self.caller_caps,
+            request,
+            &mut sink,
+            qpc_now_ns(),
+        );
         if !self.markers.has(Marker::FirstInvokeResponded) {
             self.markers.record(Marker::FirstInvokeResponded, qpc_now_ns());
         }
-        response
+        gated
     }
 }
 
@@ -1125,6 +1158,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         hwnd,
         caller,
         caller_caps,
+        zc_gate: crate::host_policy::zc_ipc_gate(),
         router: None,
         events,
         diagnostics,
@@ -1292,12 +1326,20 @@ fn handle_web_message(
     if let Some(req_val) = value.get("request") {
         match serde_json::from_value::<WireRequest>(req_val.clone()) {
             Ok(request) => {
-                let response = rt.dispatch_cmd(&request);
+                let gated = rt.dispatch_cmd(&request);
                 rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
-                let used = post_wire_response(&rt.env, &rt.webview, &response);
+                let used = post_wire_response(
+                    &rt.env,
+                    &rt.webview,
+                    &gated.response,
+                    gated.grant.as_ref(),
+                    rt.caller,
+                    request.command_id,
+                );
                 if used {
                     rt.shared_buffer_ok = rt.shared_buffer_ok.saturating_add(1);
-                } else if serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0) > 64 * 1024
+                } else if serde_json::to_string(&gated.response).map(|s| s.len()).unwrap_or(0)
+                    > 64 * 1024
                 {
                     rt.shared_buffer_fallback = rt.shared_buffer_fallback.saturating_add(1);
                 }
@@ -1305,7 +1347,7 @@ fn handle_web_message(
             Err(_) => {
                 let err =
                     WireResponse::err(0, KiriError::protocol_error("malformed command request"));
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
             }
         }
         return;
