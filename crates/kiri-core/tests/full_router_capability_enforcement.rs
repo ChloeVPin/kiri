@@ -1,27 +1,44 @@
-//! DECISIVE double-gating enforcement test (headless, macOS-runnable).
+//! Full-router capability and allowlist (double-gate) enforcement tests.
 //!
-//! Builds the FULL production-equivalent router: every with_* surface wired
-//! with the same simple service constructors the native host uses (no runtime
-//! or host handles), then dispatches every command id 1..=61 with an EMPTY
-//! capability set and asserts each is DENIED. This proves, deterministically
-//! and without launching a WebView, that the central capability authority is
-//! the one gate on every control-plane command - the security axis on which
-//! Kiri exceeds Tauri (Tauri gates individual plugins but a granted plugin
-//! capability is effectively all-or-nothing; Kiri denies everything by default
-//! and grants nothing unless the native host assigns the exact bit).
+//! Builds a host-equivalent router: every with_* surface wired with the same
+//! simple service constructors the native host uses (no runtime or host
+//! handles), then asserts two independent gates:
+//!
+//! 1. Empty capability set: every command id is denied as Unauthorized.
+//! 2. Capability granted + empty or wrong allowlist: representative
+//!    double-gated commands are denied as ScopeDenied.
+//!
+//! Gate (1) alone is not double-gating. Gate (2) is the proof that removing the
+//! allowlist second gate while leaving capabilities in place would fail CI.
+//!
+//! Surfaces covered by gate (2) on main: HTTP host allowlist, shell command
+//! allowlist, event channel allowlist (with_event EVENT_PUBLISH/SUBSCRIBE),
+//! fs PathScope (flags + escape), opener scheme/extension allowlist.
+//!
+//! Known gaps on main (not asserted here; depend on open PRs):
+//! - Legacy EVENT_EMIT/LISTEN (ids 8/9) are capability-only; channel allowlist
+//!   for those paths is tracked in PR #24.
+//! - Shell exact-argv tightening is tracked in PR #25 (prefix match already
+//!   denies empty/wrong programs on main).
+//! - HTTP method fail-closed GET-only is tracked in PR #26 (host allowlist
+//!   second gate is already enforced on main).
 
 use std::sync::Arc;
 
 use kiri_core::caller::CallerId;
 use kiri_core::capabilities::CapabilityBits;
-use kiri_core::dispatch::{command_id, Router};
+use kiri_core::dispatch::{capability_bit, command_id, Router};
+use kiri_core::error::ErrorCode;
+use kiri_core::event::{AllowedChannel, EventAllowlist};
+use kiri_core::opener::{AllowedFileExtension, AllowedUrlScheme};
+use kiri_core::shell::AllowedCommand;
 use kiri_core::trace::RingTraceSink;
 use kiri_core::wire::WireRequest;
 use serde_json::json;
 
-// Stubs for host-owned backends. They are never invoked because the capability
-// check rejects the dispatch before any handler runs. They exist only so the
-// router can be constructed headlessly.
+// Stubs for host-owned backends. Capability-deny tests never invoke them.
+// Double-gate tests reach the allowlist check before the stub body matters;
+// stubs still must exist so the router can be constructed headlessly.
 
 struct StubWindow;
 impl kiri_core::window::WindowController for StubWindow {
@@ -215,19 +232,51 @@ impl kiri_core::notification::NotificationRunner for StubNotificationRunner {
     }
 }
 
+/// Host-policy seeds for the second gate. Empty vecs / deny flags match a
+/// host that registered the surface but installed no allowlist entries.
+struct AllowlistSeeds {
+    http_hosts: Vec<String>,
+    shell_commands: Vec<AllowedCommand>,
+    event_channels: Vec<AllowedChannel>,
+    opener_url_schemes: Vec<AllowedUrlScheme>,
+    opener_file_extensions: Vec<AllowedFileExtension>,
+    /// When true, PathScope allows reads under the temp root (escape tests).
+    fs_read: bool,
+    fs_write: bool,
+}
+
+impl Default for AllowlistSeeds {
+    fn default() -> Self {
+        Self {
+            http_hosts: vec![],
+            shell_commands: vec![],
+            event_channels: vec![],
+            opener_url_schemes: vec![],
+            opener_file_extensions: vec![],
+            fs_read: false,
+            fs_write: false,
+        }
+    }
+}
+
 fn full_router() -> Router {
+    full_router_with(AllowlistSeeds::default())
+}
+
+fn full_router_with(seeds: AllowlistSeeds) -> Router {
     let limits = kiri_core::limits::Limits::default();
     let caller = kiri_core::caller::CallerRegistry::new().register();
     let diag = kiri_core::diagnostics::Diagnostics::new();
+
+    let mut fs_scope = kiri_core::capabilities::PathScope::new(std::env::temp_dir());
+    fs_scope.read = seeds.fs_read;
+    fs_scope.write = seeds.fs_write;
 
     Router::new()
         .with_diagnostics(diag.clone())
         .with_resources(diag.clone(), caller)
         .with_platform(kiri_core::platform::EventBus::new())
-        .with_fs_service(kiri_core::fs::FsService::new(
-            kiri_core::capabilities::PathScope::new(std::env::temp_dir()),
-            limits.clone(),
-        ))
+        .with_fs_service(kiri_core::fs::FsService::new(fs_scope, limits.clone()))
         .with_window(
             Arc::new(StubWindow),
             Arc::new(std::sync::Mutex::new(kiri_core::window::WindowState::new("kiri"))),
@@ -239,12 +288,12 @@ fn full_router() -> Router {
         .with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
         .with_http(kiri_core::http::HttpService::new(
             Arc::new(StubHttpClient),
-            kiri_core::http::HostAllowlist::new(vec![]),
+            kiri_core::http::HostAllowlist::new(seeds.http_hosts),
             limits.clone(),
         ))
         .with_shell(kiri_core::shell::ShellService::new(
             Arc::new(StubShellRunner),
-            kiri_core::shell::ShellAllowlist::new(vec![]),
+            kiri_core::shell::ShellAllowlist::new(seeds.shell_commands),
             limits.clone(),
         ))
         .with_notification(kiri_core::notification::NotificationService::new(
@@ -279,7 +328,10 @@ fn full_router() -> Router {
         ))
         .with_opener(kiri_core::opener::OpenerService::new(
             Arc::new(StubOpenerRunner),
-            kiri_core::opener::OpenerAllowlist::new(vec![], vec![]),
+            kiri_core::opener::OpenerAllowlist::new(
+                seeds.opener_url_schemes,
+                seeds.opener_file_extensions,
+            ),
             limits.clone(),
         ))
         .with_window_state(kiri_core::window_state::WindowStateService::new(
@@ -299,7 +351,7 @@ fn full_router() -> Router {
         ))
         .with_event(kiri_core::event::EventService::new(
             Arc::new(StubEventBusBackend),
-            kiri_core::event::EventAllowlist::new(vec![]),
+            EventAllowlist::new(seeds.event_channels),
             limits.clone(),
         ))
         .with_config(kiri_core::config::ConfigService::new(
@@ -331,6 +383,34 @@ fn full_router() -> Router {
         .with_plugin_inventory(kiri_core::plugin_inventory::PluginInventory::empty())
 }
 
+fn caps(bits: &[u32]) -> CapabilityBits {
+    let mut c = CapabilityBits::empty();
+    for bit in bits {
+        c.set(*bit);
+    }
+    c
+}
+
+fn assert_scope_denied(router: &Router, granted: &CapabilityBits, id: u32, payload: serde_json::Value) {
+    let req = WireRequest::new(id, id as u64, 1, payload);
+    let mut sink = RingTraceSink::new(16);
+    let resp = router.dispatch(CallerId(1), granted, &req, &mut sink);
+    assert!(
+        resp.error.is_some(),
+        "command id {id} must be denied when capability is granted but allowlist/scope fails"
+    );
+    assert_eq!(
+        resp.error.as_ref().unwrap().code,
+        ErrorCode::ScopeDenied,
+        "command id {id} denied for the wrong reason (expected ScopeDenied, got {:?})",
+        resp.error
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 1: empty capabilities -> Unauthorized (not double-gating by itself)
+// ---------------------------------------------------------------------------
+
 #[test]
 fn every_command_denied_without_capabilities() {
     let router = full_router();
@@ -343,11 +423,11 @@ fn every_command_denied_without_capabilities() {
         let resp = router.dispatch(caller, &empty, &req, &mut sink);
         assert!(
             resp.error.is_some(),
-            "command id {id} MUST be denied with empty capabilities (double-gating violation)",
+            "command id {id} MUST be denied with empty capabilities",
         );
         assert_eq!(
             resp.error.as_ref().unwrap().code,
-            kiri_core::error::ErrorCode::Unauthorized,
+            ErrorCode::Unauthorized,
             "command id {id} denied for the wrong reason (expected Unauthorized)",
         );
     }
@@ -366,7 +446,7 @@ fn ping_allowed_only_with_ping_capability() {
     assert!(denied.error.is_some());
 
     let mut caps = CapabilityBits::empty();
-    caps.set(kiri_core::dispatch::capability_bit::PING);
+    caps.set(capability_bit::PING);
     let allowed = router.dispatch(
         CallerId(1),
         &caps,
@@ -375,4 +455,172 @@ fn ping_allowed_only_with_ping_capability() {
     );
     assert!(allowed.error.is_none(), "ping must succeed with PING capability: {:?}", allowed.error);
     assert_eq!(allowed.payload.as_ref().unwrap()["echo"], json!({ "hello": "world" }));
+}
+
+// ---------------------------------------------------------------------------
+// Gate 2: capability granted + empty allowlist -> ScopeDenied
+// ---------------------------------------------------------------------------
+
+#[test]
+fn http_get_denied_when_capability_granted_but_host_allowlist_empty() {
+    let router = full_router();
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::HTTP]),
+        command_id::HTTP_GET,
+        json!({ "url": "http://api.example.com/v1" }),
+    );
+}
+
+#[test]
+fn shell_run_denied_when_capability_granted_but_command_allowlist_empty() {
+    let router = full_router();
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::SHELL]),
+        command_id::SHELL_RUN,
+        json!({ "program": "/usr/bin/echo", "args": ["hello"] }),
+    );
+}
+
+#[test]
+fn event_publish_denied_when_capability_granted_but_channel_allowlist_empty() {
+    let router = full_router();
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::EVENT]),
+        command_id::EVENT_PUBLISH,
+        json!({ "event": "ping", "payload": { "x": 1 } }),
+    );
+}
+
+#[test]
+fn event_subscribe_denied_when_capability_granted_but_channel_allowlist_empty() {
+    let router = full_router();
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::EVENT]),
+        command_id::EVENT_SUBSCRIBE,
+        json!({ "event": "ping" }),
+    );
+}
+
+#[test]
+fn opener_open_denied_when_capability_granted_but_scheme_allowlist_empty() {
+    let router = full_router();
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::OPENER]),
+        command_id::OPENER_OPEN,
+        json!({ "target": "https://kiri.dev" }),
+    );
+}
+
+#[test]
+fn fs_read_denied_when_capability_granted_but_path_scope_flags_deny() {
+    // Default seeds leave PathScope.read = false / write = false. A path under
+    // the temp root still fails the second gate on access flags.
+    let router = full_router();
+    let path = std::env::temp_dir().join("kiri-double-gate-probe.txt");
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::FS]),
+        command_id::FS_READ,
+        json!({ "path": path.to_string_lossy() }),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Gate 2: capability granted + wrong allowlist -> ScopeDenied
+// ---------------------------------------------------------------------------
+
+#[test]
+fn http_get_denied_when_capability_granted_but_host_not_on_allowlist() {
+    let router = full_router_with(AllowlistSeeds {
+        http_hosts: vec!["allowed.example.com".to_string()],
+        ..AllowlistSeeds::default()
+    });
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::HTTP]),
+        command_id::HTTP_GET,
+        json!({ "url": "http://evil.example.net/exfil" }),
+    );
+}
+
+#[test]
+fn shell_run_denied_when_capability_granted_but_program_not_on_allowlist() {
+    let router = full_router_with(AllowlistSeeds {
+        shell_commands: vec![AllowedCommand {
+            program: "/usr/bin/echo".to_string(),
+            args: vec!["hello".to_string()],
+        }],
+        ..AllowlistSeeds::default()
+    });
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::SHELL]),
+        command_id::SHELL_RUN,
+        json!({ "program": "/bin/sh", "args": ["-c", "id"] }),
+    );
+}
+
+#[test]
+fn event_publish_denied_when_capability_granted_but_channel_not_on_allowlist() {
+    let router = full_router_with(AllowlistSeeds {
+        event_channels: vec![AllowedChannel { name: "ping".to_string() }],
+        ..AllowlistSeeds::default()
+    });
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::EVENT]),
+        command_id::EVENT_PUBLISH,
+        json!({ "event": "secrets", "payload": { "token": "x" } }),
+    );
+}
+
+#[test]
+fn opener_open_denied_when_capability_granted_but_scheme_not_on_allowlist() {
+    let router = full_router_with(AllowlistSeeds {
+        opener_url_schemes: vec![AllowedUrlScheme { scheme: "https".to_string() }],
+        opener_file_extensions: vec![AllowedFileExtension { extension: "pdf".to_string() }],
+        ..AllowlistSeeds::default()
+    });
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::OPENER]),
+        command_id::OPENER_OPEN,
+        json!({ "target": "ssh://host" }),
+    );
+}
+
+#[test]
+fn opener_open_file_denied_when_capability_granted_but_extension_not_on_allowlist() {
+    let router = full_router_with(AllowlistSeeds {
+        opener_url_schemes: vec![AllowedUrlScheme { scheme: "https".to_string() }],
+        opener_file_extensions: vec![AllowedFileExtension { extension: "pdf".to_string() }],
+        ..AllowlistSeeds::default()
+    });
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::OPENER]),
+        command_id::OPENER_OPEN,
+        json!({ "target": "/tmp/run.exe" }),
+    );
+}
+
+#[test]
+fn fs_read_denied_when_capability_granted_but_path_escapes_scope() {
+    let router = full_router_with(AllowlistSeeds {
+        fs_read: true,
+        fs_write: false,
+        ..AllowlistSeeds::default()
+    });
+    // Absolute path outside the temp-dir PathScope root.
+    assert_scope_denied(
+        &router,
+        &caps(&[capability_bit::FS]),
+        command_id::FS_READ,
+        json!({ "path": "/etc/passwd" }),
+    );
 }
