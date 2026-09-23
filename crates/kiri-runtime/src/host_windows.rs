@@ -125,6 +125,295 @@ fn post_shared_buffer(
     posted.is_ok()
 }
 
+/// Host-owned reusable slot arena (zero-copy IPC spike). One
+/// `ICoreWebView2SharedBuffer` is created once per session and posted to
+/// script with READ_WRITE access; both sides then read and write slot
+/// headers and payload bytes directly in shared memory. Only tiny JSON
+/// control messages cross `postMessage` in either direction, which removes
+/// the per-reply `CreateSharedBuffer` call and the megabyte JSON
+/// encode/decode that the T008 one-shot path still pays.
+pub(crate) struct RingState {
+    buffer: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2SharedBuffer,
+    base: *mut u8,
+    len: usize,
+}
+
+impl Drop for RingState {
+    fn drop(&mut self) {
+        let _ = unsafe { self.buffer.Close() };
+    }
+}
+
+/// Create the shared arena, write its global header, and post it to script
+/// once with read-write access. Returns None when the runtime lacks the
+/// required interfaces or posting fails; callers fall back to the default
+/// JSON + T008 wire.
+fn init_ring(
+    env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+) -> Option<RingState> {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2Environment12, ICoreWebView2_17, COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE,
+    };
+    let env12 = env.cast::<ICoreWebView2Environment12>().ok()?;
+    let webview17 = webview.cast::<ICoreWebView2_17>().ok()?;
+    let Ok(buffer) = (unsafe { env12.CreateSharedBuffer(crate::ring_ipc::RING_BUFFER_BYTES) })
+    else {
+        return None;
+    };
+    let mut base: *mut u8 = std::ptr::null_mut();
+    if unsafe { buffer.Buffer(&mut base) }.is_err() || base.is_null() {
+        let _ = unsafe { buffer.Close() };
+        return None;
+    }
+    let len = crate::ring_ipc::RING_BUFFER_BYTES as usize;
+    let arena = unsafe { std::slice::from_raw_parts_mut(base, len) };
+    if crate::ring_ipc::write_global_header(arena).is_err() {
+        let _ = unsafe { buffer.Close() };
+        return None;
+    }
+    let extra = to_wide(r#"{"kind":"kiri_ring","version":1}"#);
+    let posted = unsafe {
+        webview17.PostSharedBufferToScript(
+            &buffer,
+            COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE,
+            PCWSTR::from_raw(extra.as_ptr()),
+        )
+    };
+    if posted.is_err() {
+        let _ = unsafe { buffer.Close() };
+        return None;
+    }
+    Some(RingState { buffer, base, len })
+}
+
+/// Inject the ipc bench script, then create and post the ring arena once
+/// the script has run. `PostSharedBufferToScript` raises a single
+/// `sharedbufferreceived` event; posting before the page's listener exists
+/// loses that event and the ring can never engage (hosted run 35897843218:
+/// `ring_slot_hits=0`, every send on the fallback wire). `ExecuteScript`
+/// completion fires after the injected listeners are registered, so posting
+/// the arena from the completion handler cannot lose the event. If the
+/// arena cannot be created the bench stays on the JSON + T008 wire and the
+/// send-fallback counters report that honestly.
+fn exec_script_then_post_ring(
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    js: &str,
+    hwnd: HWND,
+) {
+    let wide = to_wide(js);
+    let handler = webview2_com::ExecuteScriptCompletedHandler::create(Box::new(
+        move |result: windows::core::Result<()>, _output: String| {
+            if let Err(e) = result {
+                eprintln!("[kiri] ipc bench script injection failed: {e}");
+                return Ok(());
+            }
+            if let Some(rt) = unsafe { get_runtime(hwnd) } {
+                rt.ring = init_ring(&rt.env, &rt.webview);
+                if rt.ring.is_some() {
+                    eprintln!(
+                        "[kiri] ring_zerocopy: shared slot arena posted ({} bytes, {} slots)",
+                        crate::ring_ipc::RING_BUFFER_BYTES,
+                        crate::ring_ipc::SLOT_COUNT
+                    );
+                } else {
+                    eprintln!("[kiri] ring_zerocopy unavailable; bench stays on the default wire");
+                }
+            }
+            Ok(())
+        },
+    ));
+    let _ = unsafe { webview.ExecuteScript(PCWSTR::from_raw(wide.as_ptr()), &handler) };
+}
+
+/// Post one small JSON object to the page (ring control messages only).
+fn post_control_json(
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    value: &serde_json::Value,
+) {
+    if let Ok(text) = serde_json::to_string(value) {
+        let wide = to_wide(&text);
+        let _ = unsafe { webview.PostWebMessageAsJson(PCWSTR::from_raw(wide.as_ptr())) };
+    }
+}
+
+/// Borrow the raw bytes of the echoed string for a `kiri.ping` response so
+/// the reply slot can carry them verbatim (RESP_ECHO_STRING) instead of a
+/// JSON encoding the page would have to parse.
+fn ring_echo_bytes(response: &WireResponse) -> Option<&[u8]> {
+    if response.error.is_some() {
+        return None;
+    }
+    let serde_json::Value::Object(map) = response.payload.as_ref()? else {
+        return None;
+    };
+    if map.get("pong") != Some(&serde_json::Value::Bool(true)) {
+        return None;
+    }
+    match map.get("echo") {
+        Some(serde_json::Value::String(s)) => Some(s.as_bytes()),
+        _ => None,
+    }
+}
+
+/// Handle a `{type:"cmd", ring:{slot, request_id}}` control message: the page
+/// already wrote the full request into the slot, so the host reads it from
+/// shared memory, runs the unchanged dispatch pipeline (capability +
+/// validation gates included), and publishes the reply into the same slot.
+fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
+    use crate::ring_ipc as ring;
+    let hint = ring_val.get("request_id").and_then(|v| v.as_u64()).unwrap_or(0);
+    let Some(state) = rt.ring.as_ref() else {
+        let err =
+            WireResponse::err(hint, KiriError::protocol_error("ring transport not initialized"));
+        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        return;
+    };
+    let base = state.base;
+    let len = state.len;
+    let slot_index = ring_val.get("slot").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+    if slot_index >= ring::SLOT_COUNT as u64 {
+        let err =
+            WireResponse::err(hint, KiriError::protocol_error("ring slot index out of bounds"));
+        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+        return;
+    }
+    let slot_index = slot_index as u32;
+    // Copy the declared payload out of shared memory before parsing: the page
+    // owns the slot until it is freed, so the dispatched request must be
+    // built from a private snapshot, not from re-read shared bytes.
+    let (req, payload_bytes) = {
+        let arena = unsafe { std::slice::from_raw_parts_mut(base, len) };
+        let Some(slot) = ring::slot_mut(arena, slot_index) else {
+            return;
+        };
+        match ring::read_request(slot) {
+            Ok(req) => match ring::slot_payload(slot) {
+                Some(bytes) => (req, bytes.to_vec()),
+                None => {
+                    let err = WireResponse::err(
+                        req.request_id,
+                        KiriError::protocol_error("ring payload bounds failure"),
+                    );
+                    let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                    rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+                    return;
+                }
+            },
+            Err(_) => {
+                let err = WireResponse::err(
+                    hint,
+                    KiriError::protocol_error("ring slot does not hold a valid request"),
+                );
+                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+                return;
+            }
+        }
+    };
+    if req.request_id != hint {
+        let err = WireResponse::err(
+            hint,
+            KiriError::protocol_error("ring request_id does not match control message"),
+        );
+        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+        return;
+    }
+    let payload: serde_json::Value = match req.codec {
+        ring::CODEC_UTF8_STRING => match String::from_utf8(payload_bytes) {
+            Ok(s) => serde_json::Value::String(s),
+            Err(_) => {
+                let err = WireResponse::err(
+                    req.request_id,
+                    KiriError::protocol_error("ring utf-8 payload is not valid utf-8"),
+                );
+                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+                return;
+            }
+        },
+        ring::CODEC_JSON => match serde_json::from_slice::<serde_json::Value>(&payload_bytes) {
+            Ok(v) => v,
+            Err(_) => {
+                let err = WireResponse::err(
+                    req.request_id,
+                    KiriError::protocol_error("ring json payload does not parse"),
+                );
+                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+                return;
+            }
+        },
+        _ => {
+            let err = WireResponse::err(
+                req.request_id,
+                KiriError::protocol_error("unsupported ring codec"),
+            );
+            let _ = post_wire_response(&rt.env, &rt.webview, &err);
+            rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+            return;
+        }
+    };
+    let payload_len = serde_json::to_vec(&payload).unwrap_or_default().len() as u32;
+    let request = WireRequest {
+        magic: kiri_core::header::MAGIC,
+        version: kiri_core::header::PROTOCOL_VERSION,
+        flags: kiri_core::header::ControlFlags::REQUEST.bits(),
+        command_id: req.command_id,
+        request_id: req.request_id,
+        payload_len,
+        codec: req.codec,
+        payload,
+    };
+    let response = rt.dispatch_cmd(&request);
+    rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
+
+    // Publish the reply into the same slot. The echo fast path copies the
+    // string bytes verbatim; every other response shape is serialized once
+    // as JSON. Oversized replies fall back to the ordinary wire (which keeps
+    // its own T008 one-shot shared-buffer path).
+    let echo = ring_echo_bytes(&response);
+    let json_body;
+    let (flags, body): (u8, &[u8]) = match echo {
+        Some(bytes) => (ring::RESP_ECHO_STRING, bytes),
+        None => {
+            json_body = serde_json::to_vec(&response).unwrap_or_default();
+            (ring::RESP_JSON, json_body.as_slice())
+        }
+    };
+    let published = {
+        let arena = unsafe { std::slice::from_raw_parts_mut(base, len) };
+        match ring::slot_mut(arena, slot_index) {
+            Some(slot) => {
+                ring::publish_response(slot, req.seq, req.request_id, flags, body).is_ok()
+            }
+            None => false,
+        }
+    };
+    if published {
+        post_control_json(
+            &rt.webview,
+            &serde_json::json!({
+                "type": "ring_resp",
+                "slot": slot_index,
+                "seq": req.seq,
+                "request_id": req.request_id,
+            }),
+        );
+        rt.ring_ok = rt.ring_ok.saturating_add(1);
+    } else {
+        let used = post_wire_response(&rt.env, &rt.webview, &response);
+        rt.ring_fallback = rt.ring_fallback.saturating_add(1);
+        if used {
+            rt.shared_buffer_ok = rt.shared_buffer_ok.saturating_add(1);
+        } else if serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0) > 64 * 1024 {
+            rt.shared_buffer_fallback = rt.shared_buffer_fallback.saturating_add(1);
+        }
+    }
+}
+
 /// Serve a packed or disk asset for `kiri://localhost/*`.
 fn handle_app_resource(
     env: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment,
@@ -279,6 +568,13 @@ pub(crate) struct HostRuntime {
     pub shared_buffer_ok: u32,
     /// T008: replies over 64 KiB that fell back to JSON.
     pub shared_buffer_fallback: u32,
+    /// Zero-copy spike: the reusable shared slot arena, present only when the
+    /// `ring_zerocopy` bench transport was requested and posting succeeded.
+    pub ring: Option<RingState>,
+    /// Replies published into a ring slot.
+    pub ring_ok: u32,
+    /// Ring-mode replies that fell back to the ordinary wire.
+    pub ring_fallback: u32,
 }
 
 impl HostRuntime {
@@ -672,6 +968,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               if (typeof d === 'string') {
                 try { d = JSON.parse(d); } catch (err) { return; }
               }
+              // Ring control message: the owning listener rebuilds the real
+              // reply out of the shared slot; it is not a wire response.
+              if (d && d.type === 'ring_resp') { return; }
               if (d && d.request_id !== undefined) {
                 window.kiri.onResponse(d);
               }
@@ -679,7 +978,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             window.chrome.webview.addEventListener('sharedbufferreceived', function (e) {
               try {
                 var buf = e.getBuffer();
-                var text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+                var bytes = new Uint8Array(buf);
+                // Only JSON wire buffers (T008 replies serialize as JSON
+                // objects) are decoded and released here. A raw arena such
+                // as the kiri_ring slot buffer starts with a binary magic,
+                // not '{'; releasing it would detach it before the bench
+                // listener can claim it.
+                if (bytes.byteLength === 0 || bytes[0] !== 0x7b) { return; }
+                var text = new TextDecoder('utf-8').decode(bytes);
                 window.chrome.webview.releaseBuffer(buf);
                 var d = JSON.parse(text);
                 if (d && d.request_id !== undefined) {
@@ -837,6 +1143,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         exit_code: 0,
         shared_buffer_ok: 0,
         shared_buffer_fallback: 0,
+        ring: None,
+        ring_ok: 0,
+        ring_fallback: 0,
     });
     if let Some(version) = browser_version {
         eprintln!("[kiri] WebView2 runtime version: {version}");
@@ -940,6 +1249,8 @@ fn handle_web_message(
                 "shared_buffer_replies_fallback".into(),
                 serde_json::json!(rt.shared_buffer_fallback),
             );
+            obj.insert("ring_replies_ok".into(), serde_json::json!(rt.ring_ok));
+            obj.insert("ring_replies_fallback".into(), serde_json::json!(rt.ring_fallback));
         }
         match crate::ipc_bench::write_result(rt.options.ipc_bench_out.as_ref(), &report) {
             Ok(()) => unsafe { PostQuitMessage(0) },
@@ -963,6 +1274,17 @@ fn handle_web_message(
             unsafe { PostQuitMessage(1) };
         }
         return;
+    }
+
+    // Zero-copy ring transport (spike, opt-in): the page already wrote the
+    // request into a slot of the shared arena and posted only this tiny
+    // control message. The slot contents flow through the same dispatch
+    // pipeline as the JSON wire.
+    if rt.options.ipc_bench_transport == crate::ipc_bench::IpcBenchTransport::RingZerocopy {
+        if let Some(ring_val) = value.get("ring") {
+            handle_ring_request(rt, ring_val);
+            return;
+        }
     }
 
     // Control-plane command: dispatch through kiri-core and post the
@@ -1007,12 +1329,27 @@ fn handle_web_message(
                 rt.markers.record(Marker::FirstAnimationFrame, qpc_now_ns());
                 if rt.options.ipc_bench && !rt.ipc_bench_injected {
                     rt.ipc_bench_injected = true;
+                    let want_ring = rt.options.ipc_bench_transport
+                        == crate::ipc_bench::IpcBenchTransport::RingZerocopy;
                     let script = crate::ipc_bench::kiri_script(
                         rt.options.ipc_bench_runs,
                         crate::ipc_bench::DEFAULT_WARMUP,
                         &rt.options.ipc_bench_sizes,
+                        if want_ring {
+                            crate::ipc_bench::IpcBenchTransport::RingZerocopy
+                        } else {
+                            crate::ipc_bench::IpcBenchTransport::Default
+                        },
                     );
-                    exec_script(&rt.webview, &script);
+                    if want_ring {
+                        // The arena is posted from the ExecuteScript
+                        // completion so the page's sharedbufferreceived
+                        // listener is already live when the one-shot event
+                        // arrives.
+                        exec_script_then_post_ring(&rt.webview, &script, hwnd);
+                    } else {
+                        exec_script(&rt.webview, &script);
+                    }
                 } else if rt.options.smoke && !rt.smoke_armed {
                     rt.smoke_armed = true;
                     let _ = unsafe {

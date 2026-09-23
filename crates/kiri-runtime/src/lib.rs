@@ -30,6 +30,7 @@ pub mod notification_ctl;
 pub mod opener_ctl;
 pub mod output;
 pub mod plugins;
+pub mod ring_ipc;
 mod router_surfaces;
 pub mod shell_ctl;
 pub mod shortcut_ctl;
@@ -86,6 +87,11 @@ pub struct HostOptions {
     pub ipc_bench_out: Option<PathBuf>,
     /// Payload content sizes for `--ipc-bench`. Empty means DEFAULT_SIZES.
     pub ipc_bench_sizes: Vec<usize>,
+    /// Through-webview transport exercised by `--ipc-bench`. `Default` is the
+    /// current JSON + T008 one-shot shared-buffer wire. `RingZerocopy` opts
+    /// into the spike transport (Windows WebView2 only; other backends fall
+    /// back to `Default`).
+    pub ipc_bench_transport: crate::ipc_bench::IpcBenchTransport,
 }
 
 impl Default for HostOptions {
@@ -103,6 +109,7 @@ impl Default for HostOptions {
             ipc_bench_runs: crate::ipc_bench::DEFAULT_RUNS,
             ipc_bench_out: None,
             ipc_bench_sizes: crate::ipc_bench::DEFAULT_SIZES.to_vec(),
+            ipc_bench_transport: crate::ipc_bench::IpcBenchTransport::Default,
         }
     }
 }
@@ -184,6 +191,7 @@ pub fn host_options_from_args(
         ipc_bench_runs: crate::ipc_bench::DEFAULT_RUNS,
         ipc_bench_out: None,
         ipc_bench_sizes: crate::ipc_bench::DEFAULT_SIZES.to_vec(),
+        ipc_bench_transport: crate::ipc_bench::IpcBenchTransport::Default,
     }
 }
 
