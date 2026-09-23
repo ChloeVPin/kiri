@@ -4,10 +4,10 @@
 //! single biggest escape risk into a Kiri strength. Tauri's shell plugin, when
 //! the capability is granted, can run arbitrary commands. Kiri requires BOTH
 //! the `SHELL` capability bit AND an explicit command allowlist: the host
-//! declares the exact program (and optionally arg prefixes) that may run. A
-//! granted capability with no matching allowlist entry is refused, so a
-//! compromised or careless frontend cannot spawn an unapproved binary. Output is
-//! captured and bounded by the same bulk-object ceiling as `kiri.fs`.
+//! declares the exact program and exact argv that may run. A granted capability
+//! with no matching allowlist entry is refused, so a compromised or careless
+//! frontend cannot spawn an unapproved binary or extend an approved argv.
+//! Output is captured and bounded by the same bulk-object ceiling as `kiri.fs`.
 //!
 //! The actual spawn is behind the `ShellRunner` trait (mirrors `HttpClient`):
 //! the native host injects a real spawner; tests use a `StubShell` and assert
@@ -25,9 +25,10 @@ use crate::limits::Limits;
 /// Authorizes the `kiri.shell.*` commands.
 pub const SHELL_CAPABILITY: u32 = 11;
 
-/// One allowed command: an exact program path plus an optional fixed arg prefix.
-/// Only programs whose resolved executable equals `program` and whose args start
-/// with `args` (in order) may run. Empty `args` means "no args required".
+/// One allowed command: an exact program path plus an exact argv.
+/// Only programs whose resolved executable equals `program` and whose args equal
+/// `args` (same length, same elements in order) may run. Empty `args` means
+/// "no args allowed" — the frontend may not supply any.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedCommand {
     pub program: String,
@@ -35,7 +36,7 @@ pub struct AllowedCommand {
 }
 
 /// Host-configured allowlist of commands that may be spawned. Default-deny: a
-/// command runs only if it matches an entry exactly (program + arg prefix).
+/// command runs only if it matches an entry exactly (program + exact argv).
 #[derive(Debug, Clone, Default)]
 pub struct ShellAllowlist {
     commands: Vec<AllowedCommand>,
@@ -47,12 +48,12 @@ impl ShellAllowlist {
     }
 
     /// Whether `program` with `args` is permitted under the allowlist.
+    /// Exact match only (same length + equal elements), matching sidecar's
+    /// forbid-extension rule. A longer argv after an allowlisted prefix is
+    /// refused — prefix matching would let a frontend append flags like
+    /// `--evil` onto a seeded probe such as `echo kiri-probe`.
     fn allows(&self, program: &str, args: &[String]) -> bool {
-        self.commands.iter().any(|c| {
-            c.program == program
-                && args.len() >= c.args.len()
-                && c.args.iter().enumerate().all(|(i, a)| args.get(i) == Some(a))
-        })
+        self.commands.iter().any(|c| c.program == program && c.args.as_slice() == args)
     }
 
     pub fn commands(&self) -> &[AllowedCommand] {
@@ -213,15 +214,16 @@ mod tests {
     }
 
     #[test]
-    fn wrong_arg_prefix_is_denied() {
+    fn wrong_argv_is_denied() {
         let r = router();
-        // 'echo' is allowed only with the 'hello' arg prefix; 'echo world' is not.
+        // 'echo' is allowed only with exact argv ["hello"]; ["world"] is not.
         let out = dispatch(
             &r,
             command_id::SHELL_RUN,
             serde_json::json!({ "program": "/usr/bin/echo", "args": ["world"] }),
         );
         assert!(!out["error"].is_null());
+        assert_eq!(out["error"]["code"], "scope_denied");
     }
 
     #[test]
@@ -237,5 +239,56 @@ mod tests {
         let resp = r.dispatch(CallerId(1), &granted, &req, &mut NoopTraceSink);
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, crate::error::ErrorCode::Unauthorized);
+    }
+
+    /// Seed-shaped allowlist (`echo` + `["kiri-probe"]`) must reject argv
+    /// extension. Prefix matching would accept `["kiri-probe", "--evil"]`;
+    /// exact match (sidecar parity) must ScopeDeny it.
+    #[test]
+    fn argv_extension_beyond_allowlist_is_denied() {
+        let allow = ShellAllowlist::new(vec![AllowedCommand {
+            program: "echo".to_string(),
+            args: vec!["kiri-probe".to_string()],
+        }]);
+        let svc = ShellService::new(
+            Arc::new(StubShell { code: 0, stdout: b"kiri-probe".to_vec() }),
+            allow,
+            Limits::default(),
+        );
+        let router = Router::new_with_limits(Limits::default()).with_shell(svc);
+
+        // Exact argv still allowed.
+        let ok = dispatch(
+            &router,
+            command_id::SHELL_RUN,
+            serde_json::json!({ "program": "echo", "args": ["kiri-probe"] }),
+        );
+        assert!(ok["error"].is_null(), "exact seed argv must remain allowed: {ok}");
+
+        // Extra argv after the allowlisted prefix must fail closed.
+        let denied = dispatch(
+            &router,
+            command_id::SHELL_RUN,
+            serde_json::json!({ "program": "echo", "args": ["kiri-probe", "--evil"] }),
+        );
+        assert!(!denied["error"].is_null(), "argv extension must be denied: {denied}");
+        assert_eq!(
+            denied["error"]["code"],
+            "scope_denied",
+            "expected ScopeDenied, got: {denied}"
+        );
+    }
+
+    #[test]
+    fn shorter_argv_than_allowlist_is_denied() {
+        let r = router();
+        // Allowlist requires ["hello"]; bare program with no args must not match.
+        let out = dispatch(
+            &r,
+            command_id::SHELL_RUN,
+            serde_json::json!({ "program": "/usr/bin/echo", "args": [] }),
+        );
+        assert!(!out["error"].is_null());
+        assert_eq!(out["error"]["code"], "scope_denied");
     }
 }
