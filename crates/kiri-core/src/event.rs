@@ -47,13 +47,28 @@ impl EventAllowlist {
         Self { channels }
     }
 
-    fn allows(&self, name: &str) -> bool {
+    /// Exact-name check used by both the restricted `kiri.event.*` surface and
+    /// the legacy R-3 `EVENT_EMIT` / `EVENT_LISTEN` handlers so they cannot drift.
+    pub fn allows(&self, name: &str) -> bool {
         self.channels.iter().any(|c| c.name == name)
     }
 
     pub fn channels(&self) -> &[AllowedChannel] {
         &self.channels
     }
+}
+
+/// Shared channel gate for every frontend-facing event command. Fail-closed:
+/// an unknown channel is `ScopeDenied` whether the caller used the legacy
+/// R-3 ids (`EVENT_EMIT` / `EVENT_LISTEN`) or the audit-16 ids
+/// (`EVENT_PUBLISH` / `EVENT_SUBSCRIBE`).
+pub fn ensure_channel_allowed(allowlist: &EventAllowlist, channel: &str, op: &str) -> Result<()> {
+    if !allowlist.allows(channel) {
+        return Err(Error::scope_denied(format!(
+            "kiri.event.{op}: channel not on allowlist: {channel}"
+        )));
+    }
+    Ok(())
 }
 
 /// Transport seam. The native host provides a real bus; tests provide a stub.
@@ -87,11 +102,7 @@ impl EventService {
     /// Subscribe to a host-allowlisted channel. The frontend may only name a
     /// pre-approved channel; an unknown channel is refused.
     pub fn subscribe(&self, channel: &str) -> Result<Value> {
-        if !self.allowlist.allows(channel) {
-            return Err(Error::scope_denied(format!(
-                "kiri.event.listen: channel not on allowlist: {channel}"
-            )));
-        }
+        ensure_channel_allowed(&self.allowlist, channel, "listen")?;
         let id = self.backend.subscribe(channel);
         Ok(serde_json::json!({ "listener_id": id, "channel": channel }))
     }
@@ -100,11 +111,7 @@ impl EventService {
     /// pre-approved channel; an unknown channel is refused. Payload size is
     /// bounded by the shared bulk-object ceiling.
     pub fn publish(&self, channel: &str, payload: &Value) -> Result<Value> {
-        if !self.allowlist.allows(channel) {
-            return Err(Error::scope_denied(format!(
-                "kiri.event.emit: channel not on allowlist: {channel}"
-            )));
-        }
+        ensure_channel_allowed(&self.allowlist, channel, "emit")?;
         let serialized = serde_json::to_vec(payload).map_err(|e| {
             Error::invalid_argument(format!("kiri.event.emit: payload not serializable: {e}"))
         })?;
@@ -116,6 +123,13 @@ impl EventService {
     /// Drain pending publications for a host-assigned subscriber id.
     pub fn drain(&self, subscriber_id: u64) -> Vec<Value> {
         self.backend.drain(subscriber_id)
+    }
+
+    /// Shared handle to the host channel allowlist. The router installs this
+    /// into the legacy `EVENT_EMIT` / `EVENT_LISTEN` handlers so both surfaces
+    /// enforce the identical set.
+    pub fn allowlist(&self) -> Arc<EventAllowlist> {
+        self.allowlist.clone()
     }
 
     /// Report which host-allowlisted channels exist (names only). Lets the
@@ -304,5 +318,55 @@ mod tests {
         assert!(out["error"].is_null());
         let channels = out["payload"]["channels"].as_array().unwrap();
         assert_eq!(channels.len(), 2);
+    }
+
+    /// Host-equivalent wiring: `with_platform` (legacy EVENT_EMIT/LISTEN) and
+    /// `with_event` (allowlisted surface) share one bus. A granted EVENT
+    /// capability must still be `ScopeDenied` when the channel is not on the
+    /// host allowlist — the hole this locks is legacy ids bypassing the list.
+    fn host_equivalent_router() -> Router {
+        let bus = crate::platform::EventBus::new();
+        let allow = EventAllowlist::new(vec![
+            AllowedChannel { name: "ping".to_string() },
+            AllowedChannel { name: "update".to_string() },
+        ]);
+        Router::new_with_limits(Limits::default())
+            .with_platform(bus.clone())
+            .with_event(EventService::new(Arc::new(bus), allow, Limits::default()))
+    }
+
+    #[test]
+    fn legacy_event_emit_unknown_channel_scope_denied() {
+        let r = host_equivalent_router();
+        let out = dispatch(
+            &r,
+            command_id::EVENT_EMIT,
+            serde_json::json!({ "event": "evil", "payload": { "x": 1 } }),
+        );
+        assert!(!out["error"].is_null(), "legacy EVENT_EMIT must deny unknown channel, got: {out}");
+        assert_eq!(out["error"]["code"], "scope_denied");
+    }
+
+    #[test]
+    fn legacy_event_listen_unknown_channel_scope_denied() {
+        let r = host_equivalent_router();
+        let out = dispatch(&r, command_id::EVENT_LISTEN, serde_json::json!({ "event": "evil" }));
+        assert!(
+            !out["error"].is_null(),
+            "legacy EVENT_LISTEN must deny unknown channel, got: {out}"
+        );
+        assert_eq!(out["error"]["code"], "scope_denied");
+    }
+
+    #[test]
+    fn legacy_event_emit_allowed_channel_succeeds() {
+        let r = host_equivalent_router();
+        let out = dispatch(
+            &r,
+            command_id::EVENT_EMIT,
+            serde_json::json!({ "event": "ping", "payload": { "n": 1 } }),
+        );
+        assert!(out["error"].is_null(), "unexpected error: {out}");
+        assert_eq!(out["payload"]["emitted"], true);
     }
 }
