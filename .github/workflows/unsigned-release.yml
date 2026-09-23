@@ -41,7 +41,7 @@ jobs:
       OUT_DIR: artifacts/${{ matrix.os }}
       KIRI_UPDATE_SIGNING_KEY_HEX: ${{ secrets.KIRI_UPDATE_SIGNING_KEY_HEX }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
 
       - if: runner.os == 'Linux'
@@ -97,7 +97,7 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: actions/download-artifact@v4
@@ -234,7 +234,7 @@ jobs:
     name: Release rehearsal (test key, no publish)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux system dependencies
