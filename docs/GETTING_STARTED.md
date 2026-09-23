@@ -2,12 +2,12 @@
 
 Kiri is a native desktop runtime for **Linux, macOS, and Windows**: a small
 native host plus a packed web UI. JavaScript can only reach what the host named
-twice — a capability bit **and** an allowlist (host, command, path, template,
+twice: a capability bit **and** an allowlist (host, command, path, template,
 channel, or scheme). That contract is defined in [`PRODUCT.md`](PRODUCT.md).
 
 **Status (honest):** the latest **published** host is
 **[v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6)**. Workspace
-`Cargo.toml` may already say `0.1.7` — that is source, not a download. Until OS
+`Cargo.toml` may already say `0.1.7`; that is source, not a download. Until OS
 notarization / Authenticode, double-click onboarding without a cheatsheet,
 no-clone embed-from-CI, and a kept-current public scoreboard all land, treat
 this as an **early runtime + demo**, not a finished Tauri replacement
@@ -30,7 +30,7 @@ Only these assets exist in [v0.1.6](https://github.com/ChloeVPin/kiri/releases/t
 - `linux-x86_64`
 - `windows-x86_64`
 
-Intel Mac and Linux ARM are **not** published — the scaffolder will error with a
+Intel Mac and Linux ARM are **not** published; the scaffolder will error with a
 missing platform URL.
 
 ## Platform prerequisites
@@ -111,7 +111,7 @@ and Win32 + WebView2 on Windows.
 
 There are **two** different mechanisms. Do not mix the names.
 
-### A) Runtime folder (no recompile) — what scaffold uses
+### A) Runtime folder (no recompile): what scaffold uses
 
 ```sh
 # host loads ./frontend instead of the packed default
@@ -123,7 +123,7 @@ Public CI template: [`templates/ship-app.yml`](../templates/ship-app.yml)
 downloads a release host and **copies `frontend/` beside it**. It does **not**
 set `KIRI_EMBED_FRONTEND`.
 
-### B) Compile-time embed (`KIRI_EMBED_FRONTEND`) — needs Kiri source + Rust
+### B) Compile-time embed (`KIRI_EMBED_FRONTEND`): needs Kiri source + Rust
 
 Same idea as Tauri `frontendDist`. Point `KIRI_EMBED_FRONTEND` at your UI folder
 (needs `index.html`). The host serves it over `kiri://localhost/index.html`:
@@ -168,23 +168,23 @@ Your frontend loads `kiri.js` (the API shim) which wraps the bridge:
 
   // double-gated HTTP: the capability AND a host allowlist
   api.http.get("https://evil.example.com/")
-    .then(function () { console.log("allowed — that is a bug"); })
+    .then(function () { console.log("allowed (that is a bug)"); })
     .catch(function (e) { console.log("denied (correct):", e.message); });
 </script>
 ```
 
 Starter allowlists are baked into the downloaded host. Authoring a custom
-allowlist for a scaffolded (no-clone) binary is **not** documented yet — build
+allowlist for a scaffolded (no-clone) binary is **not** documented yet; build
 a host with your policy from this tree. See [`API_REFERENCE.md`](API_REFERENCE.md).
 
 ## 5. The security model
 
 Every native call is double-gated:
 
-1. **Capability bit** — assigned by native code only. JavaScript never
+1. **Capability bit**: assigned by native code only. JavaScript never
    supplies the capability mask. The trusted frontend gets a fixed set of
    bits; unknown or ungranted commands return `Unauthorized`.
-2. **Host allowlist** — even with the capability granted, the host refuses
+2. **Host allowlist**: even with the capability granted, the host refuses
    any target not on its explicit allowlist: shell commands, HTTP hosts,
    notification templates, dialog kinds, shortcut accelerators, store
    namespaces, deep-link schemes, opener targets, tray items, sidecar
