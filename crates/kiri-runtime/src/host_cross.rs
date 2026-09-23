@@ -449,6 +449,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let ipc_bench = options.ipc_bench;
     let ipc_bench_runs = options.ipc_bench_runs;
     let ipc_bench_sizes = options.ipc_bench_sizes.clone();
+    let ipc_bench_transport = options.ipc_bench_transport;
     let ipc_bench_out = options.ipc_bench_out.clone();
     let markers_out = options.markers_out.clone();
     let exit_after_ready_ms = options.exit_after_ready_ms as u128;
@@ -708,10 +709,20 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     if std::env::var_os("KIRI_DEBUG").is_some() {
                         eprintln!("[kiri-debug] injecting IPC benchmark");
                     }
+                    if ipc_bench_transport == crate::ipc_bench::IpcBenchTransport::RingZerocopy {
+                        // The reusable WebView2 slot arena does not exist off
+                        // Windows; run the same bench on the default wire and
+                        // record the fallback honestly.
+                        eprintln!(
+                            "[kiri] ring_zerocopy transport requires the Windows WebView2 host; \
+                             running ipc bench on the default wire"
+                        );
+                    }
                     let script = crate::ipc_bench::kiri_script(
                         ipc_bench_runs,
                         crate::ipc_bench::DEFAULT_WARMUP,
                         &ipc_bench_sizes,
+                        crate::ipc_bench::IpcBenchTransport::Default,
                     );
                     if let Err(e) = webview.evaluate_script(&script) {
                         eprintln!("[kiri] failed to inject ipc bench: {e}");

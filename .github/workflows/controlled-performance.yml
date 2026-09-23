@@ -148,6 +148,14 @@ jobs:
         timeout-minutes: 8
         run: .\target\release\kiri-host.exe --frontend examples\blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-out artifacts\ipc-kiri.json --markers-out artifacts\startup-kiri-ipc.json
 
+      # Ring transport is WebView2-only; off Windows it falls back to the
+      # default wire, so only the Windows leg runs it.
+      - name: Through-webview IPC (Kiri, ring_zerocopy)
+        shell: pwsh
+        if: runner.os == 'Windows'
+        timeout-minutes: 8
+        run: .\target\release\kiri-host.exe --frontend examples\blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-transport ring_zerocopy --ipc-bench-out artifacts\ipc-kiri-ring.json
+
       - name: Through-webview IPC (Tauri)
         if: runner.os == 'macOS'
         timeout-minutes: 8
