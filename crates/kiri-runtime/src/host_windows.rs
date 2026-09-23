@@ -34,6 +34,7 @@ use kiri_core::error::Error as KiriError;
 use kiri_core::platform::EventBus;
 use kiri_core::resources::ResourceTable;
 use kiri_core::wire::{WireRequest, WireResponse};
+use kiri_core::security::is_navigation_allowed;
 
 use crate::markers::{Marker, StartupMarkers};
 use crate::HostOptions;
@@ -265,6 +266,7 @@ pub(crate) struct HostRuntime {
     pub webview: webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
     pub webview_token: i64,
     pub navigation_token: i64,
+    pub navigation_starting_token: i64,
     pub resource_token: i64,
     pub menu_dispatcher: crate::menu_dispatch::MenuDispatcher,
     pub menu_runner: std::sync::Arc<dyn kiri_core::app_menu::MenuRunner>,
@@ -472,7 +474,8 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         AddScriptToExecuteOnDocumentCreatedCompletedHandler,
         CreateCoreWebView2ControllerCompletedHandler,
         CreateCoreWebView2EnvironmentCompletedHandler, NavigationCompletedEventHandler,
-        WebMessageReceivedEventHandler, WebResourceRequestedEventHandler,
+        NavigationStartingEventHandler, WebMessageReceivedEventHandler,
+        WebResourceRequestedEventHandler,
     };
 
     let mut markers = StartupMarkers::new();
@@ -756,6 +759,32 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         .map_err(|e| format!("add_WebResourceRequested: {e}"))?;
 
     // ---- event handlers ----
+    // D-010 / specs SECURITY Navigation: cancel any navigation that is not
+    // the application origin (or in-document relative/blank bootstrap).
+    // Linux/macOS already gate via wry `with_navigation_handler`; Windows
+    // must cancel here or the shared policy is never enforced on this host.
+    let nav_starting = NavigationStartingEventHandler::create(Box::new(move |_sender, args| {
+        let Some(args) = args else {
+            return Ok(());
+        };
+        let mut uri = windows::core::PWSTR(std::ptr::null_mut());
+        if unsafe { args.Uri(&mut uri) }.is_err() {
+            let _ = unsafe { args.SetCancel(true) };
+            return Ok(());
+        }
+        let uri_s = pwstr_to_string(uri);
+        unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(uri.0 as _)) };
+        if !is_navigation_allowed(&uri_s) {
+            eprintln!("[kiri] NavigationStarting: denied {uri_s}");
+            let _ = unsafe { args.SetCancel(true) };
+        }
+        Ok(())
+    }));
+    let mut navigation_starting_token: i64 = 0;
+    webview
+        .add_NavigationStarting(&nav_starting, &mut navigation_starting_token)
+        .map_err(|e| format!("add_NavigationStarting: {e}"))?;
+
     let nav_handler = NavigationCompletedEventHandler::create(Box::new(move |sender, args| {
         let Some(args) = args else {
             eprintln!("[kiri] NavigationCompleted: handler fired without args");
@@ -828,6 +857,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         webview,
         webview_token,
         navigation_token,
+        navigation_starting_token,
         resource_token,
         menu_dispatcher,
         menu_runner: std::sync::Arc::new(menu_runner),
@@ -877,6 +907,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     let rt = unsafe { Box::from_raw(runtime_ptr) };
     let _ = rt.webview.remove_WebMessageReceived(rt.webview_token);
     let _ = rt.webview.remove_NavigationCompleted(rt.navigation_token);
+    let _ = rt.webview.remove_NavigationStarting(rt.navigation_starting_token);
     if rt.resource_token != 0 {
         let _ = rt.webview.remove_WebResourceRequested(rt.resource_token);
     }
