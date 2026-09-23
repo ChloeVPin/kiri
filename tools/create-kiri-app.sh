@@ -2,8 +2,13 @@
 # Scaffold a runnable Kiri app. Does not require this git tree: it can
 # download the latest kiri-host and starter UI from GitHub releases.
 #
-#   curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ./my-app
+# Tracks the latest *published* RELEASES.json (releases/latest), not the
+# Cargo.toml version on main. Prints the resolved version after fetch.
+#
+# Prefer downloading or cloning this script, then running it locally:
 #   ./tools/create-kiri-app.sh ./my-app
+# Pipe-to-bash remains fine for evaluation:
+#   curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ./my-app
 
 set -euo pipefail
 

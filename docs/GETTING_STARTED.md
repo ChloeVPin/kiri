@@ -5,45 +5,90 @@ plus a packed web UI. JavaScript can only reach what the host named twice:
 a capability bit **and** an allowlist (host, command, path, template,
 channel, or scheme).
 
-This guide takes you from zero to a running app without cloning this repo.
+**Published vs tree:** the download/scaffold path uses the latest
+**[GitHub Release](https://github.com/ChloeVPin/kiri/releases/latest)** —
+currently **[v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6)**.
+`Cargo.toml` on `main` may already say `0.1.7`; that is source, not what
+`create-kiri-app` fetches. Details:
+[`STATUS.md`](STATUS.md) (public release skew).
+
+## Platforms in the public RELEASES.json
+
+Only these keys ship in the live manifest today:
+
+- `darwin-aarch64` (Apple Silicon)
+- `linux-x86_64`
+- `windows-x86_64`
+
+Intel Mac (`darwin-x86_64`) and Linux aarch64 are **not** in the public
+manifest yet. The scaffolder understands those platform names but will fail
+looking up a URL until a release adds them.
 
 ## Platform prerequisites
 
-- macOS: macOS with its system WebView runtime.
+- macOS: macOS with its system WebView runtime (Apple Silicon for published
+  archives).
 - Windows: Windows with the Evergreen WebView2 runtime.
 - Linux: GTK 3 and WebKit2GTK 4.1 runtime libraries. Debian/Ubuntu users
   can install them with `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`.
 
-Kiri's current public archives are application-level signed but unsigned by
-the operating system. macOS may show an unidentified-developer warning, and
-Windows may show SmartScreen. These archives are suitable for evaluation and
+Kiri's current public archives are application-level Ed25519 signed
+(`RELEASES.json`) but **unsigned by the OS** — not notarized, not
+Authenticode, not App Store / Microsoft Store ready. macOS may show an
+unidentified-developer (Gatekeeper) warning; use right-click → **Open** the
+first time. Windows may show SmartScreen. Suitable for evaluation and
 development; native notarization, Authenticode signing, and distro package
 signing remain separate release work.
 
 ## 1. Scaffold an app (no git tree required)
 
+Prefer downloading or cloning the scaffolder, then running it locally so you
+can read it before it touches your machine:
+
+```sh
+# from a clone of this repo
+./tools/create-kiri-app.sh ~/Desktop/my-kiri-app
+
+# or download the script alone, then run it
+curl -fsSL -o create-kiri-app.sh \
+  https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh
+chmod +x create-kiri-app.sh
+./create-kiri-app.sh ~/Desktop/my-kiri-app
+```
+
+Pipe-to-bash still works for quick evaluation (same script; still tracks
+published `RELEASES.json`, not tree `Cargo.toml`):
+
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ~/Desktop/my-kiri-app
 ```
 
-On Windows PowerShell, use the native scaffold script:
+On Windows PowerShell, prefer downloading the script first:
+
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.ps1 -OutFile create-kiri-app.ps1
+& .\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
+```
+
+Or from a clone:
+
+```powershell
+& .\tools\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
+```
+
+One-liner (evaluation):
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.ps1))) "$HOME\Desktop\my-kiri-app"
 ```
 
-The script accepts a destination as its first argument when invoked directly:
+This downloads the latest **published** release host and starter UI, then
+assembles a runnable app:
 
-```powershell
-& .\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
-```
-
-This downloads the latest release host and starter UI, then assembles a
-runnable app:
-
-- macOS: `open ~/Desktop/my-kiri-app/my-kiri-app.app`
-- Linux: `~/Desktop/my-kiri-app/run.sh`
-- Windows: `my-kiri-app\run.cmd`
+- macOS (Apple Silicon): `open ~/Desktop/my-kiri-app/my-kiri-app.app`
+  (Gatekeeper: right-click → Open if blocked; archives are not notarized)
+- Linux x86_64: `~/Desktop/my-kiri-app/run.sh`
+- Windows x86_64: `my-kiri-app\run.cmd` (SmartScreen possible)
 
 Edit `frontend/` in that folder and run again. Your UI overrides the packed
 default.

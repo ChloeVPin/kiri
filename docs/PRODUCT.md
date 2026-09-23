@@ -15,8 +15,11 @@ a prettier page, they write a prettier page.
 
 A person who has never cloned this repo can:
 
-1. Download a current release for their OS, or scaffold an app in one
-   command from a published Kiri package.
+1. Download a current **published** GitHub Release for their OS, or
+   scaffold an app in one command from that release's `RELEASES.json`
+   (not whatever `Cargo.toml` on `main` says — see
+   [`STATUS.md`](STATUS.md) public-release skew and
+   [`GETTING_STARTED.md`](GETTING_STARTED.md)).
 2. Open a window that talks to the host (version, OS, a real native
    action) without a terminal cheatsheet.
 3. Ship their own UI by pointing `KIRI_EMBED_FRONTEND` at a folder and
