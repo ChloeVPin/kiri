@@ -154,7 +154,12 @@ mod tests {
     use std::thread;
 
     fn item() -> MenuItem {
-        MenuItem { id: "quit".into(), label: "Quit".into(), action: "quit".into() }
+        MenuItem {
+            id: "quit".into(),
+            label: "Quit".into(),
+            action: "quit".into(),
+            accelerator: Some("CmdOrCtrl+Q".into()),
+        }
     }
 
     #[test]
@@ -173,6 +178,7 @@ mod tests {
             dispatcher.drain(|operation| match operation {
                 OperationKind::Set(items) => {
                     assert_eq!(items[0].id, "quit");
+                    assert_eq!(items[0].accelerator.as_deref(), Some("CmdOrCtrl+Q"));
                     Ok(())
                 }
                 OperationKind::Invoke { id, action } => {
@@ -234,7 +240,12 @@ mod tests {
         for n in 0..16 {
             let r = runner.clone();
             let item_id = if n % 2 == 0 { "quit" } else { "show" };
-            let show = MenuItem { id: "show".into(), label: "Show".into(), action: "show".into() };
+            let show = MenuItem {
+                id: "show".into(),
+                label: "Show".into(),
+                action: "show".into(),
+                accelerator: None,
+            };
             workers.push(thread::spawn(move || {
                 if n % 2 == 0 {
                     let _ = r.set_menu(&[item(), show]);

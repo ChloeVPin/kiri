@@ -16,8 +16,15 @@ handler runs. Unknown IDs, ungranted capability, oversized values, and
 backend failures are explicit errors.
 
 The frontend must never provide arbitrary native labels, shell commands, menu
-roles, accelerators, or submenu structure. A host application may expose a
-richer schema later, but every field must remain host-approved and bounded.
+roles, accelerators, or submenu structure. Accelerators are supported only as
+a host-owned allowlist field: `MenuItem.accelerator` is set by the host (the
+seed allowlist binds `quit` to `CmdOrCtrl+Q`), is parsed into a muda
+`Accelerator` by the native adapter, and an invalid string fails the whole
+menu apply with an explicit error rather than being silently dropped. On
+Windows the host message loop calls `TranslateAcceleratorW` with the menu's
+HACCEL so the shortcuts actually fire. JavaScript can still not invent an
+accelerator; a host application may expose a richer schema later, but every
+field must remain host-approved and bounded.
 
 ## Threading model
 
@@ -62,8 +69,10 @@ and its [platform notes].
 The current adapter supports ordinary host-owned clickable items and stable
 IDs via `muda 0.19.3` (`native_menu.rs` on Linux/macOS, `native_menu_windows.rs` on Windows) and a bounded `MenuDispatcher` (`menu_dispatch.rs:11` queue 32, 2 s timeout). Both backends wire the dispatcher on the event-loop thread (`host_cross.rs:428` `MenuDispatcher::new()` + `host_cross.rs:648` drain + `host_windows.rs:358` wnd_proc drain) and forward `muda::MenuEvent` to `window.kiri.onMenuAction` (`host_cross.rs:669`, `host_windows.rs:360`). The production `MenuRunner` is the dispatcher handle (`MenuDispatcherHandle: MenuRunner`), not `DisabledMenu`; the command surface (`kiri.menu.set` id 72 / `invoke` id 73) is capability-gated and allowlist-enforced in `kiri_core::app_menu.rs:115`. `replace` is replacement-safe: it builds the new menu off-thread-local state first, then removes the old OS menu before installing the new one, handles empty-set as clear (`native_menu.rs:65`, `native_menu_windows.rs:39`), and treats `invoke` as validation without reinstall.
 
-It does not claim support for submenus, checkboxes, radio items, roles, icons, and accelerators;
-each requires separate acceptance tests per platform.
+It does not claim support for submenus, checkboxes, radio items, roles, or
+icons; each requires separate acceptance tests per platform. Host-owned
+accelerators are supported (allowlist-provided only, never frontend-supplied);
+the remaining menu depth is tracked in issue #19.
 
 ## Acceptance evidence
 

@@ -180,10 +180,17 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
 fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
     tray_items()
         .into_iter()
-        .map(|item| kiri_core::app_menu::MenuItem {
-            id: item.id,
-            label: item.label,
-            action: item.action,
+        .map(|item| {
+            let accelerator = match item.id.as_str() {
+                "quit" => Some("CmdOrCtrl+Q".to_string()),
+                _ => None,
+            };
+            kiri_core::app_menu::MenuItem {
+                id: item.id,
+                label: item.label,
+                action: item.action,
+                accelerator,
+            }
         })
         .collect()
 }

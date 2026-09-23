@@ -22,8 +22,9 @@ use windows::Win32::System::Performance::{QueryPerformanceCounter, QueryPerforma
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowLongPtrW, PeekMessageW, PostQuitMessage, RegisterClassW, SetTimer, SetWindowLongPtrW,
-    ShowWindow, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, GWLP_USERDATA, MSG,
-    PM_REMOVE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    ShowWindow, TranslateAcceleratorW, TranslateMessage, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
+    GWLP_USERDATA, MSG, PM_REMOVE, SW_SHOW, WM_CLOSE, WM_DESTROY, WM_TIMER, WNDCLASSW,
+    WS_OVERLAPPEDWINDOW,
 };
 
 use kiri_core::caller::{CallerId, CallerRegistry};
@@ -456,10 +457,17 @@ fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
 fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
     tray_items()
         .into_iter()
-        .map(|item| kiri_core::app_menu::MenuItem {
-            id: item.id,
-            label: item.label,
-            action: item.action,
+        .map(|item| {
+            let accelerator = match item.id.as_str() {
+                "quit" => Some("CmdOrCtrl+Q".to_string()),
+                _ => None,
+            };
+            kiri_core::app_menu::MenuItem {
+                id: item.id,
+                label: item.label,
+                action: item.action,
+                accelerator,
+            }
         })
         .collect()
 }
@@ -868,8 +876,18 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
     // ---- message loop ----
     let mut msg = MSG::default();
     while GetMessageW(&mut msg, None, 0, 0).as_bool() {
-        let _ = TranslateMessage(&msg);
-        let _ = DispatchMessageW(&msg);
+        // Route accelerators for the installed native menu before the normal
+        // translate/dispatch path, per the documented muda Windows pattern.
+        // A nonzero return means the keystroke was consumed as a WM_COMMAND.
+        let translated = (*runtime_ptr)
+            .native_menu
+            .haccel()
+            .map(|haccel| TranslateAcceleratorW(hwnd, haccel, &msg))
+            .unwrap_or(0);
+        if translated == 0 {
+            let _ = TranslateMessage(&msg);
+            let _ = DispatchMessageW(&msg);
+        }
     }
 
     // ---- teardown (docs/03 shutdown sequence) ----
