@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "note": "EXAMPLE FIXTURE DATA. Invented values shaped like the in-process kiri-core bulk_bench artifact. NOT a measurement and NOT through-webview IPC; the gate must refuse it.",
+  "name": "ordinary-message-bulk-path",
+  "commit": "0000000",
+  "created_unix_ns": 0,
+  "sizes_bytes": [1048576, 16777216, 104857600],
+  "results": [
+    {
+      "size_bytes": 1048576,
+      "runs": 5,
+      "wall_ms": [0.6, 0.62, 0.61, 0.63, 0.6],
+      "cpu_ms": [0.5, 0.52, 0.51, 0.53, 0.5],
+      "peak_rss_bytes": [1000000, 1000000, 1000000, 1000000, 1000000],
+      "throughput_mib_s": [1600.0, 1610.0, 1605.0, 1590.0, 1600.0],
+      "summary": {
+        "mean_wall_ms": 0.612,
+        "mean_cpu_ms": 0.512,
+        "max_rss_bytes": 1000000,
+        "mean_throughput_mib_s": 1601.0
+      }
+    }
+  ]
+}

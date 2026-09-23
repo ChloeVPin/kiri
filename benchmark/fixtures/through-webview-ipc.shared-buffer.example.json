@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "note": "EXAMPLE FIXTURE DATA. Every value below is invented for scoreboard-gate schema validation and is NOT a measurement. It must never appear on a published chart.",
+  "name": "through-webview-ipc",
+  "target": "kiri-host",
+  "claims": ["shared-buffer"],
+  "commit": "0000000",
+  "created_unix_ns": 0,
+  "runs": 5,
+  "warmup": 2,
+  "sizes_bytes": [64, 262144, 1048574],
+  "run": {
+    "id": "fixture-run-0000",
+    "url": "https://example.invalid/fixture/run",
+    "runner": "fixture-runner",
+    "os": "fixture-os",
+    "arch": "fixture-arch",
+    "host_id": "fixture-host"
+  },
+  "shared_buffer": {
+    "threshold_bytes": 65536,
+    "replies_ok": 10,
+    "replies_fallback": 0
+  },
+  "results": [
+    {
+      "size_bytes": 64,
+      "rtt_ms": [0.1, 0.2, 0.1, 0.2, 0.1],
+      "batch_ms": 0.7,
+      "mean_from_batch_ms": 0.14,
+      "concurrent_batch_ms": [0.4, 0.4, 0.5, 0.4, 0.4],
+      "concurrency": 8,
+      "shared_buffer_hits": 0,
+      "shared_buffer_used": false,
+      "summary": {
+        "min_ms": 0.1,
+        "max_ms": 0.2,
+        "mean_ms": 0.14,
+        "median_ms": 0.1,
+        "p95_ms": 0.2,
+        "p99_ms": 0.2,
+        "batch_ms": 0.7,
+        "mean_from_batch_ms": 0.14
+      }
+    },
+    {
+      "size_bytes": 262144,
+      "rtt_ms": [4.5, 4.8, 4.7, 4.6, 4.9],
+      "batch_ms": 23.5,
+      "mean_from_batch_ms": 4.7,
+      "concurrent_batch_ms": [10.1, 10.3, 10.0, 10.2, 10.4],
+      "concurrency": 8,
+      "shared_buffer_hits": 5,
+      "shared_buffer_used": true,
+      "summary": {
+        "min_ms": 4.5,
+        "max_ms": 4.9,
+        "mean_ms": 4.7,
+        "median_ms": 4.7,
+        "p95_ms": 4.9,
+        "p99_ms": 4.9,
+        "batch_ms": 23.5,
+        "mean_from_batch_ms": 4.7
+      }
+    },
+    {
+      "size_bytes": 1048574,
+      "rtt_ms": [19.2, 19.6, 19.4, 19.5, 19.3],
+      "batch_ms": 97.0,
+      "mean_from_batch_ms": 19.4,
+      "concurrent_batch_ms": [41.0, 41.5, 41.2, 41.3, 41.1],
+      "concurrency": 8,
+      "shared_buffer_hits": 5,
+      "shared_buffer_used": true,
+      "summary": {
+        "min_ms": 19.2,
+        "max_ms": 19.6,
+        "mean_ms": 19.4,
+        "median_ms": 19.4,
+        "p95_ms": 19.6,
+        "p99_ms": 19.6,
+        "batch_ms": 97.0,
+        "mean_from_batch_ms": 19.4
+      }
+    }
+  ]
+}

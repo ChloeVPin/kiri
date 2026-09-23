@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "fixture": true,
+  "note": "EXAMPLE FIXTURE DATA. Invented values. Asserts a shared-buffer claim but carries no proof fields; the gate must refuse it.",
+  "name": "through-webview-ipc",
+  "target": "kiri-host",
+  "claims": ["shared-buffer"],
+  "commit": "0000000",
+  "created_unix_ns": 0,
+  "runs": 5,
+  "warmup": 2,
+  "sizes_bytes": [262144],
+  "run": {
+    "id": "fixture-run-0000",
+    "runner": "fixture-runner",
+    "os": "fixture-os",
+    "arch": "fixture-arch",
+    "host_id": "fixture-host"
+  },
+  "results": [
+    {
+      "size_bytes": 262144,
+      "rtt_ms": [4.5, 4.8, 4.7, 4.6, 4.9],
+      "batch_ms": 23.5,
+      "mean_from_batch_ms": 4.7,
+      "concurrent_batch_ms": [10.1, 10.3, 10.0, 10.2, 10.4],
+      "concurrency": 8,
+      "summary": {
+        "min_ms": 4.5,
+        "max_ms": 4.9,
+        "mean_ms": 4.7,
+        "median_ms": 4.7,
+        "p95_ms": 4.9,
+        "p99_ms": 4.9,
+        "batch_ms": 23.5,
+        "mean_from_batch_ms": 4.7
+      }
+    }
+  ]
+}

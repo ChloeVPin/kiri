@@ -230,10 +230,7 @@ fn kiri_marker(
 
 fn ipc_bench_sizes() -> Vec<usize> {
     if let Ok(raw) = std::env::var("KIRI_IPC_BENCH_SIZES") {
-        let parsed: Vec<usize> = raw
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect();
+        let parsed: Vec<usize> = raw.split(',').filter_map(|s| s.trim().parse().ok()).collect();
         if !parsed.is_empty() {
             return parsed;
         }
@@ -295,7 +292,7 @@ fn tauri_ipc_bench_script(runs: u32, warmup: u32) -> String {
       }});
     }}
     await window.__TAURI_INTERNALS__.invoke("kiri_ipc_bench_done", {{
-      json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", results: results }})
+      json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", runs: RUNS, warmup: WARMUP, results: results }})
     }});
   }}
   run().catch(function (err) {{
@@ -311,14 +308,56 @@ fn tauri_ipc_bench_script(runs: u32, warmup: u32) -> String {
     )
 }
 
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|v| !v.trim().is_empty())
+}
+
+fn git_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Provenance the scoreboard gate (benchmark/scoreboard_gate.py) requires:
+/// run id (hosted) or host id (local), plus runner/OS/arch. Values come from
+/// the measuring machine's environment; nothing is invented.
+fn run_metadata() -> Value {
+    let run_id = env_nonempty("GITHUB_RUN_ID");
+    let url = match (
+        env_nonempty("GITHUB_SERVER_URL"),
+        env_nonempty("GITHUB_REPOSITORY"),
+        run_id.as_deref(),
+    ) {
+        (Some(server), Some(repo), Some(id)) => {
+            serde_json::json!(format!("{server}/{repo}/actions/runs/{id}"))
+        }
+        _ => Value::Null,
+    };
+    let host_id = env_nonempty("KIRI_BENCH_HOST_ID")
+        .or_else(|| env_nonempty("HOSTNAME"))
+        .or_else(|| env_nonempty("COMPUTERNAME"));
+    serde_json::json!({
+        "id": run_id,
+        "url": url,
+        "runner": env_nonempty("RUNNER_NAME").or_else(|| env_nonempty("RUNNER_OS")),
+        "os": env_nonempty("RUNNER_OS").unwrap_or_else(|| std::env::consts::OS.to_string()),
+        "arch": env_nonempty("RUNNER_ARCH").unwrap_or_else(|| std::env::consts::ARCH.to_string()),
+        "host_id": host_id,
+    })
+}
+
 fn write_ipc_artifact(raw: &str) {
     let path = ipc_bench_out();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let parsed: Value = serde_json::from_str(raw).unwrap_or_else(|_| {
-        serde_json::json!({ "type": "ipc_bench", "target": "tauri-baseline", "error": raw })
-    });
+    let parsed: Value = serde_json::from_str(raw).unwrap_or_else(
+        |_| serde_json::json!({ "type": "ipc_bench", "target": "tauri-baseline", "error": raw }),
+    );
     let mut results_out = Vec::new();
     if let Some(arr) = parsed.get("results").and_then(|v| v.as_array()) {
         for item in arr {
@@ -331,17 +370,11 @@ fn write_ipc_artifact(raw: &str) {
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let n = sorted.len() as f64;
             let mean = if n == 0.0 { 0.0 } else { sorted.iter().sum::<f64>() / n };
-            let median = if sorted.is_empty() {
-                0.0
-            } else {
-                sorted[sorted.len() / 2]
-            };
+            let median = if sorted.is_empty() { 0.0 } else { sorted[sorted.len() / 2] };
             let batch_ms = item.get("batch_ms").and_then(|v| v.as_f64());
             let mean_from_batch = item.get("mean_from_batch_ms").and_then(|v| v.as_f64());
-            let concurrent_batch_ms = item
-                .get("concurrent_batch_ms")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!([]));
+            let concurrent_batch_ms =
+                item.get("concurrent_batch_ms").cloned().unwrap_or_else(|| serde_json::json!([]));
             let concurrency = item.get("concurrency").and_then(|v| v.as_u64());
             results_out.push(serde_json::json!({
                 "size_bytes": item.get("size_bytes").cloned().unwrap_or(Value::from(0)),
@@ -368,6 +401,19 @@ fn write_ipc_artifact(raw: &str) {
         "name": "through-webview-ipc",
         "target": "tauri-baseline",
         "error": parsed.get("error").cloned(),
+        "commit": git_commit(),
+        "created_unix_ns": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0),
+        "run": run_metadata(),
+        "runs": parsed.get("runs").cloned().unwrap_or_else(|| {
+            results_out.first()
+                .and_then(|r| r.get("rtt_ms"))
+                .and_then(|v| v.as_array())
+                .map(|a| serde_json::json!(a.len()))
+                .unwrap_or(Value::Null)
+        }),
+        "warmup": parsed.get("warmup").cloned().unwrap_or_else(|| serde_json::json!(ipc_bench_warmup())),
+        "sizes_bytes": results_out.iter().filter_map(|r| r.get("size_bytes").cloned()).collect::<Vec<_>>(),
         "results": results_out,
     });
     if let Ok(text) = serde_json::to_string_pretty(&artifact) {
