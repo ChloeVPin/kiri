@@ -179,3 +179,122 @@ pub fn notification_templates() -> Vec<kiri_core::notification::NotificationTemp
 /// build.
 pub const HOST_PINNED_UPDATE_PUBLIC_KEY: &str =
     "333d58ae1e42ba2025b035666528d36430e0c14e13f3d5006c7f0fe22a9d3af6";
+
+/// Host allowlist of tray menu item ids for the native tray (audit item 14).
+/// Only these ids may appear in the native menu; labels and actions are host-owned.
+pub fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
+    vec![
+        kiri_core::tray::TrayItem {
+            id: "show".to_string(),
+            label: "Show Window".to_string(),
+            action: "show".to_string(),
+        },
+        kiri_core::tray::TrayItem {
+            id: "quit".to_string(),
+            label: "Quit".to_string(),
+            action: "quit".to_string(),
+        },
+    ]
+}
+
+/// Host allowlist for `kiri.menu.*` (audit item 14 twin). Seed mirrors tray
+/// items so both hosts share one menu surface policy.
+pub fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
+    tray_items()
+        .into_iter()
+        .map(|item| kiri_core::app_menu::MenuItem {
+            id: item.id,
+            label: item.label,
+            action: item.action,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod windows_parity_lock {
+    //! Structural lock: `host_windows.rs` must not redefine seed allowlists that
+    //! already live in this module. Deleting the twins is the real fix; this
+    //! test keeps them from creeping back on a `cfg(windows)` file that Linux
+    //! CI never compiles.
+
+    const FORBIDDEN_LOCAL_SEEDS: &[&str] = &[
+        "fn http_allow_hosts(",
+        "fn fs_glob_patterns(",
+        "fn shell_allow_commands(",
+        "fn sidecar_allow(",
+        "fn event_channels(",
+        "fn config_keys(",
+        "fn store_namespaces(",
+        "fn deeplink_schemes(",
+        "fn opener_url_schemes(",
+        "fn opener_file_extensions(",
+        "fn autostart_policy(",
+        "fn shortcut_bindings(",
+        "fn dialog_templates(",
+        "fn notification_templates(",
+        "fn tray_items(",
+        "fn menu_items(",
+        "const HOST_PINNED_UPDATE_PUBLIC_KEY",
+    ];
+
+    const REQUIRED_HOST_POLICY_CALLS: &[&str] = &[
+        "crate::host_policy::http_allow_hosts()",
+        "crate::host_policy::fs_glob_patterns()",
+        "crate::host_policy::shell_allow_commands()",
+        "crate::host_policy::sidecar_allow()",
+        "crate::host_policy::event_channels()",
+        "crate::host_policy::config_keys()",
+        "crate::host_policy::store_namespaces()",
+        "crate::host_policy::deeplink_schemes()",
+        "crate::host_policy::opener_url_schemes()",
+        "crate::host_policy::opener_file_extensions()",
+        "crate::host_policy::autostart_policy()",
+        "crate::host_policy::shortcut_bindings()",
+        "crate::host_policy::dialog_templates()",
+        "crate::host_policy::notification_templates()",
+        "crate::host_policy::tray_items()",
+        "crate::host_policy::menu_items()",
+        "crate::host_policy::HOST_PINNED_UPDATE_PUBLIC_KEY",
+        "crate::host_policy::fs_watch_targets()",
+        "crate::host_policy::ws_allow_urls()",
+    ];
+
+    #[test]
+    fn host_windows_has_no_parallel_seed_lists() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_windows.rs");
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let mut violations = Vec::new();
+        for needle in FORBIDDEN_LOCAL_SEEDS {
+            if src.contains(needle) {
+                violations.push(format!("local seed still defined: {needle}"));
+            }
+        }
+        for needle in REQUIRED_HOST_POLICY_CALLS {
+            if !src.contains(needle) {
+                violations.push(format!("missing host_policy wiring: {needle}"));
+            }
+        }
+        assert!(
+            violations.is_empty(),
+            "host_windows.rs drifted from host_policy:\n  - {}",
+            violations.join("\n  - ")
+        );
+    }
+
+    #[test]
+    fn host_cross_has_no_parallel_tray_menu_seeds() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/host_cross.rs");
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        assert!(
+            !src.contains("fn tray_items(") && !src.contains("fn menu_items("),
+            "host_cross.rs must use host_policy::tray_items / menu_items, not local seeds"
+        );
+        assert!(
+            src.contains("crate::host_policy::tray_items()")
+                && src.contains("crate::host_policy::menu_items()"),
+            "host_cross.rs must wire tray/menu through host_policy"
+        );
+    }
+}
