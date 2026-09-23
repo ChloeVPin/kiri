@@ -4,6 +4,20 @@ This document is the home for changing implementation status and verification
 evidence. The README intentionally stays focused on the product, architecture,
 and usage.
 
+## Public release skew
+
+Published **latest** GitHub Release is **[v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6)**
+(`RELEASES.json` + three platform archives). Workspace `Cargo.toml` and tag
+`v0.1.7` sit ahead of that publish: the unsigned-release Linux package job
+failed on an unused `Submenu` import under `-D warnings`
+([run 33324838813](https://github.com/ChloeVPin/kiri/actions/runs/33324838813));
+macOS/Windows package succeeded, merge/publish was skipped, so no v0.1.7
+GitHub Release assets exist. The compile fix is on `main` via
+[#16](https://github.com/ChloeVPin/kiri/pull/16). Until a new cut publishes,
+`create-kiri-app` (and anything that curls `releases/latest/download/RELEASES.json`)
+still scaffolds **0.1.6**. See also [`GETTING_STARTED.md`](GETTING_STARTED.md)
+for which platforms that manifest actually ships.
+
 ## Current implementation
 
 Kiri has platform-native hosts for Linux, macOS, and Windows, with a shared
