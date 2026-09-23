@@ -17,6 +17,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -101,7 +102,7 @@ type ProtoInbox = Arc<Mutex<VecDeque<ProtoInvoke>>>;
 /// merged into the bench artifact.
 struct ProtoDrainCtx {
     router_cell: Rc<RefCell<Option<kiri_core::dispatch::Router>>>,
-    zc_gate: Rc<RefCell<kiri_core::zc_ipc_gate::ZcIpcGate>>,
+    zc_gate: Arc<Mutex<kiri_core::zc_ipc_gate::ZcIpcGate>>,
     caller: kiri_core::caller::CallerId,
     caller_caps: kiri_core::capabilities::CapabilityBits,
     diagnostics: Diagnostics,
@@ -112,6 +113,33 @@ struct ProtoDrainCtx {
     markers: Rc<RefCell<StartupMarkers>>,
     replies_ok: Rc<Cell<u32>>,
     replies_fallback: Rc<Cell<u32>>,
+}
+
+/// Dispatch context the wry async protocol callback uses to answer
+/// `kiri.ping`-shaped fetches on the protocol thread itself, without the
+/// parked-responder + event-loop hop `ProtoInbox` imposes. Every field is
+/// `Send + Sync`: the inline router registers only main-thread-free
+/// commands (today exactly `kiri.ping`), the gate is the SAME
+/// `ZcIpcGate` object the postMessage and parked legs lock (one permit
+/// lifecycle, one mint path), and the counters are atomics merged into the
+/// bench artifact. Commands the inline router does not know still park and
+/// drain on the event loop, so window/menu mutation never leaves the tao
+/// thread.
+struct ProtoInlineCtx {
+    router: Arc<kiri_core::dispatch::Router>,
+    zc_gate: Arc<Mutex<kiri_core::zc_ipc_gate::ZcIpcGate>>,
+    caller: kiri_core::caller::CallerId,
+    caller_caps: kiri_core::capabilities::CapabilityBits,
+    diagnostics: Diagnostics,
+    resources: Arc<Mutex<ResourceTable<()>>>,
+    answered_inline: Arc<AtomicU32>,
+    replies_fallback: Arc<AtomicU32>,
+    parked: Arc<AtomicU32>,
+    /// First-invoke markers the protocol thread cannot record into the
+    /// `Rc<RefCell<StartupMarkers>>`; it stores the dispatch-time timestamps
+    /// here and the event loop merges them with their original nanos.
+    pending_dispatched_ns: Arc<AtomicU64>,
+    pending_responded_ns: Arc<AtomicU64>,
 }
 
 fn proto_json_response(status: u16, value: &serde_json::Value) -> WryResponse<Cow<'static, [u8]>> {
@@ -167,53 +195,53 @@ fn ensure_host_router(
     ));
 }
 
-/// Dispatch one parked protocol_ring request and answer its fetch. The
-/// request body is a single KRSL frame (header + raw payload); the reply is
-/// a KRSL frame with RESP_ECHO_STRING / RESP_JSON bytes when a live
-/// ZcIpcGrant authorizes the binary leg, or the plain JSON wire response
-/// when it does not. Every path responds: a parked fetch is never left
-/// hanging by a decode or gate failure.
-fn handle_proto_invoke(ctx: &ProtoDrainCtx, item: ProtoInvoke) {
+/// Decode one KRSL request frame, run it through the same
+/// `ZcIpcGate::dispatch_through_webview` lifecycle every through-webview
+/// leg runs, and build the HTTP response: a binary KRSL frame when a live
+/// `ZcIpcGrant` authorizes the reply leg, or the plain JSON wire response
+/// otherwise (malformed frame, decode failure, gate denial, reply-leg
+/// refusal). Returns `(response, true)` when the binary leg carried the
+/// reply. Shared by the parked event-loop drain and the protocol-inline
+/// answer path so both legs apply identical validation, gating, and reply
+/// currency; the only difference is which router dispatches.
+fn proto_frame_response(
+    router: &kiri_core::dispatch::Router,
+    gate: &Mutex<kiri_core::zc_ipc_gate::ZcIpcGate>,
+    caller: kiri_core::caller::CallerId,
+    caller_caps: &kiri_core::capabilities::CapabilityBits,
+    diagnostics: &Diagnostics,
+    resources: &Mutex<ResourceTable<()>>,
+    body: &[u8],
+) -> (WryResponse<Cow<'static, [u8]>>, bool) {
     use crate::ring_ipc as ring;
-    let fallback = |responder: wry::RequestAsyncResponder,
-                    resp: WryResponse<Cow<'static, [u8]>>| {
-        responder.respond(resp);
-        ctx.replies_fallback.set(ctx.replies_fallback.get().saturating_add(1));
-    };
-    let (req, payload_bytes) = match ring::read_request_frame(&item.body) {
+    let (req, payload_bytes) = match ring::read_request_frame(body) {
         Ok(v) => v,
-        Err(e) => {
-            fallback(item.responder, proto_protocol_error(0, e));
-            return;
-        }
+        Err(e) => return (proto_protocol_error(0, e), false),
     };
     let payload: serde_json::Value = match req.codec {
         ring::CODEC_UTF8_STRING => match String::from_utf8(payload_bytes.to_vec()) {
             Ok(s) => serde_json::Value::String(s),
             Err(_) => {
-                fallback(
-                    item.responder,
+                return (
                     proto_protocol_error(req.request_id, "protocol_ring payload is not utf-8"),
+                    false,
                 );
-                return;
             }
         },
         ring::CODEC_JSON => match serde_json::from_slice::<serde_json::Value>(payload_bytes) {
             Ok(v) => v,
             Err(_) => {
-                fallback(
-                    item.responder,
+                return (
                     proto_protocol_error(req.request_id, "protocol_ring payload is not json"),
+                    false,
                 );
-                return;
             }
         },
         _ => {
-            fallback(
-                item.responder,
+            return (
                 proto_protocol_error(req.request_id, "unsupported protocol_ring codec"),
+                false,
             );
-            return;
         }
     };
     let request = WireRequest {
@@ -226,37 +254,22 @@ fn handle_proto_invoke(ctx: &ProtoDrainCtx, item: ProtoInvoke) {
         codec: req.codec,
         payload,
     };
-    if !ctx.markers.borrow().has(Marker::FirstInvokeDispatched) {
-        record(&ctx.markers, Marker::FirstInvokeDispatched);
-    }
-    ensure_host_router(
-        &ctx.router_cell,
-        &ctx.window,
-        &ctx.diagnostics,
-        &ctx.resources,
-        &ctx.options,
-        &ctx.menu_runner,
-    );
-    let mut sink = ctx.diagnostics.clone();
+    let mut sink = diagnostics.clone();
     // The same permit lifecycle the postMessage leg runs: mint requires the
     // capability bit AND the surface allowlist; the returned grant is the
     // only currency the binary reply frame accepts.
-    let gated = ctx.zc_gate.borrow_mut().dispatch_through_webview(
-        ctx.router_cell.borrow().as_ref().unwrap(),
-        ctx.caller,
-        &ctx.caller_caps,
+    let gated = gate.lock().unwrap().dispatch_through_webview(
+        router,
+        caller,
+        caller_caps,
         &request,
         &mut sink,
         kiri_core::trace::MonotonicClock::now_ns(),
     );
-    if !ctx.markers.borrow().has(Marker::FirstInvokeResponded) {
-        record(&ctx.markers, Marker::FirstInvokeResponded);
-    }
-    ctx.diagnostics.set_open_resources(ctx.resources.lock().unwrap().len() as u32);
-
+    diagnostics.set_open_resources(resources.lock().unwrap().len() as u32);
     let echo = ring::response_echo_bytes(&gated.response);
     let json_body;
-    let (flags, body): (u8, &[u8]) = match echo {
+    let (flags, resp_body): (u8, &[u8]) = match echo {
         Some(bytes) => (ring::RESP_ECHO_STRING, bytes),
         None => {
             json_body = serde_json::to_vec(&gated.response).unwrap_or_default();
@@ -268,27 +281,112 @@ fn handle_proto_invoke(ctx: &ProtoDrainCtx, item: ProtoInvoke) {
     // request carries no grant, so its error stub rides the JSON leg below.
     let authorized = ring::ring_reply_authorized(
         gated.grant.as_ref(),
-        ctx.caller,
+        caller,
         request.command_id,
-        body,
+        resp_body,
         kiri_core::trace::MonotonicClock::now_ns(),
     );
     if authorized {
-        if let Ok(frame) = ring::encode_response_frame(req.seq, req.request_id, flags, body) {
+        if let Ok(frame) = ring::encode_response_frame(req.seq, req.request_id, flags, resp_body) {
             let resp = WryResponse::builder()
                 .status(200)
                 .header(header::CONTENT_TYPE, "application/octet-stream")
                 .body(Cow::Owned(frame))
                 .unwrap();
-            item.responder.respond(resp);
-            ctx.replies_ok.set(ctx.replies_ok.get().saturating_add(1));
-            return;
+            return (resp, true);
         }
     }
-    fallback(item.responder, proto_wire_json_response(&gated.response));
+    (proto_wire_json_response(&gated.response), false)
 }
 
-/// Answer every parked protocol_ring request. Called once per event-loop
+/// Dispatch one parked protocol request and answer its fetch on the event
+/// loop. Every path responds: a parked fetch is never left hanging by a
+/// decode or gate failure.
+fn handle_proto_invoke(ctx: &ProtoDrainCtx, item: ProtoInvoke) {
+    if !ctx.markers.borrow().has(Marker::FirstInvokeDispatched) {
+        record(&ctx.markers, Marker::FirstInvokeDispatched);
+    }
+    ensure_host_router(
+        &ctx.router_cell,
+        &ctx.window,
+        &ctx.diagnostics,
+        &ctx.resources,
+        &ctx.options,
+        &ctx.menu_runner,
+    );
+    let (resp, binary) = {
+        let router_cell = ctx.router_cell.borrow();
+        proto_frame_response(
+            router_cell.as_ref().unwrap(),
+            &ctx.zc_gate,
+            ctx.caller,
+            &ctx.caller_caps,
+            &ctx.diagnostics,
+            &ctx.resources,
+            &item.body,
+        )
+    };
+    if !ctx.markers.borrow().has(Marker::FirstInvokeResponded) {
+        record(&ctx.markers, Marker::FirstInvokeResponded);
+    }
+    item.responder.respond(resp);
+    if binary {
+        ctx.replies_ok.set(ctx.replies_ok.get().saturating_add(1));
+    } else {
+        ctx.replies_fallback.set(ctx.replies_fallback.get().saturating_add(1));
+    }
+}
+
+/// Answer one protocol-inline fetch inside the wry async protocol callback,
+/// on whatever thread WebKit invoked it on. This is the hop the spike
+/// removes: no ProtoInbox park, no EventLoopProxy wake, no event-loop
+/// drain; the same gated dispatch + reply-leg authorization runs here and
+/// `responder.respond` completes the fetch directly.
+fn handle_proto_inline(ctx: &ProtoInlineCtx, body: Vec<u8>, responder: wry::RequestAsyncResponder) {
+    let dispatched = ctx.pending_dispatched_ns.load(Ordering::Relaxed);
+    if dispatched == 0 {
+        ctx.pending_dispatched_ns
+            .compare_exchange(0, now_ns(), Ordering::Relaxed, Ordering::Relaxed)
+            .ok();
+    }
+    let (resp, binary) = proto_frame_response(
+        &ctx.router,
+        &ctx.zc_gate,
+        ctx.caller,
+        &ctx.caller_caps,
+        &ctx.diagnostics,
+        &ctx.resources,
+        &body,
+    );
+    let responded = ctx.pending_responded_ns.load(Ordering::Relaxed);
+    if responded == 0 {
+        ctx.pending_responded_ns
+            .compare_exchange(0, now_ns(), Ordering::Relaxed, Ordering::Relaxed)
+            .ok();
+    }
+    responder.respond(resp);
+    if binary {
+        ctx.answered_inline.fetch_add(1, Ordering::Relaxed);
+    } else {
+        ctx.replies_fallback.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Merge first-invoke markers the protocol-inline path stored from the
+/// protocol thread. Runs on the event loop, which owns the `Rc` markers;
+/// the recorded timestamps are the ones captured at dispatch time.
+fn merge_proto_inline_markers(markers: &Rc<RefCell<StartupMarkers>>, ctx: &ProtoInlineCtx) {
+    let dispatched = ctx.pending_dispatched_ns.swap(0, Ordering::Relaxed);
+    if dispatched != 0 && !markers.borrow().has(Marker::FirstInvokeDispatched) {
+        markers.borrow_mut().record(Marker::FirstInvokeDispatched, dispatched);
+    }
+    let responded = ctx.pending_responded_ns.swap(0, Ordering::Relaxed);
+    if responded != 0 && !markers.borrow().has(Marker::FirstInvokeResponded) {
+        markers.borrow_mut().record(Marker::FirstInvokeResponded, responded);
+    }
+}
+
+/// Answer every parked protocol request. Called once per event-loop
 /// iteration; the queue is empty whenever the transport is not engaged or
 /// no fetch is in flight, so the cost is one uncontended lock.
 fn drain_proto_inbox(inbox: &ProtoInbox, ctx: &ProtoDrainCtx) {
@@ -676,7 +774,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let router_cell: Rc<RefCell<Option<kiri_core::dispatch::Router>>> = Rc::new(RefCell::new(None));
     // Fail-closed gate for the through-webview pipe: one permit object carries
     // the capability-bit AND host-allowlist decision (kiri_core::zc_ipc_gate).
-    let zc_gate = Rc::new(RefCell::new(crate::host_policy::zc_ipc_gate()));
+    // Behind one Mutex so the postMessage leg, the parked protocol drain, and
+    // the protocol-inline answer path all mint + redeem through the same gate.
+    let zc_gate = Arc::new(Mutex::new(crate::host_policy::zc_ipc_gate()));
     let smoke = options.smoke;
     let ipc_bench = options.ipc_bench;
     let ipc_bench_runs = options.ipc_bench_runs;
@@ -690,16 +790,49 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let ipc_bench_injected = Rc::new(Cell::new(false));
     let menu_smoke_done = Rc::new(Cell::new(false));
 
-    // protocol_ring transport (opt-in spike): parked fetches to
-    // `kiri://localhost/.kiri/ipc/invoke` queue here and are answered on the
-    // event loop after dispatch through the same ZcIpcGate the postMessage
-    // pipe uses. The proxy wakes a waiting loop so a parked fetch is
-    // answered on the next iteration.
-    let proto_ring = ipc_bench_transport == crate::ipc_bench::IpcBenchTransport::ProtocolRing;
+    // protocol_ring / protocol_inline transports (opt-in spikes): fetches to
+    // `kiri://localhost/.kiri/ipc/invoke` are answered after dispatch through
+    // the same ZcIpcGate the postMessage pipe uses. protocol_ring parks the
+    // responder here and drains it on the event loop (the proxy wakes a
+    // waiting loop). protocol_inline answers kiri.ping-shaped invokes inside
+    // the protocol callback itself and only parks commands the inline
+    // router does not know, so the hop the spike targets is skipped.
+    let proto_engaged = matches!(
+        ipc_bench_transport,
+        crate::ipc_bench::IpcBenchTransport::ProtocolRing
+            | crate::ipc_bench::IpcBenchTransport::ProtocolInline
+    );
     let proto_inbox: ProtoInbox = Arc::new(Mutex::new(VecDeque::new()));
     let proto_replies_ok = Rc::new(Cell::new(0u32));
     let proto_replies_fallback = Rc::new(Cell::new(0u32));
     let event_proxy = event_loop.create_proxy();
+
+    // protocol_inline dispatch context. The inline router is a dedicated
+    // `Router::new()`: it registers exactly the commands safe to dispatch
+    // off the tao thread (kiri.ping today; anything that touches window,
+    // menu, tray, clipboard, or other main-thread state stays parked).
+    // `required_bits` for kiri.ping is the same bit the production router
+    // registers, so mint + redeem + grant binding are identical on both
+    // legs.
+    let inline_ctx: Option<Arc<ProtoInlineCtx>> =
+        if ipc_bench_transport == crate::ipc_bench::IpcBenchTransport::ProtocolInline {
+            Some(Arc::new(ProtoInlineCtx {
+                router: Arc::new(kiri_core::dispatch::Router::new()),
+                zc_gate: zc_gate.clone(),
+                caller,
+                caller_caps,
+                diagnostics: diagnostics.clone(),
+                resources: resources.clone(),
+                answered_inline: Arc::new(AtomicU32::new(0)),
+                replies_fallback: Arc::new(AtomicU32::new(0)),
+                parked: Arc::new(AtomicU32::new(0)),
+                pending_dispatched_ns: Arc::new(AtomicU64::new(0)),
+                pending_responded_ns: Arc::new(AtomicU64::new(0)),
+            }))
+        } else {
+            None
+        };
+    let inline_counters = inline_ctx.clone();
 
     // Shared slot so the IPC handler can post responses back to the webview
     // once it exists (the handler is created on the builder before build()).
@@ -709,21 +842,39 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let options = options.clone();
             let proto_inbox = proto_inbox.clone();
             let event_proxy = event_proxy.clone();
+            let inline_ctx = inline_ctx.clone();
             move |_id, request, responder| {
                 let path = request.uri().path().to_string();
-                if proto_ring {
+                if proto_engaged {
                     if path == PROTO_INVOKE_PATH && request.method().as_str() == "POST" {
-                        proto_inbox
-                            .lock()
-                            .unwrap()
-                            .push_back(ProtoInvoke { body: request.into_body(), responder });
+                        let body = request.into_body();
+                        if let Some(inline) = inline_ctx.as_ref() {
+                            // Answer-on-protocol-thread: invoke frames for
+                            // commands the inline router knows (kiri.ping)
+                            // are dispatched through the shared ZcIpcGate and
+                            // answered right here. Unknown or malformed
+                            // frames park for the event-loop drain, which
+                            // owns the full production router.
+                            let inlineable = crate::ring_ipc::read_request_frame(&body)
+                                .map(|(req, _)| inline.router.is_known(req.command_id))
+                                .unwrap_or(false);
+                            if inlineable {
+                                handle_proto_inline(inline, body, responder);
+                                return;
+                            }
+                            inline.parked.fetch_add(1, Ordering::Relaxed);
+                        }
+                        proto_inbox.lock().unwrap().push_back(ProtoInvoke { body, responder });
                         let _ = event_proxy.send_event(());
                         return;
                     }
                     if path == PROTO_PING_PATH {
                         responder.respond(proto_json_response(
                             200,
-                            &serde_json::json!({ "protocol_ring": true }),
+                            &serde_json::json!({
+                                "ok": true,
+                                "transport": ipc_bench_transport.as_str(),
+                            }),
                         ));
                         return;
                     }
@@ -775,6 +926,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let menu_smoke_done = menu_smoke_done.clone();
             let proto_replies_ok = proto_replies_ok.clone();
             let proto_replies_fallback = proto_replies_fallback.clone();
+            let inline_counters = inline_counters.clone();
             move |msg| {
                 if std::env::var_os("KIRI_DEBUG").is_some() {
                     // Debug mode must not turn into a payload logger. IPC
@@ -799,8 +951,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     return;
                 };
                 if value.get("type").and_then(|t| t.as_str()) == Some("ipc_bench") {
-                    // Merge the host-side protocol_ring reply counters so the
-                    // artifact proves which leg each reply actually took.
+                    // Merge the host-side protocol reply counters so the
+                    // artifact proves which leg each reply actually took:
+                    // parked drain replies, inline (hop-free) replies, and
+                    // inline requests that still parked for the drain.
                     if let Some(obj) = value.as_object_mut() {
                         obj.insert(
                             "protocol_ring_replies_ok".into(),
@@ -809,6 +963,26 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         obj.insert(
                             "protocol_ring_replies_fallback".into(),
                             serde_json::json!(proto_replies_fallback.get()),
+                        );
+                        let (inline_ok, inline_fb, inline_parked) = match inline_counters.as_ref() {
+                            Some(c) => (
+                                c.answered_inline.load(Ordering::Relaxed),
+                                c.replies_fallback.load(Ordering::Relaxed),
+                                c.parked.load(Ordering::Relaxed),
+                            ),
+                            None => (0, 0, 0),
+                        };
+                        obj.insert(
+                            "protocol_inline_answered_inline".into(),
+                            serde_json::json!(inline_ok),
+                        );
+                        obj.insert(
+                            "protocol_inline_replies_fallback".into(),
+                            serde_json::json!(inline_fb),
+                        );
+                        obj.insert(
+                            "protocol_inline_parked".into(),
+                            serde_json::json!(inline_parked),
                         );
                     }
                     match crate::ipc_bench::write_result(ipc_bench_out.as_ref(), &value) {
@@ -857,7 +1031,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                     // minted only when the capability bit AND the surface's
                     // host allowlist both admit, and the returned grant is the
                     // authority a gated reply leg would require.
-                    let gated = zc_gate.borrow_mut().dispatch_through_webview(
+                    let gated = zc_gate.lock().unwrap().dispatch_through_webview(
                         router_cell.borrow().as_ref().unwrap(),
                         caller,
                         &caller_caps,
@@ -909,8 +1083,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     *webview_slot.borrow_mut() = Some(webview);
     record(&markers, Marker::BridgeReady);
 
-    // protocol_ring drain context: parked fetches are dispatched on this
-    // thread with the same router, gate, and caller the postMessage leg uses.
+    // Parked-drain context: fetches the inline path does not answer are
+    // dispatched on this thread with the same router, gate, and caller the
+    // postMessage leg uses.
     let proto_ctx = ProtoDrainCtx {
         router_cell: router_cell.clone(),
         zc_gate: zc_gate.clone(),
@@ -951,8 +1126,11 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
         let window_for_menu = window.clone();
         menu_dispatcher
             .drain(|operation| native_menu.borrow_mut().replace(&window_for_menu, operation));
-        if proto_ring {
+        if proto_engaged {
             drain_proto_inbox(&proto_inbox, &proto_ctx);
+            if let Some(inline) = inline_ctx.as_ref() {
+                merge_proto_inline_markers(&markers, inline);
+            }
         }
         // IPC benchmark injection and completion are checked outside the
         // WebView callback. Wake periodically so a quiet WebView cannot starve
@@ -1013,8 +1191,8 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                              running ipc bench on the default wire"
                         );
                     }
-                    let script_transport = if proto_ring {
-                        crate::ipc_bench::IpcBenchTransport::ProtocolRing
+                    let script_transport = if proto_engaged {
+                        ipc_bench_transport
                     } else {
                         crate::ipc_bench::IpcBenchTransport::Default
                     };
@@ -1064,6 +1242,134 @@ mod host_router_regression_tests {
     use kiri_core::resources::ResourceTable;
     use kiri_core::window::{WindowController, WindowState};
     use std::sync::{Arc, Mutex};
+
+    // The protocol-inline answer path and the parked drain share
+    // proto_frame_response; these tests pin the frame-level contract both
+    // legs obey: binary KRSL reply only under a live grant, JSON wire
+    // response otherwise.
+    fn ping_caps() -> kiri_core::capabilities::CapabilityBits {
+        let mut c = kiri_core::capabilities::CapabilityBits::empty();
+        c.set(kiri_core::dispatch::capability_bit::PING);
+        c
+    }
+
+    fn ping_frame(request_id: u64, payload: &[u8]) -> Vec<u8> {
+        use crate::ring_ipc as ring;
+        let mut frame = vec![0u8; ring::SLOT_HEADER_BYTES + payload.len()];
+        frame[ring::SLOT_HEADER_BYTES..].copy_from_slice(payload);
+        frame[0..4].copy_from_slice(&ring::SLOT_MAGIC.to_le_bytes());
+        frame[4] = ring::STATE_REQUEST;
+        frame[6..8].copy_from_slice(&ring::CODEC_UTF8_STRING.to_le_bytes());
+        frame[8..16].copy_from_slice(&9u64.to_le_bytes());
+        frame[16..24].copy_from_slice(&request_id.to_le_bytes());
+        frame[24..28].copy_from_slice(&kiri_core::dispatch::command_id::PING.to_le_bytes());
+        frame[28..32].copy_from_slice(&(payload.len() as u32).to_le_bytes());
+        frame
+    }
+
+    #[test]
+    fn proto_frame_response_answers_ping_on_binary_leg_under_grant() {
+        use crate::ring_ipc as ring;
+        let router = kiri_core::dispatch::Router::new();
+        let gate = Mutex::new(kiri_core::zc_ipc_gate::ZcIpcGate::new());
+        let diagnostics = Diagnostics::new();
+        let resources = Mutex::new(ResourceTable::<()>::new());
+        let (resp, binary) = super::proto_frame_response(
+            &router,
+            &gate,
+            kiri_core::caller::CallerId(1),
+            &ping_caps(),
+            &diagnostics,
+            &resources,
+            &ping_frame(77, b"abc"),
+        );
+        assert!(binary, "granted ping must take the binary leg");
+        assert_eq!(resp.status(), 200);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "application/octet-stream");
+        let body = resp.body();
+        assert_eq!(&body[0..4], b"KRSL");
+        assert_eq!(body[4], ring::STATE_RESPONSE);
+        assert_eq!(body[5], ring::RESP_ECHO_STRING);
+        assert_eq!(u64::from_le_bytes(body[16..24].try_into().unwrap()), 77);
+        let plen = u32::from_le_bytes(body[28..32].try_into().unwrap()) as usize;
+        assert_eq!(&body[32..32 + plen], b"abc");
+    }
+
+    #[test]
+    fn proto_frame_response_denied_ping_fails_closed_to_json() {
+        let router = kiri_core::dispatch::Router::new();
+        let gate = Mutex::new(kiri_core::zc_ipc_gate::ZcIpcGate::new());
+        let diagnostics = Diagnostics::new();
+        let resources = Mutex::new(ResourceTable::<()>::new());
+        let (resp, binary) = super::proto_frame_response(
+            &router,
+            &gate,
+            kiri_core::caller::CallerId(1),
+            &kiri_core::capabilities::CapabilityBits::empty(),
+            &diagnostics,
+            &resources,
+            &ping_frame(78, b"abc"),
+        );
+        assert!(!binary, "denied dispatch must not take the binary leg");
+        assert_eq!(resp.headers().get("content-type").unwrap(), "application/json");
+        let v: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(v["request_id"], 78);
+        assert!(v.get("error").is_some());
+    }
+
+    #[test]
+    fn proto_frame_response_malformed_frame_is_json_protocol_error() {
+        let router = kiri_core::dispatch::Router::new();
+        let gate = Mutex::new(kiri_core::zc_ipc_gate::ZcIpcGate::new());
+        let diagnostics = Diagnostics::new();
+        let resources = Mutex::new(ResourceTable::<()>::new());
+        let (resp, binary) = super::proto_frame_response(
+            &router,
+            &gate,
+            kiri_core::caller::CallerId(1),
+            &ping_caps(),
+            &diagnostics,
+            &resources,
+            &[0u8; 4],
+        );
+        assert!(!binary);
+        assert_eq!(resp.status(), 400);
+        assert_eq!(resp.headers().get("content-type").unwrap(), "application/json");
+    }
+
+    #[test]
+    fn inline_router_covers_exactly_main_thread_free_commands() {
+        // The inline router answers without the event loop, so it may only
+        // know commands whose dispatch never touches window/menu/clipboard
+        // or other main-thread state. Today that is exactly kiri.ping.
+        let router = kiri_core::dispatch::Router::new();
+        assert!(router.is_known(kiri_core::dispatch::command_id::PING));
+        for cmd in kiri_core::commands::COMMANDS.iter() {
+            if cmd.id != kiri_core::dispatch::command_id::PING {
+                assert!(
+                    !router.is_known(cmd.id),
+                    "inline router must not know {} (id {}): it would dispatch off the tao thread",
+                    cmd.name,
+                    cmd.id
+                );
+            }
+        }
+        // Mint authority must match the production router for inline ids:
+        // required_bits is what the gate checks at mint.
+        let production = build_host_router(
+            Arc::new(StubWindow),
+            Arc::new(StubClipboard),
+            &Diagnostics::new(),
+            &std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new())),
+            &HostOptions::default(),
+            Arc::new(kiri_core::app_menu::DisabledMenu),
+        );
+        assert_eq!(
+            router.required_bits(kiri_core::dispatch::command_id::PING),
+            production.required_bits(kiri_core::dispatch::command_id::PING),
+            "inline and production routers must require the same bits for kiri.ping"
+        );
+    }
 
     #[test]
     fn ipc_benchmark_can_arm_after_dom_ready_without_animation_frame() {

@@ -34,12 +34,16 @@ pub const DEFAULT_SIZES: &[usize] = &[0, 64, 1024, 16_384, 262_144, 1_048_574];
 /// tiny JSON control messages (see docs/ZEROCOPY_IPC_MOONSHOT.md).
 /// `ProtocolRing` is the wry/WKWebView spike transport: one binary request/
 /// reply frame per call over the `kiri://` app scheme (see
-/// docs/MAC_LARGE_PAYLOAD_SPIKE.md).
+/// docs/MAC_LARGE_PAYLOAD_SPIKE.md). `ProtocolInline` carries the same
+/// binary KRSL frames over the same endpoints, but answers the fetch inside
+/// the wry protocol callback instead of parking the responder for a tao
+/// event-loop drain (see docs/MAC_PROTO_INLINE_SPIKE.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpcBenchTransport {
     Default,
     RingZerocopy,
     ProtocolRing,
+    ProtocolInline,
 }
 
 impl IpcBenchTransport {
@@ -48,6 +52,7 @@ impl IpcBenchTransport {
             IpcBenchTransport::Default => "default",
             IpcBenchTransport::RingZerocopy => "ring_zerocopy",
             IpcBenchTransport::ProtocolRing => "protocol_ring",
+            IpcBenchTransport::ProtocolInline => "protocol_inline",
         }
     }
 
@@ -56,6 +61,9 @@ impl IpcBenchTransport {
             "default" | "json" | "t008_shared" => Some(IpcBenchTransport::Default),
             "ring_zerocopy" | "ring" => Some(IpcBenchTransport::RingZerocopy),
             "protocol_ring" | "proto_ring" | "protocol" => Some(IpcBenchTransport::ProtocolRing),
+            "protocol_inline" | "proto_inline" | "inline" => {
+                Some(IpcBenchTransport::ProtocolInline)
+            }
             _ => None,
         }
     }
@@ -78,7 +86,9 @@ pub fn kiri_script(
 ) -> String {
     let sizes_json = serde_json::to_string(sizes).unwrap_or_else(|_| "[]".into());
     let want_ring = transport == IpcBenchTransport::RingZerocopy;
-    let want_proto_ring = transport == IpcBenchTransport::ProtocolRing;
+    let want_proto_ring =
+        matches!(transport, IpcBenchTransport::ProtocolRing | IpcBenchTransport::ProtocolInline);
+    let transport_name = transport.as_str();
     format!(
         r#"(function () {{
   if (window.__kiriIpcBenchStarted) return;
@@ -90,7 +100,7 @@ pub fn kiri_script(
   var TIMEOUT = {timeout};
   var WANT_RING = {want_ring};
   var WANT_PROTO_RING = {want_proto_ring};
-  var TRANSPORT = WANT_PROTO_RING ? "protocol_ring" : (WANT_RING ? "ring_zerocopy" : "default");
+  var TRANSPORT = "{transport_name}";
   var RING = {{
     GLOBAL_MAGIC: {global_magic},
     SLOT_MAGIC: {slot_magic},
@@ -685,6 +695,12 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
             "replies_fallback": raw.get("protocol_ring_replies_fallback").cloned().unwrap_or(json!(0)),
             "send_fallbacks": raw.get("proto_ring_send_fallbacks").cloned().unwrap_or(json!(0)),
         },
+        "protocol_inline": {
+            "answered_inline": raw.get("protocol_inline_answered_inline").cloned().unwrap_or(json!(0)),
+            "replies_fallback": raw.get("protocol_inline_replies_fallback").cloned().unwrap_or(json!(0)),
+            "parked": raw.get("protocol_inline_parked").cloned().unwrap_or(json!(0)),
+            "send_fallbacks": raw.get("proto_ring_send_fallbacks").cloned().unwrap_or(json!(0)),
+        },
         "results": results_out,
     });
 
@@ -756,6 +772,25 @@ mod tests {
         assert!(script.contains("RING.SLOT_MAGIC"));
         assert!(script.contains("RING.STATE_REQ"));
         assert!(script.contains("RING.STATE_RESP"));
+    }
+
+    #[test]
+    fn kiri_protocol_inline_script_uses_same_wire_with_inline_transport_name() {
+        let script = kiri_script(7, 2, DEFAULT_SIZES, IpcBenchTransport::ProtocolInline);
+        // Same binary KRSL frames over the same endpoints; only the
+        // transport label (and the host-side answer path) differs.
+        assert!(script.contains("WANT_PROTO_RING = true"));
+        assert!(script.contains("\"protocol_inline\""));
+        assert!(script.contains("kiri://localhost/.kiri/ipc/invoke"));
+        assert!(script.contains("sendProto(id, payload)"));
+        assert!(script.contains("RING.SLOT_MAGIC"));
+        assert!(
+            IpcBenchTransport::parse("protocol_inline") == Some(IpcBenchTransport::ProtocolInline)
+        );
+        assert!(
+            IpcBenchTransport::parse("proto_inline") == Some(IpcBenchTransport::ProtocolInline)
+        );
+        assert_eq!(IpcBenchTransport::ProtocolInline.as_str(), "protocol_inline");
     }
 
     #[test]

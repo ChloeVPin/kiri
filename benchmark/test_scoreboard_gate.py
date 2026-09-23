@@ -80,6 +80,26 @@ def ring_artifact():
     return artifact
 
 
+def proto_inline_artifact():
+    artifact = valid_artifact()
+    artifact["transport"] = "protocol_inline"
+    artifact["protocol_ring"] = {
+        "replies_ok": 0,
+        "replies_fallback": 0,
+        "send_fallbacks": 0,
+    }
+    artifact["protocol_inline"] = {
+        "answered_inline": 10,
+        "replies_fallback": 0,
+        "parked": 0,
+        "send_fallbacks": 0,
+    }
+    for entry in artifact["results"]:
+        entry["proto_ring_hits"] = 5
+        entry["proto_ring_send_fallbacks"] = 0
+    return artifact
+
+
 def write_tmp(directory, artifact):
     path = Path(directory) / "artifact.json"
     path.write_text(json.dumps(artifact), encoding="utf-8")
@@ -327,6 +347,59 @@ class ScoreboardGateTests(unittest.TestCase):
             completed = run_gate("check", str(path))
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("zero shared-buffer replies", completed.stdout)
+
+    def test_protocol_inline_claim_with_proof_is_accepted(self):
+        artifact = proto_inline_artifact()
+        artifact["claims"] = ["protocol-inline"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_protocol_inline_triggers_claim_via_transport_and_hits(self):
+        # No explicit claims array: a protocol_inline artifact that recorded
+        # binary replies asserts the protocol-inline claim implicitly, and
+        # its proof block is checked.
+        artifact = proto_inline_artifact()
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_protocol_inline_claim_with_ring_transport_is_refused(self):
+        artifact = proto_inline_artifact()
+        artifact["transport"] = "protocol_ring"
+        artifact["claims"] = ["protocol-inline"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("transport 'protocol_inline'", completed.stdout)
+
+    def test_protocol_inline_zero_inline_replies_is_refused(self):
+        artifact = proto_inline_artifact()
+        artifact["protocol_inline"]["answered_inline"] = 0
+        for entry in artifact["results"]:
+            entry["proto_ring_hits"] = 0
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("zero inline replies", completed.stdout)
+
+    def test_protocol_inline_hits_do_not_assert_protocol_ring_claim(self):
+        # proto_ring_hits on a protocol_inline artifact proves the inline
+        # path, not protocol_ring; it must not demand protocol_ring proof.
+        artifact = proto_inline_artifact()
+        artifact["protocol_ring"] = {
+            "replies_ok": 0,
+            "replies_fallback": 0,
+            "send_fallbacks": 0,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
 
     def test_stamp_then_check_passes(self):
         artifact = valid_artifact()

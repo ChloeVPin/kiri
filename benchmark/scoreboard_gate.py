@@ -77,6 +77,11 @@ CLAIM_ALIASES = {
     "protoring": "protocol-ring",
     "proto-ring": "protocol-ring",
     "proto_ring": "protocol-ring",
+    "protocol-inline": "protocol-inline",
+    "protocol_inline": "protocol-inline",
+    "protoinline": "protocol-inline",
+    "proto-inline": "protocol-inline",
+    "proto_inline": "protocol-inline",
 }
 
 
@@ -263,6 +268,64 @@ def _protocol_ring_proof_reasons(artifact: dict, claim: str) -> list[str]:
     return reasons
 
 
+def _protocol_inline_proof_reasons(artifact: dict, claim: str) -> list[str]:
+    """Proof contract for the protocol-inline transport
+    (`transport: "protocol_inline"`).
+
+    The answer-on-protocol-thread spike: the same binary KRSL frames over
+    the `kiri://` app scheme as protocol_ring, but the invoke is dispatched
+    through the shared ZcIpcGate inside the wry protocol callback and the
+    responder answers without the parked-responder + event-loop hop.
+    Required: the artifact must declare the protocol_inline transport,
+    carry a top-level `protocol_inline` block with `answered_inline`,
+    `replies_fallback`, `parked`, and `send_fallbacks` counts, and record
+    `proto_ring_hits` on every result. Fallbacks and parked requests are
+    legal but must be reported; zero inline replies cannot prove the claim.
+    """
+    reasons: list[str] = []
+    transport = artifact.get("transport")
+    if transport != "protocol_inline":
+        reasons.append(
+            f"claim '{claim}' requires transport 'protocol_inline' "
+            f"(got {transport!r}); an artifact that did not run the "
+            "protocol_inline transport cannot prove a protocol-inline claim"
+        )
+    block = artifact.get("protocol_inline")
+    if not isinstance(block, dict):
+        reasons.append(
+            f"claim '{claim}' requires a top-level 'protocol_inline' proof "
+            "block with answered_inline, replies_fallback, parked, and "
+            "send_fallbacks counts"
+        )
+    else:
+        for key in ("answered_inline", "replies_fallback", "parked", "send_fallbacks"):
+            if not _is_int(block.get(key)) or block.get(key, -1) < 0:
+                reasons.append(
+                    f"claim '{claim}' requires protocol_inline.{key} as a "
+                    "non-negative integer (fallback/parked counts must be reported)"
+                )
+    results = artifact.get("results") or []
+    for i, entry in enumerate(results):
+        if not isinstance(entry, dict):
+            continue
+        size = entry.get("size_bytes", "?")
+        if not _is_int(entry.get("proto_ring_hits")) or entry.get("proto_ring_hits", -1) < 0:
+            reasons.append(
+                f"claim '{claim}' requires results[{i}] (size_bytes={size}) "
+                "to record proto_ring_hits per size"
+            )
+    if not reasons and isinstance(block, dict):
+        hits = sum(
+            entry.get("proto_ring_hits") or 0 for entry in results if isinstance(entry, dict)
+        )
+        if block.get("answered_inline", 0) == 0 and hits == 0:
+            reasons.append(
+                f"claim '{claim}' recorded zero inline replies: "
+                "no proof the protocol_inline transport was exercised"
+            )
+    return reasons
+
+
 def _zero_copy_proof_reasons(artifact: dict, claim: str) -> list[str]:
     """`zero-copy` is dual-path: the ring contract proves it when the
     artifact ran `transport: "ring_zerocopy"` or recorded ring traffic,
@@ -285,6 +348,7 @@ PROOF_CHECKERS = {
     "ring-zerocopy": _ring_zerocopy_proof_reasons,
     "zero-copy": _zero_copy_proof_reasons,
     "protocol-ring": _protocol_ring_proof_reasons,
+    "protocol-inline": _protocol_inline_proof_reasons,
 }
 
 
@@ -332,10 +396,20 @@ def _claims(artifact: dict) -> list[str]:
         implicit_ring = True
     # A protocol_ring artifact asserts the claim only on positive binary
     # traffic: a run that fell back entirely is honest data, not a claim.
+    # The same binary traffic on a protocol_inline artifact asserts the
+    # protocol-inline claim instead; the page-side counter name is shared.
     implicit_proto = False
+    implicit_inline = artifact.get("transport") == "protocol_inline"
     proto = artifact.get("protocol_ring")
     if isinstance(proto, dict) and _is_int(proto.get("replies_ok")) and proto["replies_ok"] > 0:
         implicit_proto = True
+    inline = artifact.get("protocol_inline")
+    if (
+        isinstance(inline, dict)
+        and _is_int(inline.get("answered_inline"))
+        and inline["answered_inline"] > 0
+    ):
+        implicit_inline = True
     for entry in artifact.get("results") or []:
         if not isinstance(entry, dict):
             continue
@@ -344,13 +418,18 @@ def _claims(artifact: dict) -> list[str]:
         if _is_int(entry.get("ring_slot_hits")) and entry["ring_slot_hits"] > 0:
             implicit_ring = True
         if _is_int(entry.get("proto_ring_hits")) and entry["proto_ring_hits"] > 0:
-            implicit_proto = True
+            if artifact.get("transport") == "protocol_inline":
+                implicit_inline = True
+            else:
+                implicit_proto = True
     if implicit and "shared-buffer" not in found:
         found.append("shared-buffer")
     if implicit_ring and "ring-zerocopy" not in found:
         found.append("ring-zerocopy")
     if implicit_proto and "protocol-ring" not in found:
         found.append("protocol-ring")
+    if implicit_inline and "protocol-inline" not in found:
+        found.append("protocol-inline")
     return found
 
 
