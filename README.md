@@ -87,6 +87,28 @@ source checkout + Rust. See Getting Started §3.
 - [Roadmap](docs/ROADMAP.md)
 - [Status](docs/STATUS.md)
 
+## Performance
+
+The single current scoreboard is
+[`docs/COMPETITIVE_ANALYSIS.md`](docs/COMPETITIVE_ANALYSIS.md): hosted
+`controlled-performance` run `32730288110` (commit `0d7e9a6`, `macos-latest` +
+`windows-latest`, 20 runs per startup target; its through-webview IPC rows are
+retained from run `32696370579` on the same workflow). Startup is reported as
+p50/p95 process wall-clock, IPC as batch-mean milliseconds. Three metric
+classes only:
+
+| Metric class | Honest status |
+|--------------|----------------|
+| Startup | Directional on hosted runners; medians flip across runs (macOS 851 ms in run `32730288110` vs 1,819 ms in `32696370579`). **Not** a universal Kiri win vs Tauri. |
+| Through-webview IPC | Scoped edge: Kiri led 5 of 6 payload sizes per runner, with macOS 256 KiB as a counterexample. Not a blanket claim. `bulk_bench` is an in-process router microbench (no WebView) and is never quoted as IPC. |
+| Binary size | ~3.7x smaller than Tauri (unstripped release) is the honest footprint claim; hosted runs measured 3.6x to 4.4x. |
+
+Windows Wry/Tao startup remains soft (`continue-on-error: true`, incomplete
+after its 45 s warmup timeout) until a stable three-way hosted run completes,
+so no three-way startup trophy is claimed. The scoreboard holds the full
+tables, run ids, and caveats; historical tables there are superseded and must
+not be cited as current.
+
 ## License
 
 Kiri is available under either [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE).
