@@ -349,9 +349,10 @@ pub mod capability_bit {
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
-    /// enforce. Unknown ids map to `PING` (harmless liveness-only authority).
-    pub fn for_command(id: u32) -> u32 {
-        match id {
+    /// enforce. Fail closed: unmapped ids return `None` so dispatch rejects
+    /// them instead of silently inheriting `PING` authority.
+    pub fn for_command(id: u32) -> Option<u32> {
+        let bit = match id {
             crate::dispatch::command_id::PING => PING,
             crate::dispatch::command_id::DIAGNOSTICS => DIAGNOSTICS,
             crate::dispatch::command_id::RESOURCES_OPEN
@@ -429,8 +430,9 @@ pub mod capability_bit {
                 MENU
             }
             crate::dispatch::command_id::PLUGIN_LIST => PLUGIN,
-            _ => PING,
-        }
+            _ => return None,
+        };
+        Some(bit)
     }
 }
 
@@ -1118,7 +1120,8 @@ impl StaticRouter {
     /// the same authorization decision expressed as a side-effect-free
     /// function. Used by the audit harness to verify the full id -> bit
     /// matrix without constructing a WebView (T005: auditable routing).
-    pub fn required_capability(&self, id: u32) -> u32 {
+    /// Returns `None` for unmapped ids (fail closed).
+    pub fn required_capability(&self, id: u32) -> Option<u32> {
         capability_bit::for_command(id)
     }
 
@@ -1143,7 +1146,12 @@ impl StaticRouter {
                 )));
             }
         };
-        let required = capability_bit::for_command(request.command_id);
+        let Some(required) = capability_bit::for_command(request.command_id) else {
+            return Err(Error::protocol_error(format!(
+                "unmapped command id {}",
+                request.command_id
+            )));
+        };
         let mut required_bits = CapabilityBits::empty();
         required_bits.set(required);
         if !caller_capabilities.is_superset_of(&required_bits) {
@@ -1260,6 +1268,45 @@ mod tests {
         let resp = router.dispatch(CallerId(1), &caller_caps(), &req, &mut sink);
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, crate::error::ErrorCode::ProtocolError);
+    }
+
+    #[test]
+    fn for_command_fails_closed_on_unmapped_ids() {
+        // Locking test for the fail-open arm: an unmapped id must resolve to
+        // `None`, never to the PING bit that the trusted frontend holds.
+        for id in [0u32, 4242, u32::MAX] {
+            assert_eq!(
+                capability_bit::for_command(id),
+                None,
+                "unmapped command id {id} must not map to a capability bit"
+            );
+        }
+        // The real ping command keeps its PING mapping.
+        assert_eq!(capability_bit::for_command(command_id::PING), Some(capability_bit::PING));
+    }
+
+    #[test]
+    fn unmapped_ids_denied_when_only_ping_granted() {
+        // A caller holding only PING must not reach an unmapped id through
+        // either dispatch surface.
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+
+        let router = Router::new();
+        let mut sink = RingTraceSink::new(16);
+        for id in [0u32, 4242, u32::MAX] {
+            let req = WireRequest::new(id, 1, 1, json!(null));
+            let resp = router.dispatch(CallerId(1), &caps, &req, &mut sink);
+            assert!(resp.error.is_some(), "unmapped id {id} dispatched with only PING granted");
+        }
+
+        let sr = StaticRouter::new();
+        for id in [0u32, 4242, u32::MAX] {
+            let req = WireRequest::new(id, 1, 1, json!(null));
+            let res = sr.authorize(&caps, &req);
+            assert!(res.is_err(), "unmapped id {id} authorized with only PING granted");
+            assert_eq!(sr.required_capability(id), None);
+        }
     }
 
     #[test]
@@ -1477,7 +1524,7 @@ mod tests {
         assert_eq!(res.unwrap_err().code, crate::error::ErrorCode::Unauthorized);
         // name + required bit are resolved purely from the catalog.
         assert_eq!(sr.command_name(command_id::PING), Some("kiri.ping"));
-        assert_eq!(sr.required_capability(command_id::PING), capability_bit::PING);
+        assert_eq!(sr.required_capability(command_id::PING), Some(capability_bit::PING));
     }
 
     #[test]

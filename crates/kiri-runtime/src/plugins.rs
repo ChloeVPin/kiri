@@ -163,22 +163,34 @@ impl PluginHost {
         });
 
         // Merge pending handlers into the router. Capability bit is derived from
-        // the command id via `capability_for`, so each plugin command enforces
+        // the command id via `for_command`, so each plugin command enforces
         // exactly the same authority as the previous inline registration.
-        let pending = std::mem::take(&mut self.pending);
-        let mut ids = Vec::new();
-        for (_key, (id, handler)) in pending {
-            let mut required = CapabilityBits::empty();
-            required.set(capability_bit::for_command(id));
-            self.router.register(id, required, handler);
-            ids.push(id);
-        }
+        let ids = self.merge_pending();
 
         self.plugins.insert(
             name.clone(),
             LoadedPlugin { name, registered_commands: ids, shutdown: plugin.shutdown },
         );
         Ok(())
+    }
+
+    /// Merge handlers stashed during `init` into the router and return the
+    /// registered command ids. Fail closed: a command id with no capability
+    /// mapping is dropped rather than registered under a default grant.
+    fn merge_pending(&mut self) -> Vec<u32> {
+        let pending = std::mem::take(&mut self.pending);
+        let mut ids = Vec::new();
+        for (_key, (id, handler)) in pending {
+            let Some(bit) = capability_bit::for_command(id) else {
+                eprintln!("[kiri-plugin] command id {id} has no capability mapping; dropped");
+                continue;
+            };
+            let mut required = CapabilityBits::empty();
+            required.set(bit);
+            self.router.register(id, required, handler);
+            ids.push(id);
+        }
+        ids
     }
 
     /// Dispatch through the merged router (built-in + plugin commands).
@@ -224,14 +236,7 @@ impl PluginHost {
         with_host_ptr(self_ptr, || {
             (plugin.init)(&host as *const KiriHostV1, ctx);
         });
-        let pending = std::mem::take(&mut self.pending);
-        let mut ids = Vec::new();
-        for (_key, (id, handler)) in pending {
-            let mut required = CapabilityBits::empty();
-            required.set(capability_bit::for_command(id));
-            self.router.register(id, required, handler);
-            ids.push(id);
-        }
+        let ids = self.merge_pending();
         self.plugins.insert(
             name.clone(),
             LoadedPlugin { name, registered_commands: ids, shutdown: plugin.shutdown },
@@ -764,6 +769,26 @@ mod tests {
         );
         let cresp = host.dispatch(caller, &caps, &close, &mut NoopTraceSink);
         assert_eq!(cresp.payload.as_ref().unwrap()["closed"], json!(true));
+    }
+
+    #[test]
+    fn unmapped_command_id_dropped_fail_closed() {
+        // A pending registration for a command id with no capability mapping
+        // must be dropped at merge time, never registered under a default
+        // (previously PING) grant.
+        let mut host = PluginHost::new();
+        let handler: Handler = Arc::new(|_c, _r, _p| Ok(json!({ "ok": true })));
+        host.pending.insert(999, (u32::MAX, handler));
+        host.register_plugin(&PING_PLUGIN).expect("ping");
+        assert!(!host.is_known(u32::MAX), "unmapped id must not be registered");
+        // A caller holding only PING cannot reach it.
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+        let req = WireRequest::new(u32::MAX, 1, 1, json!(null));
+        let resp = host.dispatch(CallerId(7), &caps, &req, &mut NoopTraceSink);
+        assert!(resp.error.is_some(), "unmapped id dispatched with only PING granted");
+        // The mapped ping command still registered normally.
+        assert!(host.is_known(command_id::PING));
     }
 
     #[test]
