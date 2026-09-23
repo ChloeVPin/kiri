@@ -90,7 +90,8 @@ pub struct HostOptions {
     /// Through-webview transport exercised by `--ipc-bench`. `Default` is the
     /// current JSON + T008 one-shot shared-buffer wire. `RingZerocopy` opts
     /// into the spike transport (Windows WebView2 only; other backends fall
-    /// back to `Default`).
+    /// back to `Default`). `ProtocolRing` is the wry/WKWebView spike
+    /// transport (macOS/Linux only; Windows falls back to `Default`).
     pub ipc_bench_transport: crate::ipc_bench::IpcBenchTransport,
 }
 

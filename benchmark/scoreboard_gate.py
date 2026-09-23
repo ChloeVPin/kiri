@@ -72,6 +72,11 @@ CLAIM_ALIASES = {
     "ring_zerocopy": "ring-zerocopy",
     "ringzerocopy": "ring-zerocopy",
     "ring": "ring-zerocopy",
+    "protocol-ring": "protocol-ring",
+    "protocol_ring": "protocol-ring",
+    "protoring": "protocol-ring",
+    "proto-ring": "protocol-ring",
+    "proto_ring": "protocol-ring",
 }
 
 
@@ -203,6 +208,61 @@ def _ring_zerocopy_proof_reasons(artifact: dict, claim: str) -> list[str]:
     return reasons
 
 
+def _protocol_ring_proof_reasons(artifact: dict, claim: str) -> list[str]:
+    """Proof contract for the protocol-ring transport
+    (`transport: "protocol_ring"`).
+
+    The wry/WKWebView spike path: one binary KRSL frame per direction over
+    the `kiri://` app scheme, dispatched through the same ZcIpcGate as the
+    postMessage pipe. Required: the artifact must declare the protocol_ring
+    transport, carry a top-level `protocol_ring` block with
+    `replies_ok` / `replies_fallback` / `send_fallbacks` counts, and record
+    `proto_ring_hits` on every result. Fallbacks are legal but must be
+    reported; zero observed binary replies cannot prove the claim.
+    """
+    reasons: list[str] = []
+    transport = artifact.get("transport")
+    if transport != "protocol_ring":
+        reasons.append(
+            f"claim '{claim}' requires transport 'protocol_ring' "
+            f"(got {transport!r}); an artifact that did not run the "
+            "protocol_ring transport cannot prove a protocol-ring claim"
+        )
+    block = artifact.get("protocol_ring")
+    if not isinstance(block, dict):
+        reasons.append(
+            f"claim '{claim}' requires a top-level 'protocol_ring' proof "
+            "block with replies_ok, replies_fallback, and send_fallbacks counts"
+        )
+    else:
+        for key in ("replies_ok", "replies_fallback", "send_fallbacks"):
+            if not _is_int(block.get(key)) or block.get(key, -1) < 0:
+                reasons.append(
+                    f"claim '{claim}' requires protocol_ring.{key} as a "
+                    "non-negative integer (fallback counts must be reported)"
+                )
+    results = artifact.get("results") or []
+    for i, entry in enumerate(results):
+        if not isinstance(entry, dict):
+            continue
+        size = entry.get("size_bytes", "?")
+        if not _is_int(entry.get("proto_ring_hits")) or entry.get("proto_ring_hits", -1) < 0:
+            reasons.append(
+                f"claim '{claim}' requires results[{i}] (size_bytes={size}) "
+                "to record proto_ring_hits per size"
+            )
+    if not reasons and isinstance(block, dict):
+        hits = sum(
+            entry.get("proto_ring_hits") or 0 for entry in results if isinstance(entry, dict)
+        )
+        if block.get("replies_ok", 0) == 0 and hits == 0:
+            reasons.append(
+                f"claim '{claim}' recorded zero binary replies: "
+                "no proof the protocol_ring transport was exercised"
+            )
+    return reasons
+
+
 def _zero_copy_proof_reasons(artifact: dict, claim: str) -> list[str]:
     """`zero-copy` is dual-path: the ring contract proves it when the
     artifact ran `transport: "ring_zerocopy"` or recorded ring traffic,
@@ -224,6 +284,7 @@ PROOF_CHECKERS = {
     "shared-buffer": _shared_buffer_proof_reasons,
     "ring-zerocopy": _ring_zerocopy_proof_reasons,
     "zero-copy": _zero_copy_proof_reasons,
+    "protocol-ring": _protocol_ring_proof_reasons,
 }
 
 
@@ -269,6 +330,12 @@ def _claims(artifact: dict) -> list[str]:
     ring = artifact.get("ring")
     if isinstance(ring, dict) and _is_int(ring.get("replies_ok")) and ring["replies_ok"] > 0:
         implicit_ring = True
+    # A protocol_ring artifact asserts the claim only on positive binary
+    # traffic: a run that fell back entirely is honest data, not a claim.
+    implicit_proto = False
+    proto = artifact.get("protocol_ring")
+    if isinstance(proto, dict) and _is_int(proto.get("replies_ok")) and proto["replies_ok"] > 0:
+        implicit_proto = True
     for entry in artifact.get("results") or []:
         if not isinstance(entry, dict):
             continue
@@ -276,10 +343,14 @@ def _claims(artifact: dict) -> list[str]:
             implicit = True
         if _is_int(entry.get("ring_slot_hits")) and entry["ring_slot_hits"] > 0:
             implicit_ring = True
+        if _is_int(entry.get("proto_ring_hits")) and entry["proto_ring_hits"] > 0:
+            implicit_proto = True
     if implicit and "shared-buffer" not in found:
         found.append("shared-buffer")
     if implicit_ring and "ring-zerocopy" not in found:
         found.append("ring-zerocopy")
+    if implicit_proto and "protocol-ring" not in found:
+        found.append("protocol-ring")
     return found
 
 

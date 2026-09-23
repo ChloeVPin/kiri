@@ -156,6 +156,15 @@ jobs:
         timeout-minutes: 8
         run: .\target\release\kiri-host.exe --frontend examples\blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-transport ring_zerocopy --ipc-bench-out artifacts\ipc-kiri-ring.json
 
+      # protocol_ring is the wry/WKWebView spike transport (spike PR); it is
+      # opt-in via --ipc-bench-transport and the artifact proves which leg
+      # each reply took via proto_ring_hits / protocol_ring reply counters.
+      - name: Through-webview IPC (Kiri, protocol_ring)
+        if: runner.os == 'macOS'
+        timeout-minutes: 8
+        continue-on-error: true
+        run: ./target/release/kiri-host --frontend examples/blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-transport protocol_ring --ipc-bench-out artifacts/ipc-kiri-proto-ring.json
+
       - name: Through-webview IPC (Tauri)
         if: runner.os == 'macOS'
         timeout-minutes: 8
@@ -184,10 +193,10 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json; do
+          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json artifacts/ipc-kiri-proto-ring.json; do
             if [ -f "$f" ]; then
               python3 benchmark/scoreboard_gate.py check "$f" || failed=1
-            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ]; then
+            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ] && [ "$f" != "artifacts/ipc-kiri-proto-ring.json" ]; then
               echo "::warning::$f missing; no IPC artifact to validate"
             fi
           done
