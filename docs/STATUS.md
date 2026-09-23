@@ -49,6 +49,14 @@ The published v0.1.6 release contains the launcher-bearing Linux and Windows
 archives and the signed three-platform manifest. Earlier pre-launcher releases
 predate these archive changes.
 
+Public release state: **v0.1.6 remains the latest published GitHub Release.**
+The `v0.1.7` tag exists but was never published: its release run failed on the
+Linux package job (unused `Submenu` import under `-D warnings`), so no GitHub
+Release or assets exist for it. PR #16 fixed that blocker on main. The
+workspace version is now `0.1.8` in preparation for a fresh tag; customers
+should keep installing v0.1.6 until a v0.1.8 release is published. Tagging
+`v0.1.8` is a separate explicit step after this lands on main.
+
 ## Public release acceptance checklist
 
 - [x] Three platform archive entries exist in the public v0.1.6 manifest.
