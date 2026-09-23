@@ -24,6 +24,7 @@ fn main() {
     let mut ipc_bench_runs = kiri_runtime::ipc_bench::DEFAULT_RUNS;
     let mut ipc_bench_out: Option<PathBuf> = None;
     let mut ipc_bench_sizes: Option<Vec<usize>> = None;
+    let mut ipc_bench_transport = kiri_runtime::ipc_bench::IpcBenchTransport::Default;
 
     let mut i = 0;
     while i < args.len() {
@@ -73,6 +74,17 @@ fn main() {
                         Some(v.split(',').filter_map(|s| s.trim().parse::<usize>().ok()).collect());
                 }
             }
+            "--ipc-bench-transport" => {
+                i += 1;
+                match args.get(i).and_then(|v| kiri_runtime::ipc_bench::IpcBenchTransport::parse(v))
+                {
+                    Some(t) => ipc_bench_transport = t,
+                    None => {
+                        eprintln!("unknown --ipc-bench-transport (want default|ring_zerocopy)");
+                        std::process::exit(2);
+                    }
+                }
+            }
             "--exit-after-ready-ms" => {
                 i += 1;
                 if let Some(v) = args.get(i) {
@@ -91,6 +103,7 @@ fn main() {
                      usage: kiri-host [--frontend DIR] [--markers-out PATH] [--smoke]\n\
                      \x20  [--ipc-bench] [--ipc-bench-runs N] [--ipc-bench-out PATH]\n\
                      \x20  [--ipc-bench-sizes 0,64,1024,...]\n\
+                     \x20  [--ipc-bench-transport default|ring_zerocopy]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
                      \x20  [--exit-after-ready-ms N] [--watchdog-ms N]\n\
                      \x20  watchdog-ms 0 disables the ready watchdog"
@@ -140,6 +153,7 @@ fn main() {
     options.ipc_bench = ipc_bench;
     options.ipc_bench_runs = ipc_bench_runs;
     options.ipc_bench_out = ipc_bench_out;
+    options.ipc_bench_transport = ipc_bench_transport;
     if let Some(sizes) = ipc_bench_sizes {
         if !sizes.is_empty() {
             options.ipc_bench_sizes = sizes;
