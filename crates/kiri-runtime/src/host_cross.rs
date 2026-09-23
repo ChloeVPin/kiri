@@ -160,34 +160,6 @@ fn record(markers: &Rc<RefCell<StartupMarkers>>, marker: Marker) {
     markers.borrow_mut().record(marker, now_ns());
 }
 
-/// Host allowlist for tray menu item ids for the native tray (audit item 14).
-/// Only these ids may appear in the native menu; labels and actions are host-owned.
-fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
-    vec![
-        kiri_core::tray::TrayItem {
-            id: "show".to_string(),
-            label: "Show Window".to_string(),
-            action: "show".to_string(),
-        },
-        kiri_core::tray::TrayItem {
-            id: "quit".to_string(),
-            label: "Quit".to_string(),
-            action: "quit".to_string(),
-        },
-    ]
-}
-
-fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
-    tray_items()
-        .into_iter()
-        .map(|item| kiri_core::app_menu::MenuItem {
-            id: item.id,
-            label: item.label,
-            action: item.action,
-        })
-        .collect()
-}
-
 /// Build the production control-plane router shared by the live host and
 /// the registration regression test. Takes the window and clipboard
 /// controllers so the test can pass headless no-op stubs without opening a
@@ -340,7 +312,7 @@ pub(crate) fn build_host_router(
     // lets the frontend build the native menu freely once the capability is present.
     .with_tray(kiri_core::tray::TrayService::new(
         std::sync::Arc::new(crate::tray_ctl::cross_tray::CrossTrayBackend::new()),
-        kiri_core::tray::TrayAllowlist::new(tray_items()),
+        kiri_core::tray::TrayAllowlist::new(crate::host_policy::tray_items()),
         kiri_core::limits::Limits::default(),
     ))
     // G-6: kiri.sidecar.spawn/stop/list surface (audit item 15). Capability-gated
@@ -401,7 +373,7 @@ pub(crate) fn build_host_router(
     ))
     .with_menu(kiri_core::app_menu::MenuService::new(
         menu_runner,
-        kiri_core::app_menu::MenuAllowlist::new(menu_items()),
+        kiri_core::app_menu::MenuAllowlist::new(crate::host_policy::menu_items()),
         kiri_core::limits::Limits::default(),
     ))
 }
@@ -729,9 +701,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
 }
 
 // All host allowlists (http, shell, fs glob, sidecar, event, config, store,
-// deeplink, opener, autostart, shortcut, dialog, notification, and the pinned
-// update key) live in `crate::host_policy` so both backends share identical
-// security posture. See host_policy.rs.
+// deeplink, opener, autostart, shortcut, dialog, notification, tray, menu,
+// and the pinned update key) live in `crate::host_policy` so both backends
+// share identical security posture. See host_policy.rs and its
+// `windows_parity_lock` tests.
 
 #[cfg(test)]
 mod host_router_regression_tests {

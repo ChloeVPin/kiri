@@ -436,34 +436,6 @@ impl WindowsHost {
     }
 }
 
-/// Host allowlist of tray menu item ids for the native tray (audit item 14).
-/// Only these ids may appear in the native menu; labels and actions are host-owned.
-fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
-    vec![
-        kiri_core::tray::TrayItem {
-            id: "show".to_string(),
-            label: "Show Window".to_string(),
-            action: "show".to_string(),
-        },
-        kiri_core::tray::TrayItem {
-            id: "quit".to_string(),
-            label: "Quit".to_string(),
-            action: "quit".to_string(),
-        },
-    ]
-}
-
-fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
-    tray_items()
-        .into_iter()
-        .map(|item| kiri_core::app_menu::MenuItem {
-            id: item.id,
-            label: item.label,
-            action: item.action,
-        })
-        .collect()
-}
-
 unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String> {
     use webview2_com::Microsoft::Web::WebView2::Win32::{
         CreateCoreWebView2EnvironmentWithOptions, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
@@ -1048,7 +1020,7 @@ fn attach_windows_surface(
             let _ = std::fs::create_dir_all(&fs_scope.root);
             router.with_fs_service(
                 kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
-                    .with_glob(kiri_core::capabilities::GlobScope::new(fs_glob_patterns())),
+                    .with_glob(kiri_core::capabilities::GlobScope::new(crate::host_policy::fs_glob_patterns())),
             )
         }
         Surface::Window => router.with_window(
@@ -1068,12 +1040,12 @@ fn attach_windows_surface(
         }
         Surface::Http => router.with_http(kiri_core::http::HttpService::new(
             std::sync::Arc::new(kiri_core::http::StdHttpClient),
-            kiri_core::http::HostAllowlist::new(http_allow_hosts()),
+            kiri_core::http::HostAllowlist::new(crate::host_policy::http_allow_hosts()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Shell => router.with_shell(kiri_core::shell::ShellService::new(
             std::sync::Arc::new(crate::shell_ctl::WinShellRunner::new()),
-            kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
+            kiri_core::shell::ShellAllowlist::new(crate::host_policy::shell_allow_commands()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Notification => {
@@ -1081,38 +1053,38 @@ fn attach_windows_surface(
                 std::sync::Arc::new(
                     crate::notification_ctl::win_notify::WinNotificationRunner::new(),
                 ),
-                kiri_core::notification::NotificationAllowlist::new(notification_templates()),
+                kiri_core::notification::NotificationAllowlist::new(crate::host_policy::notification_templates()),
                 kiri_core::limits::Limits::default(),
             ))
         }
         Surface::Dialog => router.with_dialog(kiri_core::dialog::DialogService::new(
             std::sync::Arc::new(crate::dialog_ctl::WinDialogRunner::new()),
-            kiri_core::dialog::DialogAllowlist::new(dialog_templates()),
+            kiri_core::dialog::DialogAllowlist::new(crate::host_policy::dialog_templates()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Shortcut => router.with_shortcut(kiri_core::shortcut::ShortcutService::new(
             std::sync::Arc::new(crate::shortcut_ctl::WinShortcutRunner::new()),
-            kiri_core::shortcut::ShortcutAllowlist::new(shortcut_bindings()),
+            kiri_core::shortcut::ShortcutAllowlist::new(crate::host_policy::shortcut_bindings()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Autostart => router.with_autostart(kiri_core::autostart::AutostartService::new(
             std::sync::Arc::new(crate::autostart_ctl::WinAutostartRunner::new()),
-            kiri_core::autostart::AutostartAllowlist::new(autostart_policy()),
+            kiri_core::autostart::AutostartAllowlist::new(crate::host_policy::autostart_policy()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Store => router.with_store(kiri_core::store::StoreService::new(
             std::sync::Arc::new(crate::store_ctl::WinStoreBackend::new()),
-            kiri_core::store::StoreAllowlist::new(store_namespaces()),
+            kiri_core::store::StoreAllowlist::new(crate::host_policy::store_namespaces()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Deeplink => router.with_deeplink(kiri_core::deeplink::DeeplinkService::new(
             std::sync::Arc::new(crate::deeplink_ctl::win_deeplink::WinDeeplinkRunner::new()),
-            kiri_core::deeplink::DeeplinkAllowlist::new(deeplink_schemes()),
+            kiri_core::deeplink::DeeplinkAllowlist::new(crate::host_policy::deeplink_schemes()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Opener => router.with_opener(kiri_core::opener::OpenerService::new(
             std::sync::Arc::new(crate::opener_ctl::win_opener::WinOpenerRunner::new()),
-            kiri_core::opener::OpenerAllowlist::new(opener_url_schemes(), opener_file_extensions()),
+            kiri_core::opener::OpenerAllowlist::new(crate::host_policy::opener_url_schemes(), crate::host_policy::opener_file_extensions()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::WindowState => {
@@ -1125,18 +1097,18 @@ fn attach_windows_surface(
         }
         Surface::Tray => router.with_tray(kiri_core::tray::TrayService::new(
             std::sync::Arc::new(crate::tray_ctl::win_tray::WinTrayBackend::new()),
-            kiri_core::tray::TrayAllowlist::new(tray_items()),
+            kiri_core::tray::TrayAllowlist::new(crate::host_policy::tray_items()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Sidecar => router.with_sidecar(kiri_core::sidecar::SidecarService::new(
             std::sync::Arc::new(crate::sidecar_ctl::win_sidecar::WinSidecarRunner::new()),
-            kiri_core::sidecar::SidecarAllowlist::new(sidecar_allow()),
+            kiri_core::sidecar::SidecarAllowlist::new(crate::host_policy::sidecar_allow()),
             kiri_core::sidecar::SidecarTable::new(),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Event => router.with_event(kiri_core::event::EventService::new(
             std::sync::Arc::new(rt.events.clone()),
-            kiri_core::event::EventAllowlist::new(event_channels()),
+            kiri_core::event::EventAllowlist::new(crate::host_policy::event_channels()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Config => router.with_config(kiri_core::config::ConfigService::new(
@@ -1147,12 +1119,12 @@ fn attach_windows_surface(
                 m.insert("window.theme".to_string(), serde_json::json!("system"));
                 m
             })),
-            kiri_core::config::ConfigAllowlist::new(config_keys()),
+            kiri_core::config::ConfigAllowlist::new(crate::host_policy::config_keys()),
             kiri_core::limits::Limits::default(),
         )),
         Surface::Updater => router.with_updater(
             kiri_core::updater_surface::UpdaterService::new(
-                HOST_PINNED_UPDATE_PUBLIC_KEY,
+                crate::host_policy::HOST_PINNED_UPDATE_PUBLIC_KEY,
                 kiri_core::update::Version::parse(env!("CARGO_PKG_VERSION"))
                     .expect("valid package version"),
                 kiri_core::limits::Limits::default(),
@@ -1173,172 +1145,12 @@ fn attach_windows_surface(
         )),
         Surface::Menu => router.with_menu(kiri_core::app_menu::MenuService::new(
             rt.menu_runner.clone(),
-            kiri_core::app_menu::MenuAllowlist::new(menu_items()),
+            kiri_core::app_menu::MenuAllowlist::new(crate::host_policy::menu_items()),
             kiri_core::limits::Limits::default(),
         )),
     }
 }
 
-/// Host-allowlist for kiri.http.get. Default-deny: only these hosts may be
-/// fetched even when the HTTP capability is granted. Expanded per-app config
-/// in a later task; for now this is the seed allowlist that proves the
-/// exceed-Tauri security axis (Tauri's http plugin has no host allowlist).
-fn http_allow_hosts() -> Vec<String> {
-    vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
-}
-
-/// Host allowlist for `kiri.shell.run` (audit item 4, G-4). Default-deny:
-/// only the exact program + arg prefix below may spawn. Inverts Tauri's shell
-/// plugin trust model: arbitrary execution is refused unless explicitly listed.
-/// Host glob allowlist for `kiri.fs.*` (audit item 6, fs glob scope). Same model
-/// as the cross backend: only paths matching a pattern relative to the fs root may
-/// be touched, so a granted FS capability is narrowed to safe shapes.
-fn fs_glob_patterns() -> Vec<String> {
-    vec!["data/**".to_string(), "config/*.json".to_string(), "*.log".to_string()]
-}
-
-fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
-    vec![kiri_core::shell::AllowedCommand {
-        program: "echo".to_string(),
-        args: vec!["kiri-probe".to_string()],
-    }]
-}
-
-/// Host allowlist of sidecar binary names (audit item 15, G-6). Only these
-/// exact names may be spawned by the frontend; argv is forced to the
-/// host-declared prefix. Never exposes a path to JavaScript.
-fn sidecar_allow() -> Vec<kiri_core::sidecar::AllowedSidecar> {
-    vec![kiri_core::sidecar::AllowedSidecar {
-        name: "kiri-helper".to_string(),
-        args: vec!["--mode".to_string(), "fast".to_string()],
-    }]
-}
-
-/// Host allowlist of event channel names (audit item 16). Only these exact
-/// channel names may be published/subscribed by the frontend; the host owns the
-/// channel namespace. Never lets the frontend forge or snoop cross-module
-/// events. Inverts Tauri's unrestricted event module.
-fn event_channels() -> Vec<kiri_core::event::AllowedChannel> {
-    vec![
-        kiri_core::event::AllowedChannel { name: "ping".to_string() },
-        kiri_core::event::AllowedChannel { name: "update".to_string() },
-        kiri_core::event::AllowedChannel { name: "diag".to_string() },
-    ]
-}
-
-/// Host key allowlist for `kiri.config.get` (audit item 17). Default-deny: only
-/// the exact key paths below may be read by the frontend. Inverts Tauri's
-/// getConfig trust model: a granted CONFIG capability still cannot read arbitrary
-/// host config; only pre-approved key paths may be read.
-/// Host-pinned Ed25519 public key for the signed-update verifier (audit-18).
-/// NEVER sourced from the frontend: a malicious or phished page cannot substitute
-/// a key and accept an attacker-signed release. The matching secret signs release
-/// assets at build time. Rotate only via a new pinned build.
-const HOST_PINNED_UPDATE_PUBLIC_KEY: &str =
-    "333d58ae1e42ba2025b035666528d36430e0c14e13f3d5006c7f0fe22a9d3af6";
-
-fn config_keys() -> Vec<kiri_core::config::AllowedConfigKey> {
-    vec![
-        kiri_core::config::AllowedConfigKey { key: "app.name".to_string() },
-        kiri_core::config::AllowedConfigKey { key: "app.version".to_string() },
-        kiri_core::config::AllowedConfigKey { key: "window.theme".to_string() },
-    ]
-}
-
-/// Host template allowlist for `kiri.notification.show` (audit item 5, G-4b).
-/// Default-deny: only the exact template ids below may display, and the frontend
-/// may only supply bounded positional args. The host owns the title/body text.
-/// Host allowlist for `kiri.dialog.open` (audit item 7, G-4c). Default-deny:
-/// only the exact dialog kinds below may open, each with a host-owned title
-/// template and bounded args (file pickers additionally restrict extensions).
-/// Inverts Tauri's dialog plugin trust model: a granted DIALOG capability still
-/// cannot render a free-form native prompt; only pre-approved kinds may show.
-/// Host allowlist for `kiri.shortcut.register` (audit item 8, G-4d). Default-deny:
-/// only the exact accelerators below may bind, each mapped to a host-owned action;
-/// the frontend cannot supply or alter the accelerator or action. Inverts Tauri's
-/// global-shortcut plugin trust model: a granted SHORTCUT capability still cannot
-/// register an arbitrary global hotkey, so a malicious frontend cannot hijack desktop
-/// combos (e.g. Cmd+Q) globally.
-/// Host policy for `kiri.autostart.*` (audit item 9, G-4e). Default-deny: autostart
-/// is disabled unless the host explicitly opts in. The frontend can only toggle
-/// `enabled`; it cannot choose which executable persists (the runner registers only
-/// the host's own binary). Inverts Tauri's autostart plugin trust model, which lets
-/// the frontend enable launch-at-login freely once the capability is present.
-/// Host allowlist for `kiri.store.*` (audit item 10, G-4f). Default-deny: only the
-/// exact namespaces below may be addressed; the frontend cannot reach other namespaces
-/// (e.g. `auth.session`). Inverts Tauri's store plugin trust model, which lets the
-/// frontend read/write the whole store once the capability is present.
-fn store_namespaces() -> Vec<kiri_core::store::StoreNamespace> {
-    vec![kiri_core::store::StoreNamespace { prefix: "app.prefs".to_string() }]
-}
-
-fn deeplink_schemes() -> Vec<kiri_core::deeplink::DeeplinkScheme> {
-    vec![kiri_core::deeplink::DeeplinkScheme { scheme: "kiri-app".to_string() }]
-}
-
-fn opener_url_schemes() -> Vec<kiri_core::opener::AllowedUrlScheme> {
-    vec![
-        kiri_core::opener::AllowedUrlScheme { scheme: "https".to_string() },
-        kiri_core::opener::AllowedUrlScheme { scheme: "http".to_string() },
-        kiri_core::opener::AllowedUrlScheme { scheme: "mailto".to_string() },
-    ]
-}
-
-fn opener_file_extensions() -> Vec<kiri_core::opener::AllowedFileExtension> {
-    vec![
-        kiri_core::opener::AllowedFileExtension { extension: "pdf".to_string() },
-        kiri_core::opener::AllowedFileExtension { extension: "txt".to_string() },
-        kiri_core::opener::AllowedFileExtension { extension: "md".to_string() },
-    ]
-}
-
-fn autostart_policy() -> bool {
-    false
-}
-
-fn shortcut_bindings() -> Vec<kiri_core::shortcut::ShortcutBinding> {
-    vec![
-        kiri_core::shortcut::ShortcutBinding {
-            accelerator: "CmdOrCtrl+S".to_string(),
-            action: "save".to_string(),
-        },
-        kiri_core::shortcut::ShortcutBinding {
-            accelerator: "CmdOrCtrl+K".to_string(),
-            action: "command-palette".to_string(),
-        },
-    ]
-}
-
-fn dialog_templates() -> Vec<kiri_core::dialog::DialogTemplate> {
-    vec![
-        kiri_core::dialog::DialogTemplate {
-            kind: kiri_core::dialog::DialogKind::Message,
-            title_template: "Update available: {0}".to_string(),
-            args: 1,
-            filters: vec![],
-        },
-        kiri_core::dialog::DialogTemplate {
-            kind: kiri_core::dialog::DialogKind::OpenFile,
-            title_template: "Open project".to_string(),
-            args: 0,
-            filters: vec!["kiri".to_string(), "json".to_string()],
-        },
-    ]
-}
-
-fn notification_templates() -> Vec<kiri_core::notification::NotificationTemplate> {
-    vec![
-        kiri_core::notification::NotificationTemplate {
-            id: "download-complete".to_string(),
-            title: "Download finished: {0}".to_string(),
-            body: "Saved to {1}".to_string(),
-            args: 2,
-        },
-        kiri_core::notification::NotificationTemplate {
-            id: "build-failed".to_string(),
-            title: "Build failed".to_string(),
-            body: "{0}".to_string(),
-            args: 1,
-        },
-    ]
-}
+// Seed allowlists for every double-gated surface live in `crate::host_policy`
+// so Windows cannot silently diverge from the cross backend. See host_policy.rs
+// and the `windows_parity_lock` tests there.
