@@ -21,6 +21,7 @@ pub mod fs_watch_ctl;
 pub mod host_policy;
 pub mod ipc_bench;
 pub mod markers;
+pub mod menu_accel;
 pub mod menu_dispatch;
 #[cfg(not(target_os = "windows"))]
 pub mod native_menu;

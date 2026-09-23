@@ -115,10 +115,16 @@ impl NativeMenu {
     }
 
     fn set_items(&mut self, items: &[MenuItem]) -> Result<()> {
-        let native_items: Vec<muda::MenuItem> = items
-            .iter()
-            .map(|item| muda::MenuItem::with_id(item.id.clone(), item.label.clone(), true, None))
-            .collect();
+        let mut native_items: Vec<muda::MenuItem> = Vec::with_capacity(items.len());
+        for item in items {
+            let accelerator = crate::menu_accel::parse_accelerator(item)?;
+            native_items.push(muda::MenuItem::with_id(
+                item.id.clone(),
+                item.label.clone(),
+                true,
+                accelerator,
+            ));
+        }
         let refs: Vec<&dyn IsMenuItem> =
             native_items.iter().map(|item| item as &dyn IsMenuItem).collect();
 
@@ -158,5 +164,35 @@ impl NativeMenu {
 impl Default for NativeMenu {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn item(id: &str, accelerator: Option<&str>) -> MenuItem {
+        MenuItem {
+            id: id.into(),
+            label: id.to_string(),
+            action: id.into(),
+            accelerator: accelerator.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn set_items_accepts_host_accelerator() {
+        let mut menu = NativeMenu::new();
+        menu.set_items(&[item("quit", Some("CmdOrCtrl+Q")), item("show", None)]).unwrap();
+        assert_eq!(menu.item_ids.len(), 2);
+    }
+
+    #[test]
+    fn set_items_rejects_invalid_accelerator() {
+        let mut menu = NativeMenu::new();
+        let err = menu.set_items(&[item("quit", Some("NotAModifier+Q"))]).unwrap_err();
+        assert_eq!(err.code, kiri_core::error::ErrorCode::InvalidArgument);
+        assert!(menu.menu.is_none());
+        assert!(menu.item_ids.is_empty());
     }
 }
