@@ -21,6 +21,7 @@ this as an **early runtime + demo**, not a finished Tauri replacement
 | Own UI without rebuild | Edit `frontend/` next to the host | Re-run launcher |
 | Pack UI into the binary | `KIRI_EMBED_FRONTEND=… cargo build` **from a clone** | Yes + Rust toolchain |
 | CI zip of host + UI | Copy `templates/ship-app.yml` (sidecar frontend, not embed) | CI |
+| One binary, UI inside | Copy `templates/embed-ipc-app/` + `templates/embed-ipc-app.yml` | CI + Rust |
 
 ## Platforms in the latest RELEASES.json
 
@@ -141,9 +142,34 @@ On macOS, package an unsigned double-clickable `.app`:
 open artifacts/Kiri.app
 ```
 
-**Gap:** a no-clone, three-OS CI path that *only* sets `KIRI_EMBED_FRONTEND` is
-not shipped yet. Use the sidecar template until it is. That is why
-[`PRODUCT.md`](PRODUCT.md) still calls acceptance criterion #3 unfinished.
+### Single-binary embed template
+
+[`templates/embed-ipc-app/`](../templates/embed-ipc-app/) is a thin app repo:
+one `main.rs` that calls `kiri_runtime::run_session`, a `frontend/` that is a
+through-webview IPC demo (repeated `window.kiri.send` round-trips with RTT
+stats), and a `.cargo/config.toml` that sets `KIRI_EMBED_FRONTEND` for the
+kiri-runtime build script. `cargo build --release` yields one binary with the
+UI inside; the kiri source arrives as a Cargo git dependency, so no clone of
+this repo is needed. [`templates/embed-ipc-app.yml`](../templates/embed-ipc-app.yml)
+builds it on macOS, Windows, and Linux and uploads just the binary.
+
+Compared with `create-kiri-app` + `ship-app.yml` for shipping this IPC app:
+
+- Sidecar: no Rust needed (CI downloads a signed release host), but the
+  artifact is a folder, host plus `frontend/` sidecar, and the pair can drift.
+- Embed: needs a Rust toolchain and a full runtime build in CI (minutes, not
+  seconds), but the artifact is one file and the UI cannot be swapped
+  post-build, which is the honest fit for shipping an IPC demo.
+
+Two caveats. On Windows the packed bytes are still materialized to a temp dir
+at startup (WebView2 virtual-host mapping needs a real directory), so "single
+binary" describes the shipped artifact, not the runtime filesystem view. On
+headless Linux the smoke run depends on WebKit2GTK compositor init, the same
+soft-gate as the correctness workflow.
+
+What remains open against [`PRODUCT.md`](PRODUCT.md) criterion #3: the
+artifacts are unsigned at the OS level and there is no crates.io package, so
+the git dependency tracks a branch or tag rather than a semver release.
 
 ## 4. Talk to the host from JavaScript
 
