@@ -218,13 +218,9 @@ mod tests {
         fn drain(&self, subscriber_id: u64) -> Vec<Value> {
             let channel = self.subs.lock().unwrap().get(&subscriber_id).cloned();
             match channel {
-                Some(ch) => self
-                    .queues
-                    .lock()
-                    .unwrap()
-                    .get_mut(&ch)
-                    .map(|q| std::mem::take(q))
-                    .unwrap_or_default(),
+                Some(ch) => {
+                    self.queues.lock().unwrap().get_mut(&ch).map(std::mem::take).unwrap_or_default()
+                }
                 None => Vec::new(),
             }
         }

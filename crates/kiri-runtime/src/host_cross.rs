@@ -442,6 +442,9 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let resources: std::sync::Arc<Mutex<ResourceTable<()>>> =
         std::sync::Arc::new(Mutex::new(ResourceTable::<()>::new()));
     let router_cell: Rc<RefCell<Option<kiri_core::dispatch::Router>>> = Rc::new(RefCell::new(None));
+    // Fail-closed gate for the through-webview pipe: one permit object carries
+    // the capability-bit AND host-allowlist decision (kiri_core::zc_ipc_gate).
+    let zc_gate = Rc::new(RefCell::new(crate::host_policy::zc_ipc_gate()));
     let smoke = options.smoke;
     let ipc_bench = options.ipc_bench;
     let ipc_bench_runs = options.ipc_bench_runs;
@@ -500,6 +503,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let options_for_router = options.clone();
             let menu_runner = menu_runner.clone();
             let webview_slot = webview_slot.clone();
+            let zc_gate = zc_gate.clone();
             let diagnostics = diagnostics.clone();
             let resources = resources.clone();
             let ipc_bench_done = ipc_bench_done.clone();
@@ -583,12 +587,19 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                             Arc::new(menu_runner.clone()),
                         ));
                     }
-                    let response = router_cell.borrow().as_ref().unwrap().dispatch(
+                    // Dispatch through the unified pipe gate: the permit is
+                    // minted only when the capability bit AND the surface's
+                    // host allowlist both admit, and the returned grant is the
+                    // authority a gated reply leg would require.
+                    let gated = zc_gate.borrow_mut().dispatch_through_webview(
+                        router_cell.borrow().as_ref().unwrap(),
                         caller,
                         &caller_caps,
                         &request,
                         &mut sink,
+                        kiri_core::trace::MonotonicClock::now_ns(),
                     );
+                    let response = gated.response;
                     if !markers.borrow().has(Marker::FirstInvokeResponded) {
                         record(&markers, Marker::FirstInvokeResponded);
                     }

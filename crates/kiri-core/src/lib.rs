@@ -47,6 +47,7 @@ pub mod websocket;
 pub mod window;
 pub mod window_state;
 pub mod wire;
+pub mod zc_ipc_gate;
 
 pub use autostart::{AutostartAllowlist, AutostartService};
 pub use caller::{CallerId, CallerRegistry};
@@ -80,6 +81,7 @@ pub use trace::{MonotonicClock, Stage, TraceEvent, TraceSink};
 pub use update::{Ed25519Verifier, PlatformAsset, UpdateManifest, VerifiedAsset, Version};
 pub use updater_surface::{UpdaterService, UPDATER_CAPABILITY};
 pub use wire::{WireRequest, WireResponse};
+pub use zc_ipc_gate::{GatedResponse, ZcIpcGate, ZcIpcGrant, ZcIpcPermit};
 
 /// Protocol constants shared by all Kiri transports.
 pub mod constants {
