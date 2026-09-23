@@ -10,19 +10,26 @@ chart, and REFUSES anything that cannot prove its claim:
   are refused outright: they are not what an application feels.
 - required provenance: run id or local host id, runner/OS, commit, payload
   sizes, batch-mean and/or per-call distribution, iteration count, warmups.
-- any `shared-buffer` or `zero-copy` claim must carry per-size proof counts
+- any `shared-buffer` claim must carry per-size proof counts
   (`shared_buffer_used` / `shared_buffer_hits`) plus top-level reply and
-  fallback counts (`shared_buffer.replies_ok` / `replies_fallback`). A claim
-  without proof is refused; a losing measurement with honest numbers is
-  accepted.
+  fallback counts (`shared_buffer.replies_ok` / `replies_fallback`).
+- any `ring-zerocopy` claim must declare `transport: "ring_zerocopy"`,
+  carry a top-level `ring` block (`replies_ok` / `replies_fallback` /
+  `send_fallbacks`), and record per-size `ring_slot_hits` on every result.
+- `zero-copy` is a dual-path claim: it is proved by the ring contract when
+  the artifact ran the ring transport or recorded ring traffic, and by the
+  shared-buffer contract otherwise. Zero proof on both paths is refused. A
+  claim without proof is refused; a losing measurement with honest numbers
+  is accepted.
 - artifacts marked `fixture`/`example` are refused by default so example data
   can never reach a published table (`--allow-fixtures` exists for tests).
 
-A successor mechanism (for example a real zero-copy user-IPC transport)
-plugs in by registering its metric class in ACCEPTED_METRIC_CLASSES and its
-proof checker in PROOF_CHECKERS in this file, then emitting the same
-provenance block plus its own per-size proof counts. Until a claim has a
-registered proof contract, artifacts asserting it are refused.
+A successor mechanism plugs in by registering its metric class in
+ACCEPTED_METRIC_CLASSES and its proof checker in PROOF_CHECKERS in this
+file, then emitting the same provenance block plus its own per-size proof
+counts; the zero-copy ring transport (`transport: "ring_zerocopy"`) is
+registered this way. Until a claim has a registered proof contract,
+artifacts asserting it are refused.
 
 Usage:
     scoreboard_gate.py check FILE... [--allow-fixtures] [--verdict-out PATH]
@@ -61,6 +68,10 @@ CLAIM_ALIASES = {
     "zero-copy": "zero-copy",
     "zerocopy": "zero-copy",
     "zero_copy": "zero-copy",
+    "ring-zerocopy": "ring-zerocopy",
+    "ring_zerocopy": "ring-zerocopy",
+    "ringzerocopy": "ring-zerocopy",
+    "ring": "ring-zerocopy",
 }
 
 
@@ -123,13 +134,96 @@ def _shared_buffer_proof_reasons(artifact: dict, claim: str) -> list[str]:
     return reasons
 
 
-# Proof checkers keyed by canonical claim. The shared-buffer contract covers
-# `zero-copy` today because the WebView2 shared buffer is the only implemented
-# zero-copy-ish transport; a successor mechanism must register its own checker
-# (and proof fields) here before its artifacts can pass.
+def _has_ring_traffic(artifact: dict) -> bool:
+    """True when the artifact recorded actual ring replies or slot hits."""
+    block = artifact.get("ring")
+    if (
+        isinstance(block, dict)
+        and _is_int(block.get("replies_ok"))
+        and block["replies_ok"] > 0
+    ):
+        return True
+    return any(
+        isinstance(entry, dict)
+        and _is_int(entry.get("ring_slot_hits"))
+        and entry["ring_slot_hits"] > 0
+        for entry in artifact.get("results") or []
+    )
+
+
+def _ring_zerocopy_proof_reasons(artifact: dict, claim: str) -> list[str]:
+    """Proof contract for the zero-copy ring transport
+    (`transport: "ring_zerocopy"`).
+
+    Required: the artifact must declare the ring transport, carry a top-level
+    `ring` block with `replies_ok` / `replies_fallback` / `send_fallbacks`
+    counts, and record `ring_slot_hits` on every result. Fallbacks are legal
+    but must be reported; zero observed ring replies cannot prove the claim.
+    """
+    reasons: list[str] = []
+    transport = artifact.get("transport")
+    if transport != "ring_zerocopy":
+        reasons.append(
+            f"claim '{claim}' requires transport 'ring_zerocopy' "
+            f"(got {transport!r}); an artifact that did not run the ring "
+            "transport cannot prove a ring claim"
+        )
+    block = artifact.get("ring")
+    if not isinstance(block, dict):
+        reasons.append(
+            f"claim '{claim}' requires a top-level 'ring' proof block "
+            "with replies_ok, replies_fallback, and send_fallbacks counts"
+        )
+    else:
+        for key in ("replies_ok", "replies_fallback", "send_fallbacks"):
+            if not _is_int(block.get(key)) or block.get(key, -1) < 0:
+                reasons.append(
+                    f"claim '{claim}' requires ring.{key} as a "
+                    "non-negative integer (fallback counts must be reported)"
+                )
+    results = artifact.get("results") or []
+    for i, entry in enumerate(results):
+        if not isinstance(entry, dict):
+            continue
+        size = entry.get("size_bytes", "?")
+        if not _is_int(entry.get("ring_slot_hits")) or entry.get("ring_slot_hits", -1) < 0:
+            reasons.append(
+                f"claim '{claim}' requires results[{i}] (size_bytes={size}) "
+                "to record ring_slot_hits per size"
+            )
+    if not reasons and isinstance(block, dict):
+        hits = sum(
+            entry.get("ring_slot_hits") or 0 for entry in results if isinstance(entry, dict)
+        )
+        if block.get("replies_ok", 0) == 0 and hits == 0:
+            reasons.append(
+                f"claim '{claim}' recorded zero ring replies: "
+                "no proof the ring transport was exercised"
+            )
+    return reasons
+
+
+def _zero_copy_proof_reasons(artifact: dict, claim: str) -> list[str]:
+    """`zero-copy` is dual-path: the ring contract proves it when the
+    artifact ran `transport: "ring_zerocopy"` or recorded ring traffic,
+    otherwise the WebView2 shared-buffer contract (T008) applies. An
+    artifact with zero shared-buffer and zero ring evidence is refused by
+    whichever checker owns it."""
+    if artifact.get("transport") == "ring_zerocopy" or _has_ring_traffic(artifact):
+        return _ring_zerocopy_proof_reasons(artifact, claim)
+    return _shared_buffer_proof_reasons(artifact, claim)
+
+
+# Proof checkers keyed by canonical claim. `ring-zerocopy` names the
+# zero-copy ring transport (one host-owned slot arena, raw payload bytes,
+# tiny JSON control messages). `zero-copy` dispatches between the ring and
+# shared-buffer contracts as described above; a successor mechanism must
+# register its own checker (and proof fields) here before its artifacts can
+# pass.
 PROOF_CHECKERS = {
     "shared-buffer": _shared_buffer_proof_reasons,
-    "zero-copy": _shared_buffer_proof_reasons,
+    "ring-zerocopy": _ring_zerocopy_proof_reasons,
+    "zero-copy": _zero_copy_proof_reasons,
 }
 
 
@@ -160,8 +254,9 @@ def _provenance(artifact: dict) -> tuple[object, object]:
 
 def _claims(artifact: dict) -> list[str]:
     """Explicit claims plus implicit ones: an artifact that recorded shared
-    buffer traffic asserts the shared-buffer claim even without a claims
-    array, so its proof is checked too."""
+    buffer traffic asserts the shared-buffer claim, and an artifact that ran
+    the ring transport or recorded ring traffic asserts the ring-zerocopy
+    claim, even without a claims array, so their proof is checked too."""
     found: list[str] = []
     raw = artifact.get("claims")
     if isinstance(raw, list):
@@ -170,11 +265,21 @@ def _claims(artifact: dict) -> list[str]:
                 found.append(CLAIM_ALIASES.get(item.strip().lower(), item.strip().lower()))
     block = artifact.get("shared_buffer")
     implicit = isinstance(block, dict) and (block.get("replies_ok") or 0) > 0
+    implicit_ring = artifact.get("transport") == "ring_zerocopy"
+    ring = artifact.get("ring")
+    if isinstance(ring, dict) and _is_int(ring.get("replies_ok")) and ring["replies_ok"] > 0:
+        implicit_ring = True
     for entry in artifact.get("results") or []:
+        if not isinstance(entry, dict):
+            continue
         if entry.get("shared_buffer_used") or (entry.get("shared_buffer_hits") or 0) > 0:
             implicit = True
+        if _is_int(entry.get("ring_slot_hits")) and entry["ring_slot_hits"] > 0:
+            implicit_ring = True
     if implicit and "shared-buffer" not in found:
         found.append("shared-buffer")
+    if implicit_ring and "ring-zerocopy" not in found:
+        found.append("ring-zerocopy")
     return found
 
 
@@ -286,6 +391,17 @@ def validate(path: Path, artifact, allow_fixtures: bool = False) -> tuple[list[s
             f"{block['replies_fallback']} JSON fallback replies observed; "
             "publish fallback counts alongside shared-buffer counts"
         )
+
+    ring = artifact.get("ring")
+    if isinstance(ring, dict):
+        ring_fallbacks = sum(
+            ring[key] for key in ("replies_fallback", "send_fallbacks") if _is_int(ring.get(key))
+        )
+        if ring_fallbacks > 0:
+            warnings.append(
+                f"{ring_fallbacks} ring fallback sends/replies observed; "
+                "publish fallback counts alongside ring counts"
+            )
 
     return reasons, warnings
 

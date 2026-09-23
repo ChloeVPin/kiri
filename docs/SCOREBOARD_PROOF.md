@@ -23,11 +23,17 @@ The gate prints `REFUSED` with reasons and exits non-zero when an artifact:
 - lacks the measurement shape: no positive `runs` iteration count, no
   `warmup` count, no payload sizes, or a result row with neither
   `mean_from_batch_ms` (batch-mean) nor a numeric `rtt_ms` distribution.
-- asserts a claim it cannot prove. A `shared-buffer` or `zero-copy` claim
-  requires per-size `shared_buffer_used` / `shared_buffer_hits` counts plus
+- asserts a claim it cannot prove. A `shared-buffer` claim requires
+  per-size `shared_buffer_used` / `shared_buffer_hits` counts plus
   top-level `shared_buffer.replies_ok` and `shared_buffer.replies_fallback`
-  counts. A claim with zero observed shared-buffer replies, or with missing
-  proof fields, is refused. Fallbacks are legal but must be reported.
+  counts. A `ring-zerocopy` claim requires `transport: "ring_zerocopy"`,
+  a top-level `ring` block with `replies_ok` / `replies_fallback` /
+  `send_fallbacks` counts, and per-size `ring_slot_hits`. A `zero-copy`
+  claim is proved by the ring contract when the artifact ran the ring
+  transport or recorded ring traffic, and by the shared-buffer contract
+  otherwise. A claim with zero observed replies on its owning path, or
+  with missing proof fields, is refused. Fallbacks are legal but must be
+  reported.
 - is labeled `fixture` or `example`. Example data validates shape only under
   `--allow-fixtures` and can never reach a published table.
 - asserts a claim with no registered proof contract. Unknown claims are
@@ -49,9 +55,11 @@ Produced today by `kiri-host --ipc-bench` and by the Tauri baseline under
 | `runs` | measured iterations per size (positive) |
 | `warmup` | discarded warmup iterations per size |
 | `sizes_bytes` | payload sizes measured |
-| `results[]` | per size: `size_bytes`, `rtt_ms` distribution and/or `mean_from_batch_ms`, plus `shared_buffer_hits` / `shared_buffer_used` proof counts |
+| `results[]` | per size: `size_bytes`, `rtt_ms` distribution and/or `mean_from_batch_ms`, plus `shared_buffer_hits` / `shared_buffer_used` proof counts; ring runs also record `ring_slot_hits` / `ring_send_fallbacks` |
+| `transport` | `default` (JSON plus T008 shared buffers) or `ring_zerocopy` (slot-arena ring); required for ring claims |
 | `shared_buffer` | `threshold_bytes`, `replies_ok`, `replies_fallback` counts |
-| `claims` | optional list of asserted claims; evidence of shared-buffer traffic also counts as an implicit claim |
+| `ring` | `replies_ok`, `replies_fallback`, `send_fallbacks` counts; required for ring claims |
+| `claims` | optional list of asserted claims; `ring-zerocopy` is the canonical ring claim (`ring`, `ring_zerocopy` are aliases); evidence of shared-buffer or ring traffic also counts as an implicit claim |
 
 Both producers stamp `commit`, `runs`, `warmup`, `sizes_bytes`, and a `run`
 provenance block automatically. The `run` block is filled from the measuring
@@ -116,26 +124,54 @@ The gate tests run via `python -m unittest benchmark/test_scoreboard_gate.py`;
 wire it into the `correctness` workflow next to the existing
 `benchmark/test_harness.py` step.
 
-## Plugging in a new mechanism (zero-copy IPC)
+## Ring transport contract (`transport: "ring_zerocopy"`)
 
-When a new transport lands (for example a real zero-copy user-IPC path),
-its artifacts join the same gate rather than bypassing it:
+The zero-copy ring spike (`docs/ZEROCOPY_IPC_MOONSHOT.md`, one host-owned
+slot arena posted read-write, raw payload bytes in slots, tiny JSON control
+messages on `postMessage`) joins the same gate rather than bypassing it. A
+ring artifact is a `through-webview-ipc` artifact that additionally carries:
 
-1. Emit `name` (or `metric_class`) for the new class, the same provenance
+| field | meaning |
+|-------|---------|
+| `transport` | `ring_zerocopy`; the artifact must declare the wire it ran. A ring claim on a `default` or missing transport is refused |
+| `ring.replies_ok` | host-side replies served through ring slots (non-negative int) |
+| `ring.replies_fallback` | host-side replies that fell back to the JSON/T008 wire (non-negative int) |
+| `ring.send_fallbacks` | page-side sends that could not use a slot and fell back (non-negative int) |
+| `results[].ring_slot_hits` | per-size count of replies actually read back through slots (non-negative int, required on every result) |
+| `results[].ring_send_fallbacks` | per-size count of sends that fell back to the ordinary wire |
+
+`ring-zerocopy` is the canonical claim name; `ring`, `ring_zerocopy`, and
+`ringzerocopy` normalize to it. An artifact that declares
+`transport: "ring_zerocopy"` or records ring traffic asserts the claim
+implicitly, exactly like shared-buffer traffic does, so its proof is
+checked whether or not a `claims` array is present. A run with zero ring
+replies and zero slot hits proves nothing and is refused, even if the
+fallback counters moved.
+
+`zero-copy` is a dual-path claim. The ring contract proves it when
+`transport` is `ring_zerocopy` or the artifact recorded ring traffic; the
+WebView2 shared-buffer contract (T008) proves it otherwise. A `zero-copy`
+claim with zero shared-buffer evidence and zero ring evidence is always
+refused. An artifact that declares the ring transport must prove the ring
+path for a `zero-copy` claim; a run that fell back entirely should be
+republished with `transport: "default"` and a shared-buffer claim.
+
+When a further transport lands, it plugs in the same way:
+
+1. Emit `name` (or `metric_class`) for the class, the same provenance
    block (`run`, `commit`, `runs`, `warmup`, `sizes_bytes`), and per-size
    results.
 2. Emit per-size proof counts showing the mechanism was actually exercised
-   (the current example is `shared_buffer_used` / `shared_buffer_hits`) plus
-   top-level fallback counts.
+   plus top-level fallback counts.
 3. Register the metric class in `ACCEPTED_METRIC_CLASSES` and a proof
    checker in `PROOF_CHECKERS` in `benchmark/scoreboard_gate.py`. Until a
    claim has a registered proof contract, artifacts asserting it are
    refused. This is the intended behavior: unprovable claims do not ship.
 
-The `zero-copy` claim name is already reserved and currently maps to the
-shared-buffer proof contract, because the WebView2 shared buffer is the only
-implemented zero-copy-ish transport. A successor mechanism should register
-its own proof fields when it exists.
+`crates/kiri-runtime/examples/ring_cost.rs` is an in-process serialization
+cost model for the ring spike. It never touches a WebView, it is not a
+`through-webview-ipc` artifact, and its output must never feed the
+scoreboard or this gate.
 
 ## What this gate does not cover
 

@@ -66,6 +66,20 @@ def valid_artifact():
     }
 
 
+def ring_artifact():
+    artifact = valid_artifact()
+    artifact["transport"] = "ring_zerocopy"
+    artifact["ring"] = {
+        "replies_ok": 10,
+        "replies_fallback": 0,
+        "send_fallbacks": 0,
+    }
+    for entry in artifact["results"]:
+        entry["ring_slot_hits"] = 5
+        entry["ring_send_fallbacks"] = 0
+    return artifact
+
+
 def write_tmp(directory, artifact):
     path = Path(directory) / "artifact.json"
     path.write_text(json.dumps(artifact), encoding="utf-8")
@@ -182,6 +196,137 @@ class ScoreboardGateTests(unittest.TestCase):
             path = write_tmp(directory, artifact)
             completed = run_gate("check", str(path))
             self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_ring_zerocopy_fixture_is_accepted_with_allow_fixtures(self):
+        completed = run_gate(
+            "check",
+            "--allow-fixtures",
+            str(FIXTURES / "through-webview-ipc.ring-zerocopy.example.json"),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertIn("ACCEPTED", completed.stdout)
+
+    def test_ring_claim_without_proof_fixture_is_refused(self):
+        completed = run_gate(
+            "check",
+            "--allow-fixtures",
+            str(FIXTURES / "through-webview-ipc.ring-claim-no-proof.example.json"),
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("REFUSED", completed.stdout)
+        self.assertIn("ring", completed.stdout)
+
+    def test_ring_zerocopy_claim_with_proof_is_accepted(self):
+        artifact = ring_artifact()
+        artifact["claims"] = ["ring-zerocopy"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_ring_claim_aliases_normalize(self):
+        for alias in ("ring", "ring_zerocopy", "ringzerocopy"):
+            artifact = ring_artifact()
+            artifact["claims"] = [alias]
+            with tempfile.TemporaryDirectory() as directory:
+                path = write_tmp(directory, artifact)
+                completed = run_gate("check", str(path))
+                self.assertEqual(
+                    completed.returncode, 0,
+                    f"alias {alias}: {completed.stdout + completed.stderr}",
+                )
+
+    def test_ring_claim_with_default_transport_is_refused(self):
+        artifact = ring_artifact()
+        artifact["transport"] = "default"
+        artifact["claims"] = ["ring-zerocopy"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("transport 'ring_zerocopy'", completed.stdout)
+
+    def test_ring_claim_without_transport_is_refused(self):
+        artifact = ring_artifact()
+        del artifact["transport"]
+        artifact["claims"] = ["ring-zerocopy"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("transport 'ring_zerocopy'", completed.stdout)
+
+    def test_ring_zero_traffic_is_refused(self):
+        artifact = ring_artifact()
+        artifact["claims"] = ["ring-zerocopy"]
+        artifact["ring"]["replies_ok"] = 0
+        for entry in artifact["results"]:
+            entry["ring_slot_hits"] = 0
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("zero ring replies", completed.stdout)
+
+    def test_implicit_ring_claim_via_transport_requires_proof(self):
+        artifact = ring_artifact()
+        artifact.pop("claims", None)
+        del artifact["ring"]
+        for entry in artifact["results"]:
+            del entry["ring_slot_hits"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("ring", completed.stdout)
+
+    def test_implicit_ring_claim_via_traffic_requires_transport(self):
+        artifact = valid_artifact()
+        artifact.pop("claims", None)
+        artifact["transport"] = "default"
+        artifact["ring"] = {
+            "replies_ok": 4,
+            "replies_fallback": 0,
+            "send_fallbacks": 0,
+        }
+        artifact["results"][1]["ring_slot_hits"] = 4
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("transport 'ring_zerocopy'", completed.stdout)
+
+    def test_zero_copy_claim_uses_ring_path_on_ring_transport(self):
+        artifact = ring_artifact()
+        artifact["claims"] = ["zero-copy"]
+        del artifact["shared_buffer"]
+        for entry in artifact["results"]:
+            del entry["shared_buffer_hits"]
+            del entry["shared_buffer_used"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_zero_copy_claim_uses_shared_buffer_path_on_default_transport(self):
+        artifact = valid_artifact()
+        artifact["claims"] = ["zero-copy"]
+        artifact["shared_buffer"]["replies_ok"] = 10
+        artifact["results"][1]["shared_buffer_hits"] = 5
+        artifact["results"][1]["shared_buffer_used"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_zero_copy_claim_without_any_evidence_is_refused(self):
+        artifact = valid_artifact()
+        artifact["claims"] = ["zero-copy"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_tmp(directory, artifact)
+            completed = run_gate("check", str(path))
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("zero shared-buffer replies", completed.stdout)
 
     def test_stamp_then_check_passes(self):
         artifact = valid_artifact()
