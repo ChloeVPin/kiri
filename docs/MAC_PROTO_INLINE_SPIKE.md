@@ -113,15 +113,51 @@ completed with `transport=protocol_inline`, `answered_inline=96`,
 their protocol-thread timestamps. Every invoke was answered inside the
 protocol callback; nothing parked. Not publishable; mechanism proof only.
 
-Hosted `macos-latest`: pending (`controlled-performance` run on this
-branch tip, `ipc-kiri-proto-inline.json` in the `perf-macos-latest` and
-`perf-macos-latest-ipc` artifacts). Fill in same-run means for 262144 and
-1048574 bytes versus `ipc-tauri.json` and `ipc-kiri-proto-ring.json` when
-the run lands.
+Hosted `macos-latest` run 35929516881 on tip 33ad0b1
+(`ipc-kiri-proto-inline.json` in the `perf-macos-latest` and
+`perf-macos-latest-ipc` artifacts). Engagement was perfect:
+`answered_inline=1110`, `parked=0`, `replies_fallback=0`,
+`send_fallbacks=0`, `proto_ring_hits=180` per size. Same-run means (ms):
+
+| size_bytes | kiri default | kiri protocol_ring | kiri protocol_inline | tauri |
+|-----------:|-------------:|-------------------:|---------------------:|------:|
+| 262144 | 2.50 | 2.95 | 3.80 | 2.55 |
+| 1048574 | 9.40 | 6.85 | 11.95 | 5.80 |
+
+The hop-free path lost to Tauri at both sizes (1.49x and 2.06x) and lost
+to same-run protocol_ring (1.29x and 1.74x). Every reply went out on the
+protocol thread, so the loss is not an engagement artifact.
+
+Confirmation run 35930171087 on the same tip (`answered_inline=1110`,
+`parked=0`, zero fallbacks again):
+
+| size_bytes | kiri default | kiri protocol_ring | kiri protocol_inline | tauri |
+|-----------:|-------------:|-------------------:|---------------------:|------:|
+| 262144 | 4.80 | 2.45 | 3.00 | 1.80 |
+| 1048574 | 8.60 | 9.35 | 7.25 | 4.90 |
+
+Second-run ratios to Tauri: 1.67x at 256 KiB and 1.48x at ~1 MiB. The
+inline leg beat same-run protocol_ring and default at ~1 MiB this time,
+which says the hop is real but small and noisy relative to the remaining
+gap; it never beats Tauri.
+
+Working explanation for why the mechanism does not win: the WKWebView
+scheme-handler callback runs on a shared protocol thread, and under the
+bench's concurrency of 8 the synchronous decode + dispatch + frame copy
+on that thread serializes against the still-arriving request bodies and
+response deliveries of the other fetches. The parked path let the
+protocol thread return after a cheap enqueue while the tao loop did the
+heavy work, so WebKit's fetch pipeline overlapped with dispatch. Removing
+our hop exposes WebKit's scheme-handler pipeline itself as the floor.
 
 ## Kill / continue recommendation
 
-Pending hosted numbers. The mechanism is the one the protocol_ring kill
-report named as the next experiment: if answering on the protocol thread
-does not beat Tauri at 256 KiB and about 1 MiB, the residual gap is not
-the parked-responder hop and this line of mechanism is done.
+Kill. Two hosted `macos-latest` runs with perfect engagement
+(`answered_inline=1110`, `parked=0`, `replies_fallback=0`,
+`send_fallbacks=0`) show protocol_inline losing to Tauri at both 256 KiB
+and ~1 MiB. The parked-responder + event-loop hop was real but it was not
+the missing cost; the wry custom-protocol fetch leg is the floor on this
+contract, matching the honest-comparison principle in docs/PRODUCT.md.
+Keep the transport behind its opt-in flag for future mechanism work; the
+default path, protocol_ring, Windows ring_zerocopy, and all public
+scoreboard claims are unchanged.
