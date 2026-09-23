@@ -224,7 +224,9 @@ an attacker-signed release.
 
 ## CLI (id 66)
 
-Structured, allowlist-scoped argv. Exceeds Tauri's raw `process.argv`.
+Structured, allowlist-scoped argv. Exceeds Tauri's raw `process.argv`. `raw`
+is rebuilt through the same host allowlist (argv[0], positionals, and declared
+flags/options only), and `full` cannot widen past it.
 
 | Method | Id | Capability | Returns |
 |--------|----|------------|---------|
