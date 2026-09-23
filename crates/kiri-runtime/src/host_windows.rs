@@ -1066,11 +1066,16 @@ fn attach_windows_surface(
         Surface::Path => {
             router.with_path(kiri_core::path::PathService::new(kiri_core::path::PathState::new()))
         }
-        Surface::Http => router.with_http(kiri_core::http::HttpService::new(
-            std::sync::Arc::new(kiri_core::http::StdHttpClient),
-            kiri_core::http::HostAllowlist::new(http_allow_hosts()),
-            kiri_core::limits::Limits::default(),
-        )),
+        Surface::Http => router.with_http(
+            kiri_core::http::HttpService::new(
+                std::sync::Arc::new(kiri_core::http::StdHttpClient),
+                kiri_core::http::HostAllowlist::new(http_allow_hosts()),
+                kiri_core::limits::Limits::default(),
+            )
+            .with_methods(kiri_core::http::MethodAllowlist::new(
+                crate::host_policy::http_allow_methods(),
+            )),
+        ),
         Surface::Shell => router.with_shell(kiri_core::shell::ShellService::new(
             std::sync::Arc::new(crate::shell_ctl::WinShellRunner::new()),
             kiri_core::shell::ShellAllowlist::new(shell_allow_commands()),
@@ -1183,6 +1188,8 @@ fn attach_windows_surface(
 /// fetched even when the HTTP capability is granted. Expanded per-app config
 /// in a later task; for now this is the seed allowlist that proves the
 /// exceed-Tauri security axis (Tauri's http plugin has no host allowlist).
+/// Method allowlist is NOT duplicated here: Surface::Http wires
+/// `host_policy::http_allow_methods` (GET-only seed) via `with_methods`.
 fn http_allow_hosts() -> Vec<String> {
     vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
 }

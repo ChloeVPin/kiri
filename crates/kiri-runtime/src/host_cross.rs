@@ -237,11 +237,18 @@ pub(crate) fn build_host_router(
     // G-3: kiri.http.get surface (audit item 3). Capability-gated (HTTP) and
     // constrained to a host allowlist so a granted capability still cannot
     // reach an unapproved origin; responses are bulk-capped like kiri.fs.
-    .with_http(kiri_core::http::HttpService::new(
-        std::sync::Arc::new(kiri_core::http::StdHttpClient),
-        kiri_core::http::HostAllowlist::new(crate::host_policy::http_allow_hosts()),
-        kiri_core::limits::Limits::default(),
-    ))
+    // Method allowlist is explicit (seed GET-only): write verbs require
+    // expanding host_policy::http_allow_methods + with_methods.
+    .with_http(
+        kiri_core::http::HttpService::new(
+            std::sync::Arc::new(kiri_core::http::StdHttpClient),
+            kiri_core::http::HostAllowlist::new(crate::host_policy::http_allow_hosts()),
+            kiri_core::limits::Limits::default(),
+        )
+        .with_methods(kiri_core::http::MethodAllowlist::new(
+            crate::host_policy::http_allow_methods(),
+        )),
+    )
     // G-4: kiri.shell.run surface (audit item 4). Capability-gated (SHELL)
     // and constrained to a host allowlist so a granted capability still
     // cannot spawn an unapproved program; output is bulk-capped like kiri.fs.
