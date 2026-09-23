@@ -82,10 +82,10 @@ impl HostAllowlist {
     }
 }
 
-/// Host-configured set of permitted HTTP methods. Default-deny: Kiri only
-/// issues verbs explicitly listed by the native host, so a granted HTTP
-/// capability cannot be escalated into an unapproved verb (for example a POST
-/// used as a pivot). This is the second gate that makes kiri.http exceed
+/// Host-configured set of permitted HTTP methods. Default-deny at the list
+/// level (empty = no verbs). `HttpService::new` seeds GET-only so seed
+/// `kiri.http.get` usage works while POST/PUT/PATCH/DELETE require an
+/// explicit `with_methods` opt-in. This second gate makes kiri.http exceed
 /// Tauri's http plugin, which allows any method once the capability is present.
 #[derive(Debug, Clone, Default)]
 pub struct MethodAllowlist {
@@ -136,19 +136,17 @@ impl HttpService {
             client,
             allowlist: Arc::new(allowlist),
             limits: Arc::new(limits),
-            // Default verbs: GET/POST/PUT/PATCH/DELETE. The native host may
-            // tighten this with `with_methods` to drop verbs it will not sign.
-            methods: Arc::new(MethodAllowlist::new(vec![
-                "GET".to_string(),
-                "POST".to_string(),
-                "PUT".to_string(),
-                "PATCH".to_string(),
-                "DELETE".to_string(),
-            ])),
+            // Fail closed: default verbs are GET-only, matching the seed
+            // `kiri.http.get` surface. Hosts that need POST/PUT/PATCH/DELETE
+            // must opt in explicitly via `with_methods` so verb escalation on
+            // an allowlisted host cannot happen by accident.
+            methods: Arc::new(MethodAllowlist::new(vec!["GET".to_string()])),
         }
     }
 
-    /// Override the permitted HTTP methods (default: GET/POST/PUT/PATCH/DELETE).
+    /// Override the permitted HTTP methods (default: GET-only). Hosts that
+    /// need write verbs must pass them here; omitting this call keeps the
+    /// fail-closed GET-only posture.
     pub fn with_methods(mut self, methods: MethodAllowlist) -> Self {
         self.methods = Arc::new(methods);
         self
@@ -557,8 +555,100 @@ mod tests {
     }
 
     #[test]
+    fn default_method_allowlist_denies_post_to_allowlisted_host() {
+        // Locking test for the second-gate hole: grant HTTP + allowlisted host,
+        // leave methods at the HttpService::new default (GET-only). Verb
+        // escalation via HTTP_POST/PUT/PATCH/DELETE must ScopeDenied; GET still
+        // succeeds. Hosts never called with_methods before this fix, so the
+        // default is the production posture.
+        let svc = HttpService::new(
+            Arc::new(StubHttpClient { status: 200, body: b"ok".to_vec() }),
+            HostAllowlist::new(vec!["api.example.com".to_string()]),
+            Limits::default(),
+        );
+        let r = Router::new_with_limits(Limits::default()).with_http(svc);
+        let mut granted = CapabilityBits::empty();
+        granted.set(HTTP_CAPABILITY);
+        let url = serde_json::json!({ "url": "http://api.example.com/x" });
+        for (rid, id, label) in [
+            (1u64, command_id::HTTP_POST, "POST"),
+            (2, command_id::HTTP_PUT, "PUT"),
+            (3, command_id::HTTP_PATCH, "PATCH"),
+            (4, command_id::HTTP_DELETE, "DELETE"),
+        ] {
+            let denied = r.dispatch(
+                CallerId(1),
+                &granted,
+                &WireRequest::new(id, rid, 1, url.clone()),
+                &mut NoopTraceSink,
+            );
+            assert!(
+                denied.error.is_some(),
+                "{label} must be denied under default GET-only methods"
+            );
+            assert_eq!(
+                denied.error.as_ref().unwrap().code,
+                crate::error::ErrorCode::ScopeDenied,
+                "{label} must be ScopeDenied, got {:?}",
+                denied.error
+            );
+        }
+        let ok = r.dispatch(
+            CallerId(1),
+            &granted,
+            &WireRequest::new(command_id::HTTP_GET, 5, 1, url),
+            &mut NoopTraceSink,
+        );
+        assert!(ok.error.is_none(), "GET must still succeed on allowlisted host: {:?}", ok.error);
+    }
+
+    #[test]
+    fn with_methods_opt_in_allows_post() {
+        // Hosts that need write verbs must pass them via with_methods.
+        let svc = HttpService::new(
+            Arc::new(StubHttpClient { status: 201, body: b"created".to_vec() }),
+            HostAllowlist::new(vec!["api.example.com".to_string()]),
+            Limits::default(),
+        )
+        .with_methods(MethodAllowlist::new(vec!["GET".to_string(), "POST".to_string()]));
+        let r = Router::new_with_limits(Limits::default()).with_http(svc);
+        let mut granted = CapabilityBits::empty();
+        granted.set(HTTP_CAPABILITY);
+        let ok = r.dispatch(
+            CallerId(1),
+            &granted,
+            &WireRequest::new(
+                command_id::HTTP_POST,
+                1,
+                1,
+                serde_json::json!({ "url": "http://api.example.com/x" }),
+            ),
+            &mut NoopTraceSink,
+        );
+        assert!(ok.error.is_none(), "POST must succeed after with_methods opt-in: {:?}", ok.error);
+        assert_eq!(ok.payload.as_ref().unwrap()["status"], 201);
+        // PUT remains denied when not listed.
+        let denied = r.dispatch(
+            CallerId(1),
+            &granted,
+            &WireRequest::new(
+                command_id::HTTP_PUT,
+                2,
+                1,
+                serde_json::json!({ "url": "http://api.example.com/x" }),
+            ),
+            &mut NoopTraceSink,
+        );
+        assert_eq!(
+            denied.error.as_ref().unwrap().code,
+            crate::error::ErrorCode::ScopeDenied
+        );
+    }
+
+    #[test]
     fn post_requires_method_on_allowlist() {
-        // Service that only permits GET (POST is NOT on the method allowlist).
+        // Explicit with_methods(GET-only) still denies POST (hosts can tighten
+        // further than the GET-only default, including empty-deny-all).
         let svc = HttpService::new(
             Arc::new(StubHttpClient { status: 200, body: b"ok".to_vec() }),
             HostAllowlist::new(vec!["api.example.com".to_string()]),
@@ -568,7 +658,6 @@ mod tests {
         let r = Router::new_with_limits(Limits::default()).with_http(svc);
         let mut granted = CapabilityBits::empty();
         granted.set(HTTP_CAPABILITY);
-        // POST must be denied by the method allowlist even with the HTTP cap.
         let denied = r.dispatch(
             CallerId(1),
             &granted,
@@ -581,7 +670,10 @@ mod tests {
             &mut NoopTraceSink,
         );
         assert!(denied.error.is_some(), "POST must be denied when method not on allowlist");
-        // GET still works: the host allowlist is the only other gate.
+        assert_eq!(
+            denied.error.as_ref().unwrap().code,
+            crate::error::ErrorCode::ScopeDenied
+        );
         let ok = r.dispatch(
             CallerId(1),
             &granted,

@@ -61,7 +61,7 @@ pub use dialog::{DialogAllowlist, DialogKind, DialogService, DialogTemplate};
 pub use dispatch::{capability_bit, command_id, is_pong, ping_request, Router, StaticRouter};
 pub use error::{Error, ErrorCode, Result};
 pub use header::{ControlFlags, ControlHeader, MAGIC, PROTOCOL_VERSION};
-pub use http::{HostAllowlist, HttpService};
+pub use http::{HostAllowlist, HttpService, MethodAllowlist};
 pub use latency::{LatencyDistribution, LatencySummary};
 pub use limits::Limits;
 pub use notification::{NotificationAllowlist, NotificationService, NotificationTemplate};
