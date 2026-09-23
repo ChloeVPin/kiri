@@ -52,6 +52,16 @@ predicate over the decoded payload (mirroring `HttpService` /
 before args decode via a host-declared surface key. Arg-level surfaces deny
 at surface-mint rather than skipping their allowlist.
 
+The `ring_zerocopy` shared-slot reply leg consumes the same permit
+lifecycle. `handle_ring_request` publishes `STATE_RESPONSE` into the arena
+only when `ring_ipc::ring_reply_authorized` confirms a live `ZcIpcGrant`
+bound to the same caller and command, the identical check
+`grant.reply_bytes` applies to the T008 one-shot post. A denied request
+carries no grant, so its reply never enters shared memory and fails closed
+to the ordinary JSON wire. A granted reply whose slot write fails falls
+back to the wire with its grant forwarded, so the one-shot shared-buffer
+path can still carry it.
+
 ## Concrete comparison on this surface
 
 For the through-webview invoke plus shared-buffer reply of `kiri.http.get`:
@@ -96,7 +106,10 @@ Locking tests (all green): `missing_capability_denies_even_when_allowlist_admits
 `shared_buffer_reply_leg_requires_live_grant`,
 `through_webview_dispatch_is_double_gated_end_to_end`,
 `capability_only_surface_mints_with_bit_alone`,
-`args_surface_cannot_mint_without_decoded_args`.
+`args_surface_cannot_mint_without_decoded_args`. Ring reply-leg tests in
+`crates/kiri-runtime/src/ring_ipc.rs`:
+`ring_shared_buffer_reply_requires_live_grant`,
+`ring_reply_denies_without_grant`.
 
 ## Limits of the claim
 

@@ -396,7 +396,18 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
             (ring::RESP_JSON, json_body.as_slice())
         }
     };
-    let published = {
+    // The shared-slot reply leg accepts the same currency as the T008
+    // one-shot shared-buffer post: a live ZcIpcGrant bound to this caller +
+    // command. A denied request carries no grant, so its reply must never
+    // reach the arena and falls back to the ordinary JSON wire below.
+    let authorized = ring::ring_reply_authorized(
+        gated.grant.as_ref(),
+        rt.caller,
+        request.command_id,
+        body,
+        qpc_now_ns(),
+    );
+    let published = authorized && {
         let arena = unsafe { std::slice::from_raw_parts_mut(base, len) };
         match ring::slot_mut(arena, slot_index) {
             Some(slot) => {
@@ -417,11 +428,15 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         );
         rt.ring_ok = rt.ring_ok.saturating_add(1);
     } else {
+        // Unauthorized replies cross only the plain JSON wire with no
+        // shared-buffer authority; an authorized reply whose slot write
+        // failed keeps its grant for the T008 one-shot path.
+        let grant = if authorized { gated.grant.as_ref() } else { None };
         let used = post_wire_response(
             &rt.env,
             &rt.webview,
             &gated.response,
-            gated.grant.as_ref(),
+            grant,
             rt.caller,
             request.command_id,
         );
@@ -1027,12 +1042,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               } catch (err) {}
             });
           }
+          var domPosted = false;
           function postDom() {
+            if (domPosted) return;
+            domPosted = true;
             window.kiri.post({ type: 'ready', phase: 'dom' });
           }
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', postDom);
-          } else {
+          document.addEventListener('DOMContentLoaded', postDom);
+          if (document.readyState !== 'loading') {
             postDom();
           }
           requestAnimationFrame(function () {
@@ -1368,6 +1385,19 @@ fn handle_web_message(
                 rt.markers.record(Marker::AppReady, qpc_now_ns());
             }
             Some("frame") => {
+                // Same fallback as the dom arm: a painted frame implies
+                // navigation and DOM completed. If the frame message
+                // arrives without a prior dom message (observed on WebView2
+                // CI: first_animation_frame present, webview_ready and
+                // dom_ready absent), recover the earlier markers before
+                // arming smoke exit.
+                if !rt.markers.has(Marker::WebViewReady) {
+                    rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+                }
+                if !rt.markers.has(Marker::DomReady) {
+                    rt.markers.record(Marker::DomReady, qpc_now_ns());
+                    rt.markers.record(Marker::AppReady, qpc_now_ns());
+                }
                 rt.markers.record(Marker::FirstAnimationFrame, qpc_now_ns());
                 if rt.options.ipc_bench && !rt.ipc_bench_injected {
                     rt.ipc_bench_injected = true;
