@@ -179,6 +179,20 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Scoreboard proof gate (through-webview IPC artifacts)
+        if: always()
+        shell: bash
+        run: |
+          failed=0
+          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json; do
+            if [ -f "$f" ]; then
+              python3 benchmark/scoreboard_gate.py check "$f" || failed=1
+            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ]; then
+              echo "::warning::$f missing; no IPC artifact to validate"
+            fi
+          done
+          exit $failed
+
       - name: Record binary sizes
         shell: bash
         run: |

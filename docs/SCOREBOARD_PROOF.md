@@ -100,9 +100,12 @@ python3 benchmark/scoreboard_gate.py stamp artifacts/ipc-kiri.json \
 The `controlled-performance` workflow produces `artifacts/ipc-kiri.json` and
 `artifacts/ipc-tauri.json` on hosted runners, where the provenance
 environment variables are already set, so produced artifacts satisfy the
-contract. The recommended gate step runs after the IPC artifact upload and
-fails the job when a produced artifact is unpublishable; a missing artifact
-is an incomplete run, already surfaced by the bench steps:
+contract. The gate step is wired into that workflow: it runs after the IPC
+artifact upload and fails the job when a produced artifact is unpublishable.
+A missing `ipc-kiri.json` or `ipc-tauri.json` is a warning (an incomplete
+run, already surfaced by the bench steps). `artifacts/ipc-kiri-ring.json`
+is optional: it is checked when present and skipped quietly when absent, so
+runs before the ring dual-run lands stay quiet. The step as it runs in CI:
 
 ```yaml
       - name: Scoreboard proof gate (through-webview IPC artifacts)
@@ -110,19 +113,19 @@ is an incomplete run, already surfaced by the bench steps:
         shell: bash
         run: |
           failed=0
-          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json; do
+          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json; do
             if [ -f "$f" ]; then
               python3 benchmark/scoreboard_gate.py check "$f" || failed=1
-            else
+            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ]; then
               echo "::warning::$f missing; no IPC artifact to validate"
             fi
           done
           exit $failed
 ```
 
-The gate tests run via `python -m unittest benchmark/test_scoreboard_gate.py`;
-wire it into the `correctness` workflow next to the existing
-`benchmark/test_harness.py` step.
+The gate tests are also wired in: `python -m unittest
+benchmark/test_scoreboard_gate.py` runs in the `correctness` workflow next
+to the existing `benchmark/test_harness.py` step.
 
 ## Ring transport contract (`transport: "ring_zerocopy"`)
 
