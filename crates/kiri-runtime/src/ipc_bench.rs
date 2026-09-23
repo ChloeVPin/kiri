@@ -32,10 +32,14 @@ pub const DEFAULT_SIZES: &[usize] = &[0, 64, 1024, 16_384, 262_144, 1_048_574];
 /// `RingZerocopy` opts into the spike transport: one host-owned shared slot
 /// arena posted once with read-write access, raw payload bytes in slots, and
 /// tiny JSON control messages (see docs/ZEROCOPY_IPC_MOONSHOT.md).
+/// `ProtocolRing` is the wry/WKWebView spike transport: one binary request/
+/// reply frame per call over the `kiri://` app scheme (see
+/// docs/MAC_LARGE_PAYLOAD_SPIKE.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IpcBenchTransport {
     Default,
     RingZerocopy,
+    ProtocolRing,
 }
 
 impl IpcBenchTransport {
@@ -43,6 +47,7 @@ impl IpcBenchTransport {
         match self {
             IpcBenchTransport::Default => "default",
             IpcBenchTransport::RingZerocopy => "ring_zerocopy",
+            IpcBenchTransport::ProtocolRing => "protocol_ring",
         }
     }
 
@@ -50,6 +55,7 @@ impl IpcBenchTransport {
         match s {
             "default" | "json" | "t008_shared" => Some(IpcBenchTransport::Default),
             "ring_zerocopy" | "ring" => Some(IpcBenchTransport::RingZerocopy),
+            "protocol_ring" | "proto_ring" | "protocol" => Some(IpcBenchTransport::ProtocolRing),
             _ => None,
         }
     }
@@ -72,6 +78,7 @@ pub fn kiri_script(
 ) -> String {
     let sizes_json = serde_json::to_string(sizes).unwrap_or_else(|_| "[]".into());
     let want_ring = transport == IpcBenchTransport::RingZerocopy;
+    let want_proto_ring = transport == IpcBenchTransport::ProtocolRing;
     format!(
         r#"(function () {{
   if (window.__kiriIpcBenchStarted) return;
@@ -82,7 +89,8 @@ pub fn kiri_script(
   var SIZES = {sizes_json};
   var TIMEOUT = {timeout};
   var WANT_RING = {want_ring};
-  var TRANSPORT = WANT_RING ? "ring_zerocopy" : "default";
+  var WANT_PROTO_RING = {want_proto_ring};
+  var TRANSPORT = WANT_PROTO_RING ? "protocol_ring" : (WANT_RING ? "ring_zerocopy" : "default");
   var RING = {{
     GLOBAL_MAGIC: {global_magic},
     SLOT_MAGIC: {slot_magic},
@@ -98,6 +106,74 @@ pub fn kiri_script(
   window.__kiriRingHits = window.__kiriRingHits || 0;
   window.__kiriRingFallbacks = window.__kiriRingFallbacks || 0;
   window.__kiriRingSlots = window.__kiriRingSlots || {{}};
+  window.__kiriProtoReady = window.__kiriProtoReady || false;
+  window.__kiriProtoHits = window.__kiriProtoHits || 0;
+  window.__kiriProtoFallbacks = window.__kiriProtoFallbacks || 0;
+  var PROTO_URL = "kiri://localhost/.kiri/ipc/invoke";
+  var PROTO_PING_URL = "kiri://localhost/.kiri/ipc/ping";
+  function protoProbe() {{
+    return fetch(PROTO_PING_URL)
+      .then(function (r) {{ return r.ok; }})
+      .catch(function () {{ return false; }});
+  }}
+  // protocol_ring: one binary KRSL frame per direction over the app scheme.
+  // The request frame is header + raw payload bytes (UTF-8 or JSON codec);
+  // the reply frame is header + RESP_ECHO_STRING / RESP_JSON bytes. No
+  // megabyte JSON crosses postMessage or evaluate_script in either direction.
+  function sendProto(id, payload) {{
+    var codec, bytes;
+    if (typeof payload === "string") {{
+      codec = RING.CODEC_UTF8;
+      bytes = new TextEncoder().encode(payload);
+    }} else {{
+      codec = RING.CODEC_JSON;
+      bytes = new TextEncoder().encode(JSON.stringify(payload === undefined ? null : payload));
+    }}
+    var frame = new Uint8Array(RING.SLOT_HDR + bytes.length);
+    var dv = new DataView(frame.buffer);
+    dv.setUint32(0, RING.SLOT_MAGIC, true);
+    dv.setUint8(4, RING.STATE_REQ);
+    dv.setUint8(5, 0);
+    dv.setUint16(6, codec, true);
+    dv.setBigUint64(8, BigInt(++window.__kiriRingSeq), true);
+    dv.setBigUint64(16, BigInt(id), true);
+    dv.setUint32(24, 1, true);
+    dv.setUint32(28, bytes.length, true);
+    frame.set(bytes, RING.SLOT_HDR);
+    return fetch(PROTO_URL, {{
+      method: "POST",
+      body: frame,
+      headers: {{ "content-type": "application/octet-stream" }}
+    }})
+      .then(function (resp) {{
+        var ct = resp.headers.get("content-type") || "";
+        return resp.arrayBuffer().then(function (buf) {{ return [ct, new Uint8Array(buf)]; }});
+      }})
+      .then(function (pair) {{
+        var ct = pair[0], buf = pair[1];
+        var dec = new TextDecoder();
+        // application/json marks the ungated fallback leg: the body is the
+        // plain serialized WireResponse (denials and reply-leg refusals).
+        if (ct.indexOf("application/json") === 0) {{
+          return JSON.parse(dec.decode(buf));
+        }}
+        if (buf.length < RING.SLOT_HDR) throw new Error("short protocol_ring frame");
+        var rdv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        if (rdv.getUint32(0, true) !== RING.SLOT_MAGIC) throw new Error("bad slot magic");
+        if (rdv.getUint8(4) !== RING.STATE_RESP) throw new Error("bad slot state");
+        var rid = Number(rdv.getBigUint64(16, true));
+        var flags = rdv.getUint8(5);
+        var plen = rdv.getUint32(28, true);
+        if (RING.SLOT_HDR + plen > buf.length) throw new Error("declared payload out of bounds");
+        var out = buf.subarray(RING.SLOT_HDR, RING.SLOT_HDR + plen);
+        window.__kiriProtoHits++;
+        if (flags === RING.RESP_ECHO) {{
+          return {{ request_id: rid,
+            payload: {{ pong: true, echo: dec.decode(out) }} }};
+        }}
+        return JSON.parse(dec.decode(out));
+      }});
+  }}
   function ringReady() {{ return !!window.__kiriRing; }}
   function waitRing(ms) {{
     return new Promise(function (resolve) {{
@@ -250,6 +326,20 @@ pub fn kiri_script(
           resolve(resp);
         }}
       }};
+      if (WANT_PROTO_RING) {{
+        if (window.__kiriProtoReady) {{
+          sendProto(id, payload).then(function (resp) {{
+            if (window.kiri && window.kiri.onResponse) window.kiri.onResponse(resp);
+          }}, function (err) {{
+            if (window.kiri && window.kiri.onResponse) {{
+              window.kiri.onResponse({{ request_id: id,
+                error: {{ message: String((err && err.message) || err) }} }});
+            }}
+          }});
+          return;
+        }}
+        window.__kiriProtoFallbacks++;
+      }}
       if (WANT_RING) {{
         if (ringReady() && sendRing(id, payload)) return;
         window.__kiriRingFallbacks++;
@@ -276,6 +366,7 @@ pub fn kiri_script(
   }}
   async function run() {{
     if (WANT_RING) await waitRing(2000);
+    if (WANT_PROTO_RING) window.__kiriProtoReady = await protoProbe();
     var results = [];
     for (var s = 0; s < SIZES.length; s++) {{
       var size = SIZES[s];
@@ -287,6 +378,8 @@ pub fn kiri_script(
       var hitsBefore = window.__kiriSharedBufferHits || 0;
       var ringBefore = window.__kiriRingHits || 0;
       var ringFbBefore = window.__kiriRingFallbacks || 0;
+      var protoBefore = window.__kiriProtoHits || 0;
+      var protoFbBefore = window.__kiriProtoFallbacks || 0;
       var tBatch = performance.now();
       for (var i = 0; i < RUNS; i++) {{
         var t0 = performance.now();
@@ -305,6 +398,8 @@ pub fn kiri_script(
       var hits = (window.__kiriSharedBufferHits || 0) - hitsBefore;
       var ringHits = (window.__kiriRingHits || 0) - ringBefore;
       var ringFb = (window.__kiriRingFallbacks || 0) - ringFbBefore;
+      var protoHits = (window.__kiriProtoHits || 0) - protoBefore;
+      var protoFb = (window.__kiriProtoFallbacks || 0) - protoFbBefore;
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
@@ -315,12 +410,15 @@ pub fn kiri_script(
         shared_buffer_hits: hits,
         shared_buffer_used: hits > 0,
         ring_slot_hits: ringHits,
-        ring_send_fallbacks: ringFb
+        ring_send_fallbacks: ringFb,
+        proto_ring_hits: protoHits,
+        proto_ring_send_fallbacks: protoFb
       }});
     }}
     post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT,
       runs: RUNS, warmup: WARMUP,
       ring_send_fallbacks: window.__kiriRingFallbacks || 0,
+      proto_ring_send_fallbacks: window.__kiriProtoFallbacks || 0,
       results: results }});
   }}
   run().catch(function (err) {{
@@ -524,6 +622,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
             let shared_used = item.get("shared_buffer_used").and_then(|v| v.as_bool());
             let ring_hits = item.get("ring_slot_hits").and_then(|v| v.as_u64());
             let ring_fb = item.get("ring_send_fallbacks").and_then(|v| v.as_u64());
+            let proto_hits = item.get("proto_ring_hits").and_then(|v| v.as_u64());
+            let proto_fb = item.get("proto_ring_send_fallbacks").and_then(|v| v.as_u64());
             let mut summary = summarize(&rtt);
             if let Some(obj) = summary.as_object_mut() {
                 if let Some(v) = batch_ms {
@@ -544,6 +644,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 "shared_buffer_used": shared_used.unwrap_or(false),
                 "ring_slot_hits": ring_hits,
                 "ring_send_fallbacks": ring_fb,
+                "proto_ring_hits": proto_hits,
+                "proto_ring_send_fallbacks": proto_fb,
                 "summary": summary,
             }));
         }
@@ -577,6 +679,11 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
             "replies_ok": raw.get("ring_replies_ok").cloned().unwrap_or(json!(0)),
             "replies_fallback": raw.get("ring_replies_fallback").cloned().unwrap_or(json!(0)),
             "send_fallbacks": raw.get("ring_send_fallbacks").cloned().unwrap_or(json!(0)),
+        },
+        "protocol_ring": {
+            "replies_ok": raw.get("protocol_ring_replies_ok").cloned().unwrap_or(json!(0)),
+            "replies_fallback": raw.get("protocol_ring_replies_fallback").cloned().unwrap_or(json!(0)),
+            "send_fallbacks": raw.get("proto_ring_send_fallbacks").cloned().unwrap_or(json!(0)),
         },
         "results": results_out,
     });
@@ -632,6 +739,23 @@ mod tests {
         assert!(script.contains("sharedbufferreceived"));
         assert!(script.contains("RING.GLOBAL_MAGIC"));
         assert!(script.contains("waitRing(2000)"));
+    }
+
+    #[test]
+    fn kiri_protocol_ring_script_enables_protocol_transport() {
+        let script = kiri_script(7, 2, DEFAULT_SIZES, IpcBenchTransport::ProtocolRing);
+        assert!(script.contains("WANT_PROTO_RING = true"));
+        assert!(script.contains("\"protocol_ring\""));
+        assert!(script.contains("kiri://localhost/.kiri/ipc/invoke"));
+        assert!(script.contains("kiri://localhost/.kiri/ipc/ping"));
+        assert!(script.contains("sendProto(id, payload)"));
+        assert!(script.contains("proto_ring_hits"));
+        assert!(script.contains("application/octet-stream"));
+        // Same framing the Windows ring uses: the page must emit the slot
+        // magic and request/response state bytes in its frames.
+        assert!(script.contains("RING.SLOT_MAGIC"));
+        assert!(script.contains("RING.STATE_REQ"));
+        assert!(script.contains("RING.STATE_RESP"));
     }
 
     #[test]

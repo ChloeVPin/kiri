@@ -80,7 +80,9 @@ fn main() {
                 {
                     Some(t) => ipc_bench_transport = t,
                     None => {
-                        eprintln!("unknown --ipc-bench-transport (want default|ring_zerocopy)");
+                        eprintln!(
+                            "unknown --ipc-bench-transport (want default|ring_zerocopy|protocol_ring)"
+                        );
                         std::process::exit(2);
                     }
                 }
@@ -103,7 +105,7 @@ fn main() {
                      usage: kiri-host [--frontend DIR] [--markers-out PATH] [--smoke]\n\
                      \x20  [--ipc-bench] [--ipc-bench-runs N] [--ipc-bench-out PATH]\n\
                      \x20  [--ipc-bench-sizes 0,64,1024,...]\n\
-                     \x20  [--ipc-bench-transport default|ring_zerocopy]\n\
+                     \x20  [--ipc-bench-transport default|ring_zerocopy|protocol_ring]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
                      \x20  [--exit-after-ready-ms N] [--watchdog-ms N]\n\
                      \x20  watchdog-ms 0 disables the ready watchdog"

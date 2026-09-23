@@ -286,6 +286,84 @@ pub fn release_slot(slot: &mut [u8]) {
     slot[OFF_STATE] = STATE_FREE;
 }
 
+/// Borrow the raw bytes of the echoed string for a `kiri.ping` response so a
+/// binary reply frame can carry them verbatim (RESP_ECHO_STRING) instead of a
+/// JSON encoding the page would have to parse. Shared by every ring-flavored
+/// reply leg (Windows slot publish, protocol_ring frame).
+pub fn response_echo_bytes(response: &kiri_core::wire::WireResponse) -> Option<&[u8]> {
+    if response.error.is_some() {
+        return None;
+    }
+    let serde_json::Value::Object(map) = response.payload.as_ref()? else {
+        return None;
+    };
+    if map.get("pong") != Some(&serde_json::Value::Bool(true)) {
+        return None;
+    }
+    match map.get("echo") {
+        Some(serde_json::Value::String(s)) => Some(s.as_bytes()),
+        _ => None,
+    }
+}
+
+/// Read one request frame carried on a byte channel. Same header fields and
+/// checks as `read_request`, but the buffer is exactly one frame (header +
+/// declared payload) rather than a padded slot inside an arena. Used by
+/// transports that carry slot framing over a request/response channel
+/// instead of shared memory (protocol_ring).
+pub fn read_request_frame(buf: &[u8]) -> Result<(SlotRequest, &[u8]), &'static str> {
+    if buf.len() < SLOT_HEADER_BYTES {
+        return Err("frame smaller than slot header");
+    }
+    if get_u32(buf, OFF_MAGIC) != SLOT_MAGIC {
+        return Err("bad slot magic");
+    }
+    if buf[OFF_STATE] != STATE_REQUEST {
+        return Err("frame is not in request state");
+    }
+    let payload_len = get_u32(buf, OFF_PAYLOAD_LEN);
+    if payload_len as usize > SLOT_PAYLOAD_CAP {
+        return Err("declared payload_len exceeds slot capacity");
+    }
+    if buf.len() != SLOT_HEADER_BYTES + payload_len as usize {
+        return Err("frame length does not match declared payload_len");
+    }
+    Ok((
+        SlotRequest {
+            seq: get_u64(buf, OFF_SEQ),
+            request_id: get_u64(buf, OFF_REQUEST_ID),
+            command_id: get_u32(buf, OFF_COMMAND_ID),
+            codec: get_u16(buf, OFF_CODEC),
+            payload_len,
+        },
+        &buf[SLOT_HEADER_BYTES..],
+    ))
+}
+
+/// Encode one response frame (header + payload) into a fresh buffer. Same
+/// fields and write order as `publish_response`, but sized to the payload
+/// instead of a padded arena slot. Used by byte-channel reply legs
+/// (protocol_ring); the `flags` byte selects RESP_JSON or RESP_ECHO_STRING.
+pub fn encode_response_frame(
+    seq: u64,
+    request_id: u64,
+    flags: u8,
+    payload: &[u8],
+) -> Result<Vec<u8>, &'static str> {
+    if payload.len() > SLOT_PAYLOAD_CAP {
+        return Err("response exceeds slot capacity");
+    }
+    let mut buf = vec![0u8; SLOT_HEADER_BYTES + payload.len()];
+    buf[SLOT_HEADER_BYTES..].copy_from_slice(payload);
+    put_u32(&mut buf, OFF_MAGIC, SLOT_MAGIC);
+    buf[OFF_STATE] = STATE_RESPONSE;
+    buf[OFF_FLAGS] = flags;
+    put_u64(&mut buf, OFF_SEQ, seq);
+    put_u64(&mut buf, OFF_REQUEST_ID, request_id);
+    put_u32(&mut buf, OFF_PAYLOAD_LEN, payload.len() as u32);
+    Ok(buf)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,6 +484,85 @@ mod tests {
         let slot = slot_ref(&buf, 5).unwrap();
         assert!(read_response_header(slot, 9).is_ok());
         assert!(read_response_header(slot, 10).is_err());
+    }
+
+    #[test]
+    fn request_frame_roundtrips_through_response_frame() {
+        // The page builds a frame exactly like the injected JS does: header +
+        // raw payload, no arena padding.
+        let payload = b"aaaa";
+        let mut frame = vec![0u8; SLOT_HEADER_BYTES + payload.len()];
+        frame[SLOT_HEADER_BYTES..].copy_from_slice(payload);
+        put_u32(&mut frame, OFF_MAGIC, SLOT_MAGIC);
+        frame[OFF_STATE] = STATE_REQUEST;
+        frame[OFF_FLAGS] = 0;
+        put_u16(&mut frame, OFF_CODEC, CODEC_UTF8_STRING);
+        put_u64(&mut frame, OFF_SEQ, 9);
+        put_u64(&mut frame, OFF_REQUEST_ID, 77);
+        put_u32(&mut frame, OFF_COMMAND_ID, 1);
+        put_u32(&mut frame, OFF_PAYLOAD_LEN, payload.len() as u32);
+
+        let (req, got) = read_request_frame(&frame).unwrap();
+        assert_eq!(req.seq, 9);
+        assert_eq!(req.request_id, 77);
+        assert_eq!(req.command_id, 1);
+        assert_eq!(req.codec, CODEC_UTF8_STRING);
+        assert_eq!(got, payload);
+
+        let out = encode_response_frame(req.seq, req.request_id, RESP_ECHO_STRING, got).unwrap();
+        assert_eq!(get_u32(&out, OFF_MAGIC), SLOT_MAGIC);
+        assert_eq!(out[OFF_STATE], STATE_RESPONSE);
+        assert_eq!(out[OFF_FLAGS], RESP_ECHO_STRING);
+        assert_eq!(get_u64(&out, OFF_SEQ), 9);
+        assert_eq!(get_u64(&out, OFF_REQUEST_ID), 77);
+        assert_eq!(get_u32(&out, OFF_PAYLOAD_LEN) as usize, payload.len());
+        assert_eq!(&out[SLOT_HEADER_BYTES..], payload);
+    }
+
+    #[test]
+    fn read_request_frame_rejects_bad_states_and_lengths() {
+        assert!(read_request_frame(&[]).is_err());
+        assert!(read_request_frame(&[0u8; SLOT_HEADER_BYTES]).is_err());
+        // Valid header, wrong state.
+        let mut frame = vec![0u8; SLOT_HEADER_BYTES];
+        put_u32(&mut frame, OFF_MAGIC, SLOT_MAGIC);
+        frame[OFF_STATE] = STATE_RESPONSE;
+        assert!(read_request_frame(&frame).is_err());
+        // Valid request header, declared payload longer than the frame.
+        frame[OFF_STATE] = STATE_REQUEST;
+        put_u32(&mut frame, OFF_PAYLOAD_LEN, 10);
+        assert!(read_request_frame(&frame).is_err());
+        // Declared payload over the slot capacity.
+        put_u32(&mut frame, OFF_PAYLOAD_LEN, SLOT_PAYLOAD_CAP as u32 + 1);
+        assert!(read_request_frame(&frame).is_err());
+        // Corrupt magic.
+        put_u32(&mut frame, OFF_PAYLOAD_LEN, 0);
+        frame[0] = b'X';
+        assert!(read_request_frame(&frame).is_err());
+    }
+
+    #[test]
+    fn encode_response_frame_enforces_capacity() {
+        let big = vec![0u8; SLOT_PAYLOAD_CAP + 1];
+        assert!(encode_response_frame(1, 2, RESP_JSON, &big).is_err());
+        let exact = vec![7u8; SLOT_PAYLOAD_CAP];
+        assert_eq!(
+            encode_response_frame(1, 2, RESP_JSON, &exact).unwrap().len(),
+            SLOT_HEADER_BYTES + SLOT_PAYLOAD_CAP
+        );
+    }
+
+    #[test]
+    fn response_echo_bytes_only_for_pong_echo_strings() {
+        use kiri_core::wire::WireResponse;
+        let pong = WireResponse::ok(1, serde_json::json!({"pong": true, "echo": "abc"}));
+        assert_eq!(response_echo_bytes(&pong), Some(b"abc".as_slice()));
+        let no_echo = WireResponse::ok(1, serde_json::json!({"pong": true}));
+        assert!(response_echo_bytes(&no_echo).is_none());
+        let not_pong = WireResponse::ok(1, serde_json::json!({"echo": "abc"}));
+        assert!(response_echo_bytes(&not_pong).is_none());
+        let err = WireResponse::err(1, kiri_core::error::Error::protocol_error("x"));
+        assert!(response_echo_bytes(&err).is_none());
     }
 
     fn ping_caps() -> CapabilityBits {

@@ -254,19 +254,7 @@ fn post_control_json(
 /// the reply slot can carry them verbatim (RESP_ECHO_STRING) instead of a
 /// JSON encoding the page would have to parse.
 fn ring_echo_bytes(response: &WireResponse) -> Option<&[u8]> {
-    if response.error.is_some() {
-        return None;
-    }
-    let serde_json::Value::Object(map) = response.payload.as_ref()? else {
-        return None;
-    };
-    if map.get("pong") != Some(&serde_json::Value::Bool(true)) {
-        return None;
-    }
-    match map.get("echo") {
-        Some(serde_json::Value::String(s)) => Some(s.as_bytes()),
-        _ => None,
-    }
+    crate::ring_ipc::response_echo_bytes(response)
 }
 
 /// Handle a `{type:"cmd", ring:{slot, request_id}}` control message: the page
