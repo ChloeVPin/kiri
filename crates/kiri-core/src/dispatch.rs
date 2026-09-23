@@ -454,6 +454,10 @@ struct Command {
 pub struct Router {
     commands: HashMap<u32, Command>,
     limits: Limits,
+    /// Channel allowlist shared with legacy `EVENT_EMIT` / `EVENT_LISTEN`.
+    /// Starts empty (fail-closed). `with_event` installs the host allowlist so
+    /// both the R-3 legacy ids and the audit-16 surface enforce the same set.
+    event_channel_allowlist: Arc<Mutex<crate::event::EventAllowlist>>,
 }
 
 impl Default for Router {
@@ -464,7 +468,11 @@ impl Default for Router {
 
 impl Router {
     pub fn new() -> Self {
-        let mut router = Router { commands: HashMap::new(), limits: Limits::default() };
+        let mut router = Router {
+            commands: HashMap::new(),
+            limits: Limits::default(),
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        };
         router.register_ping();
         router
     }
@@ -473,12 +481,20 @@ impl Router {
     /// built-in commands come exclusively from loaded plugins (R-2), proving the
     /// registration path instead of relying on inline defaults.
     pub fn new_empty() -> Self {
-        Router { commands: HashMap::new(), limits: Limits::default() }
+        Router {
+            commands: HashMap::new(),
+            limits: Limits::default(),
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        }
     }
 
     /// Build an empty router with an explicit limit set (tests + tuning).
     pub fn new_with_limits(limits: Limits) -> Self {
-        Router { commands: HashMap::new(), limits }
+        Router {
+            commands: HashMap::new(),
+            limits,
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        }
     }
 
     /// Attach a shared diagnostics sink and register the `kiri.diag` command.
@@ -562,6 +578,10 @@ impl Router {
     /// host facts and never touch the filesystem or network. The event bus is
     /// an in-process broadcast so the trusted frontend and native tooling share
     /// one channel (parity with Tauri's `event` module, R-3).
+    ///
+    /// Legacy `EVENT_EMIT` / `EVENT_LISTEN` consult the shared channel
+    /// allowlist (installed by [`Self::with_event`]); with no allowlist they
+    /// fail closed (`ScopeDenied`), matching the restricted audit-16 surface.
     pub fn with_platform(mut self, events: crate::platform::EventBus) -> Self {
         let mut os_required = CapabilityBits::empty();
         os_required.set(capability_bit::PLATFORM);
@@ -594,6 +614,7 @@ impl Router {
         );
 
         let emit_bus = events.clone();
+        let emit_allow = self.event_channel_allowlist.clone();
         let mut emit_required = CapabilityBits::empty();
         emit_required.set(capability_bit::EVENT);
         self.register(
@@ -603,6 +624,9 @@ impl Router {
                 let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
                     Error::protocol_error("kiri.event.emit requires string event")
                 })?;
+                let allow = emit_allow.lock().unwrap();
+                crate::event::ensure_channel_allowed(&allow, name, "emit")?;
+                drop(allow);
                 let data = payload.get("payload").cloned().unwrap_or(serde_json::Value::Null);
                 emit_bus.publish(name, data);
                 Ok(serde_json::json!({ "emitted": true }))
@@ -610,6 +634,7 @@ impl Router {
         );
 
         let listen_bus = events.clone();
+        let listen_allow = self.event_channel_allowlist.clone();
         let mut listen_required = CapabilityBits::empty();
         listen_required.set(capability_bit::EVENT);
         self.register(
@@ -619,6 +644,9 @@ impl Router {
                 let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
                     Error::protocol_error("kiri.event.listen requires string event")
                 })?;
+                let allow = listen_allow.lock().unwrap();
+                crate::event::ensure_channel_allowed(&allow, name, "listen")?;
+                drop(allow);
                 let id = listen_bus.subscribe(name);
                 Ok(serde_json::json!({ "listener_id": id }))
             }),
@@ -859,6 +887,10 @@ impl Router {
     /// cross-module events. Exceeds Tauri's unrestricted event module on the
     /// security axis.
     pub fn with_event(mut self, service: crate::event::EventService) -> Self {
+        // Install the identical allowlist into the legacy EVENT_EMIT/LISTEN
+        // handlers registered by `with_platform` (shared Arc). Fail-closed
+        // until this runs: an empty default deny-list is already in place.
+        *self.event_channel_allowlist.lock().unwrap() = (*service.allowlist()).clone();
         for (id, required, handler) in crate::event::event_handlers(service) {
             self.register(id, required, handler);
         }
@@ -1362,7 +1394,18 @@ mod tests {
 
     fn platform_router() -> (Router, crate::platform::EventBus) {
         let bus = crate::platform::EventBus::new();
-        let router = Router::new().with_platform(bus.clone());
+        // Host-equivalent: legacy R-3 + allowlisted audit-16 on one bus.
+        // Include "greeting" so the legacy emit/listen round-trip test can
+        // exercise the happy path without reopening the allowlist hole.
+        let allow = crate::event::EventAllowlist::new(vec![crate::event::AllowedChannel {
+            name: "greeting".to_string(),
+        }]);
+        let router =
+            Router::new().with_platform(bus.clone()).with_event(crate::event::EventService::new(
+                std::sync::Arc::new(bus.clone()),
+                allow,
+                Limits::default(),
+            ));
         (router, bus)
     }
 
