@@ -9,7 +9,7 @@ Minimal mapping for the common Tauri surface. Kiri reuses the same OS webviews; 
 | `tauri::command` + `#[tauri::command]` | `kiri_core::dispatch::Router::with_*` + `CapabilityBits` | Host owns capability mask; JS cannot self-grant |
 | `fs` plugin (unscoped) | `kiri.fs.*` + `PathScope` + `GlobScope` | Host allowlist + sandbox |
 | `http` plugin | `kiri.http.*` + `HostAllowlist` | Exact host allowlist, bulk-capped |
-| `shell` plugin | `kiri.shell.run` + `ShellAllowlist` | Exact program + arg prefix |
+| `shell` plugin | `kiri.shell.run` + `ShellAllowlist` | Exact program + exact argv |
 | `globalShortcut` | `kiri.shortcut.register` + `ShortcutAllowlist` | Exact accelerator allowlist |
 | `notification` | `kiri.notification.show` + template allowlist | No free-form title/body from JS |
 | `store` | `kiri.store.*` + namespace allowlist | One namespace per module |

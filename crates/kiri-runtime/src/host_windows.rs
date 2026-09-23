@@ -1188,7 +1188,7 @@ fn http_allow_hosts() -> Vec<String> {
 }
 
 /// Host allowlist for `kiri.shell.run` (audit item 4, G-4). Default-deny:
-/// only the exact program + arg prefix below may spawn. Inverts Tauri's shell
+/// only the exact program + exact argv below may spawn. Inverts Tauri's shell
 /// plugin trust model: arbitrary execution is refused unless explicitly listed.
 /// Host glob allowlist for `kiri.fs.*` (audit item 6, fs glob scope). Same model
 /// as the cross backend: only paths matching a pattern relative to the fs root may
