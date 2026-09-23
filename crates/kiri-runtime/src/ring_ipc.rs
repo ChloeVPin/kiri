@@ -18,6 +18,9 @@
 //! its response, so request and reply share the same index and no separate
 //! reply arena is needed.
 
+use kiri_core::caller::CallerId;
+use kiri_core::zc_ipc_gate::ZcIpcGrant;
+
 /// Global header magic: "KRIR" little-endian.
 pub const GLOBAL_MAGIC: u32 = u32::from_le_bytes(*b"KRIR");
 /// Slot header magic: "KRSL" little-endian.
@@ -242,6 +245,23 @@ pub fn publish_response(
     Ok(())
 }
 
+/// Host-side reply-leg gate for the shared-slot write. The host may publish
+/// a response into the arena only while a live [`ZcIpcGrant`] bound to
+/// `caller` + `command_id` releases the reply bytes. A denied request
+/// carries no grant, and an expired or misbound grant fails closed the same
+/// way: the slot must not be written and the reply takes the ordinary JSON
+/// wire. This is the same authority check the T008 one-shot shared-buffer
+/// post applies, so both shared-memory reply legs accept one currency.
+pub fn ring_reply_authorized(
+    grant: Option<&ZcIpcGrant>,
+    caller: CallerId,
+    command_id: u32,
+    body: &[u8],
+    now_ns: u64,
+) -> bool {
+    grant.and_then(|g| g.reply_bytes(caller, command_id, body, now_ns)).is_some()
+}
+
 /// Page-side read of a response slot: (flags, payload_len) if the slot holds
 /// a complete response for `request_id`.
 pub fn read_response_header(slot: &[u8], request_id: u64) -> Result<(u8, u32), &'static str> {
@@ -269,6 +289,12 @@ pub fn release_slot(slot: &mut [u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kiri_core::capabilities::CapabilityBits;
+    use kiri_core::dispatch::{capability_bit, command_id, Router};
+    use kiri_core::trace::NoopTraceSink;
+    use kiri_core::wire::WireRequest;
+    use kiri_core::zc_ipc_gate::ZcIpcGate;
+    use serde_json::Value;
 
     fn arena() -> Vec<u8> {
         let mut buf = vec![0u8; RING_BUFFER_BYTES as usize];
@@ -380,5 +406,64 @@ mod tests {
         let slot = slot_ref(&buf, 5).unwrap();
         assert!(read_response_header(slot, 9).is_ok());
         assert!(read_response_header(slot, 10).is_err());
+    }
+
+    fn ping_caps() -> CapabilityBits {
+        let mut c = CapabilityBits::empty();
+        c.set(capability_bit::PING);
+        c
+    }
+
+    const T0: u64 = 1_000_000_000;
+
+    // The ring shared-slot write is a gated object: it runs only while a
+    // grant minted + redeemed for this caller and command is still live.
+    // Wrong caller, wrong command, and expiry all deny the arena write.
+    #[test]
+    fn ring_shared_buffer_reply_requires_live_grant() {
+        let router = Router::new();
+        let mut gate = ZcIpcGate::with_ttl_ns(1_000);
+        let req = WireRequest::new(command_id::PING, 1, 1, Value::Null);
+        let permit = gate.mint(&router, CallerId(1), &ping_caps(), &req, T0).unwrap();
+        let grant = gate.redeem(&permit, CallerId(1), &req, T0).unwrap();
+        let body = b"{}";
+        assert!(ring_reply_authorized(Some(&grant), CallerId(1), command_id::PING, body, T0));
+        assert!(!ring_reply_authorized(Some(&grant), CallerId(2), command_id::PING, body, T0));
+        assert!(!ring_reply_authorized(Some(&grant), CallerId(1), command_id::HTTP_GET, body, T0));
+        assert!(!ring_reply_authorized(
+            Some(&grant),
+            CallerId(1),
+            command_id::PING,
+            body,
+            T0 + 1_001
+        ));
+    }
+
+    // A denied dispatch produces an error response and no grant; the reply
+    // decision must then refuse the shared-slot write so the denial can only
+    // cross on the ordinary JSON wire. A bare missing grant denies the same
+    // way.
+    #[test]
+    fn ring_reply_denies_without_grant() {
+        let router = Router::new();
+        let mut gate = ZcIpcGate::new();
+        let out = gate.dispatch_through_webview(
+            &router,
+            CallerId(1),
+            &CapabilityBits::empty(),
+            &WireRequest::new(command_id::PING, 1, 1, Value::Null),
+            &mut NoopTraceSink,
+            T0,
+        );
+        assert!(out.response.error.is_some());
+        assert!(out.grant.is_none(), "a denied dispatch must not carry a grant");
+        assert!(!ring_reply_authorized(
+            out.grant.as_ref(),
+            CallerId(1),
+            command_id::PING,
+            b"{}",
+            T0
+        ));
+        assert!(!ring_reply_authorized(None, CallerId(1), command_id::PING, b"{}", T0));
     }
 }
