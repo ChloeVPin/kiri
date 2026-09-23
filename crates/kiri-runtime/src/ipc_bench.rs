@@ -319,11 +319,13 @@ pub fn kiri_script(
       }});
     }}
     post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT,
+      runs: RUNS, warmup: WARMUP,
       ring_send_fallbacks: window.__kiriRingFallbacks || 0,
       results: results }});
   }}
   run().catch(function (err) {{
-    post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT, error: String(err) }});
+    post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT,
+      runs: RUNS, warmup: WARMUP, error: String(err) }});
   }});
 }})();"#,
         runs = runs,
@@ -398,14 +400,14 @@ pub fn tauri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
     }}
     if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {{
       await window.__TAURI_INTERNALS__.invoke("kiri_ipc_bench_done", {{
-        json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", results: results }})
+        json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", runs: RUNS, warmup: WARMUP, results: results }})
       }});
     }}
   }}
   run().catch(function (err) {{
     if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {{
       window.__TAURI_INTERNALS__.invoke("kiri_ipc_bench_done", {{
-        json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", error: String(err) }})
+        json: JSON.stringify({{ type: "ipc_bench", target: "tauri-baseline", runs: RUNS, warmup: WARMUP, error: String(err) }})
       }});
     }}
   }});
@@ -460,6 +462,38 @@ fn git_commit() -> String {
         .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn env_nonempty(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|v| !v.trim().is_empty())
+}
+
+/// Provenance the scoreboard gate (`benchmark/scoreboard_gate.py`) requires:
+/// run id (hosted) or host id (local), plus runner/OS/arch. Values come from
+/// the measuring machine's environment; nothing is invented.
+fn run_metadata() -> Value {
+    let run_id = env_nonempty("GITHUB_RUN_ID");
+    let url = match (
+        env_nonempty("GITHUB_SERVER_URL"),
+        env_nonempty("GITHUB_REPOSITORY"),
+        run_id.as_deref(),
+    ) {
+        (Some(server), Some(repo), Some(id)) => {
+            json!(format!("{server}/{repo}/actions/runs/{id}"))
+        }
+        _ => Value::Null,
+    };
+    let host_id = env_nonempty("KIRI_BENCH_HOST_ID")
+        .or_else(|| env_nonempty("HOSTNAME"))
+        .or_else(|| env_nonempty("COMPUTERNAME"));
+    json!({
+        "id": run_id,
+        "url": url,
+        "runner": env_nonempty("RUNNER_NAME").or_else(|| env_nonempty("RUNNER_OS")),
+        "os": env_nonempty("RUNNER_OS").unwrap_or_else(|| std::env::consts::OS.to_string()),
+        "arch": env_nonempty("RUNNER_ARCH").unwrap_or_else(|| std::env::consts::ARCH.to_string()),
+        "host_id": host_id,
+    })
 }
 
 /// Attach summaries + metadata and write the through-webview artifact.
@@ -520,8 +554,11 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
         "error": raw.get("error").cloned(),
         "commit": git_commit(),
         "created_unix_ns": created,
-        "runs": results_out.first().and_then(|r| r.get("rtt_ms")).and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(DEFAULT_RUNS as usize),
-        "warmup": raw.get("warmup").cloned().unwrap_or(json!(DEFAULT_WARMUP)),
+        "run": run_metadata(),
+        "runs": raw.get("runs").and_then(|v| v.as_u64()).map(|v| v as usize)
+            .or_else(|| results_out.first().and_then(|r| r.get("rtt_ms")).and_then(|v| v.as_array()).map(|a| a.len()))
+            .unwrap_or(DEFAULT_RUNS as usize),
+        "warmup": raw.get("warmup").and_then(|v| v.as_u64()).map(|v| json!(v)).unwrap_or(json!(DEFAULT_WARMUP)),
         "sizes_bytes": results_out.iter().filter_map(|r| r.get("size_bytes").cloned()).collect::<Vec<_>>(),
         "shared_buffer": {
             "threshold_bytes": 64 * 1024,
@@ -618,6 +655,8 @@ mod tests {
         let raw = json!({
             "type": "ipc_bench",
             "target": "kiri-host",
+            "runs": 2,
+            "warmup": 1,
             "shared_buffer_replies_ok": 20,
             "shared_buffer_replies_fallback": 0,
             "results": [{
@@ -634,6 +673,34 @@ mod tests {
         let out: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(out["shared_buffer"]["replies_ok"], 20);
         assert_eq!(out["results"][0]["shared_buffer_used"], true);
+    }
+
+    #[test]
+    fn write_result_records_runs_warmup_and_run_provenance() {
+        let raw = json!({
+            "type": "ipc_bench",
+            "target": "kiri-host",
+            "runs": 7,
+            "warmup": 3,
+            "results": [{
+                "size_bytes": 64,
+                "rtt_ms": [1.0, 1.0],
+                "shared_buffer_hits": 0,
+                "shared_buffer_used": false
+            }]
+        });
+        let dir = std::env::temp_dir().join("kiri-ipc-provenance");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("ipc.json");
+        write_result(Some(&path), &raw).expect("write");
+        let out: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(out["runs"], 7);
+        assert_eq!(out["warmup"], 3);
+        assert!(out["run"].is_object());
+        assert!(out["run"]["os"].is_string());
+        assert!(out["run"]["arch"].is_string());
+        assert!(out["run"].get("id").is_some());
+        assert!(out["run"].get("host_id").is_some());
     }
 
     #[test]

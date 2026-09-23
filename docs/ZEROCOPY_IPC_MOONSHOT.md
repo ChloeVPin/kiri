@@ -92,6 +92,15 @@ Windows-only). The ring path is implemented and compile-verified for
 | 256 KiB | N/A | N/A |
 | ~1 MiB | N/A | N/A |
 
+On pull requests, the `controlled-performance` workflow now runs both
+transports on `windows-latest`: the default wire writes
+`artifacts/ipc-kiri.json` and `ring_zerocopy` writes
+`artifacts/ipc-kiri-ring.json` (same frontend, runs, and warmup), and both
+land in the `perf-windows-latest-ipc` upload. Each artifact also stamps a
+`run` provenance block (run id/url, runner, os, arch, host_id) that
+`benchmark/scoreboard_gate.py` requires. The table stays N/A until those
+artifacts exist; numbers are only filled in from CI-measured runs.
+
 For context, the last hosted default-wire numbers (Actions run 31988662774,
 20 measured replies per size): 0.92 ms at 16 KiB, 4.75 ms at 256 KiB,
 22.46 ms at ~1 MiB; Tauri invoke measured 11.08 ms at 256 KiB and 40.52 ms
