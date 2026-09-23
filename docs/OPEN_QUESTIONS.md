@@ -12,17 +12,22 @@ step required.
 - Evidence: Level A - `correctness.yml` `test (windows-latest)` run #19,
   `Native smoke run` + `Native stress run (100 cycles)` both green.
 
-## Q-002: real Windows behavior of the direct Win32 + WebView2 backend
+## Q-002: real Windows behavior of the direct Win32 + WebView2 backend — MOSTLY CLOSED
 
-The host is `cargo check`-clean against `x86_64-pc-windows-msvc` but has
-never executed on Windows. Open items:
+Superseded by hosted `correctness` on `windows-latest`: native smoke, stress,
+and `examples/menu-smoke` exercise the Win32 + WebView2 host (see
+`docs/CROSS_PLATFORM_STATUS.md` and `docs/STATUS.md`). The old claim that the
+host "has never executed on Windows" is false.
 
-- `SetVirtualHostNameToFolderMapping` requires the folder to exist at the
-  mapped path; verify the `--frontend` resolution works on a real machine.
-- message loop, timer, and teardown ordering on real Windows (100-cycle
-  stress run is the gate; expected on CI).
-- QPC-based markers should be cross-checked against the WebView2
-  `ProcessFailed`/`NavigationCompleted` ordering.
+Remaining nuance (optional follow-ups, not blockers for "runs on Windows"):
+
+- Document the canonical `--frontend` absolute path form on Windows
+  (`PathScope::canonicalize` / lexical absolute helpers in `host_windows.rs`).
+- Keep watching QPC marker ordering vs WebView2 `ProcessFailed` /
+  `NavigationCompleted` if a future marker schema change needs it.
+- Embedded and disk frontends are both served via `WebResourceRequested`
+  (`handle_app_resource` → `serve_embedded` / `serve_checked`); folder mapping
+  is not required for the packed path.
 
 ## Q-003: Tauri baseline IPC latency contribution — RESOLVED (method)
 
@@ -41,14 +46,13 @@ not directly comparable across the three targets for phases after
   explicitly in the T009 report rather than hidden. No attempt to force Tauri
   onto the wry `window.ipc` path (that is not how Tauri IPC works).
 
-## Q-004: `--frontend` path form and resolution
+## Q-004: `--frontend` path form and resolution — MOSTLY CLOSED
 
-The cross backend reads `index.html` from `HostOptions.frontend_dir` at
-runtime and serves it over `kiri://localhost`; this is proven working on
-macOS (native smoke + stress runs pass). On Windows the direct backend maps
-the same `--frontend` directory via `SetVirtualHostNameToFolderMapping`;
-verify with the first `windows-latest` smoke run and document the canonical
-form (`PathScope::canonicalize` on Windows will produce `C:\...` paths).
+Cross-backend `kiri://` + `--frontend` is proven on macOS (smoke/stress).
+Windows hosted correctness also green: the direct host serves app-origin
+assets through `WebResourceRequested` (`serve_checked` for a disk root,
+`serve_embedded` when no `--frontend`). Remaining doc-only follow-up: publish
+the canonical Windows absolute path form in getting-started notes.
 
 ## Q-005: backpressure policy for the webview → host channel
 
