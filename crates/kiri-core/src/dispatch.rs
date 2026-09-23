@@ -953,6 +953,15 @@ impl Router {
         self.commands.contains_key(&id)
     }
 
+    /// Returns the exact required capability bits registered for `id`, or
+    /// `None` when the command is not registered. The through-webview gate
+    /// (`zc_ipc_gate`) authorizes against this value, so the pipe enforces
+    /// precisely what this router will dispatch with and unmapped ids fail
+    /// closed instead of falling back to a harmless bit.
+    pub fn required_bits(&self, id: u32) -> Option<CapabilityBits> {
+        self.commands.get(&id).map(|c| c.required)
+    }
+
     /// Dispatch one parsed wire request from an already-identified caller.
     ///
     /// Emits trace events for receive/authorize/decode/execute/encode/send/
@@ -1244,7 +1253,7 @@ mod tests {
     fn malformed_payload_length_rejected() {
         let router = Router::new();
         let mut req = ping_request(1, json!(null));
-        req.payload_len = req.payload_len + 1; // declared != actual
+        req.payload_len += 1; // declared != actual
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(CallerId(1), &caller_caps(), &req, &mut sink);
         assert!(resp.error.is_some());
@@ -1491,7 +1500,7 @@ mod tests {
         let (name, bit) = res.unwrap();
         assert_eq!(name, "kiri.ping");
         assert_eq!(bit, capability_bit::PING);
-        assert_eq!(sr.is_known(command_id::PING), true);
+        assert!(sr.is_known(command_id::PING));
     }
 
     #[test]

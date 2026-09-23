@@ -151,7 +151,7 @@ mod tests {
         let mut d = LatencyDistribution::new();
         d.record(10);
         d.record(20);
-        let json = serde_json::to_value(&d.summary()).unwrap();
+        let json = serde_json::to_value(d.summary()).unwrap();
         assert_eq!(json["schema_version"], 1);
         assert_eq!(json["count"], 2);
         assert_eq!(json["min_ns"], 10);
