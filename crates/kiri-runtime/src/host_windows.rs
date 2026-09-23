@@ -187,6 +187,45 @@ fn init_ring(
     Some(RingState { buffer, base, len })
 }
 
+/// Inject the ipc bench script, then create and post the ring arena once
+/// the script has run. `PostSharedBufferToScript` raises a single
+/// `sharedbufferreceived` event; posting before the page's listener exists
+/// loses that event and the ring can never engage (hosted run 35897843218:
+/// `ring_slot_hits=0`, every send on the fallback wire). `ExecuteScript`
+/// completion fires after the injected listeners are registered, so posting
+/// the arena from the completion handler cannot lose the event. If the
+/// arena cannot be created the bench stays on the JSON + T008 wire and the
+/// send-fallback counters report that honestly.
+fn exec_script_then_post_ring(
+    webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
+    js: &str,
+    hwnd: HWND,
+) {
+    let wide = to_wide(js);
+    let handler = webview2_com::ExecuteScriptCompletedHandler::create(Box::new(
+        move |result: windows::core::Result<()>, _output: String| {
+            if let Err(e) = result {
+                eprintln!("[kiri] ipc bench script injection failed: {e}");
+                return Ok(());
+            }
+            if let Some(rt) = unsafe { get_runtime(hwnd) } {
+                rt.ring = init_ring(&rt.env, &rt.webview);
+                if rt.ring.is_some() {
+                    eprintln!(
+                        "[kiri] ring_zerocopy: shared slot arena posted ({} bytes, {} slots)",
+                        crate::ring_ipc::RING_BUFFER_BYTES,
+                        crate::ring_ipc::SLOT_COUNT
+                    );
+                } else {
+                    eprintln!("[kiri] ring_zerocopy unavailable; bench stays on the default wire");
+                }
+            }
+            Ok(())
+        },
+    ));
+    let _ = unsafe { webview.ExecuteScript(PCWSTR::from_raw(wide.as_ptr()), &handler) };
+}
+
 /// Post one small JSON object to the page (ring control messages only).
 fn post_control_json(
     webview: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2,
@@ -929,6 +968,9 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               if (typeof d === 'string') {
                 try { d = JSON.parse(d); } catch (err) { return; }
               }
+              // Ring control message: the owning listener rebuilds the real
+              // reply out of the shared slot; it is not a wire response.
+              if (d && d.type === 'ring_resp') { return; }
               if (d && d.request_id !== undefined) {
                 window.kiri.onResponse(d);
               }
@@ -936,7 +978,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
             window.chrome.webview.addEventListener('sharedbufferreceived', function (e) {
               try {
                 var buf = e.getBuffer();
-                var text = new TextDecoder('utf-8').decode(new Uint8Array(buf));
+                var bytes = new Uint8Array(buf);
+                // Only JSON wire buffers (T008 replies serialize as JSON
+                // objects) are decoded and released here. A raw arena such
+                // as the kiri_ring slot buffer starts with a binary magic,
+                // not '{'; releasing it would detach it before the bench
+                // listener can claim it.
+                if (bytes.byteLength === 0 || bytes[0] !== 0x7b) { return; }
+                var text = new TextDecoder('utf-8').decode(bytes);
                 window.chrome.webview.releaseBuffer(buf);
                 var d = JSON.parse(text);
                 if (d && d.request_id !== undefined) {
@@ -1280,33 +1329,27 @@ fn handle_web_message(
                 rt.markers.record(Marker::FirstAnimationFrame, qpc_now_ns());
                 if rt.options.ipc_bench && !rt.ipc_bench_injected {
                     rt.ipc_bench_injected = true;
-                    let transport = if rt.options.ipc_bench_transport
-                        == crate::ipc_bench::IpcBenchTransport::RingZerocopy
-                    {
-                        rt.ring = init_ring(&rt.env, &rt.webview);
-                        if rt.ring.is_some() {
-                            eprintln!(
-                                "[kiri] ring_zerocopy: shared slot arena posted ({} bytes, {} slots)",
-                                crate::ring_ipc::RING_BUFFER_BYTES,
-                                crate::ring_ipc::SLOT_COUNT
-                            );
-                            crate::ipc_bench::IpcBenchTransport::RingZerocopy
-                        } else {
-                            eprintln!(
-                                "[kiri] ring_zerocopy unavailable; falling back to default wire"
-                            );
-                            crate::ipc_bench::IpcBenchTransport::Default
-                        }
-                    } else {
-                        crate::ipc_bench::IpcBenchTransport::Default
-                    };
+                    let want_ring = rt.options.ipc_bench_transport
+                        == crate::ipc_bench::IpcBenchTransport::RingZerocopy;
                     let script = crate::ipc_bench::kiri_script(
                         rt.options.ipc_bench_runs,
                         crate::ipc_bench::DEFAULT_WARMUP,
                         &rt.options.ipc_bench_sizes,
-                        transport,
+                        if want_ring {
+                            crate::ipc_bench::IpcBenchTransport::RingZerocopy
+                        } else {
+                            crate::ipc_bench::IpcBenchTransport::Default
+                        },
                     );
-                    exec_script(&rt.webview, &script);
+                    if want_ring {
+                        // The arena is posted from the ExecuteScript
+                        // completion so the page's sharedbufferreceived
+                        // listener is already live when the one-shot event
+                        // arrives.
+                        exec_script_then_post_ring(&rt.webview, &script, hwnd);
+                    } else {
+                        exec_script(&rt.webview, &script);
+                    }
                 } else if rt.options.smoke && !rt.smoke_armed {
                     rt.smoke_armed = true;
                     let _ = unsafe {

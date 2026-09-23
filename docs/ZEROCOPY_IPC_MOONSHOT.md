@@ -13,12 +13,19 @@ allocation plus a full JSON round trip per large reply.
 
 The ring transport replaces that with one arena for the whole session:
 
-1. When the ipc bench starts (first animation frame), the host calls
-   `CreateSharedBuffer` once for a 16 MiB arena, writes a global header
+1. When the ipc bench starts (first animation frame) the host injects the
+   ring-aware bench script, which registers the `sharedbufferreceived`
+   listener. Only when that `ExecuteScript` completes does the host call
+   `CreateSharedBuffer` once for a 16 MiB arena, write a global header
    (`KRIR` magic, version, slot count, slot stride, payload capacity), and
-   posts it once with `PostSharedBufferToScript(...,
-   COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, {"kind":"kiri_ring"})`. The
-   host keeps the buffer object alive for the session; script keeps the
+   post it once with `PostSharedBufferToScript(...,
+   COREWEBVIEW2_SHARED_BUFFER_ACCESS_READ_WRITE, {"kind":"kiri_ring"})`.
+   Ordering matters: the event is one-shot, so posting before the listener
+   exists loses the arena (hosted run 35897843218 did exactly that and the
+   ring never engaged). The permanent bridge's `sharedbufferreceived`
+   handler now touches only buffers that look like JSON text (`{`), so it
+   cannot `releaseBuffer` the raw arena out from under the bench listener.
+   The host keeps the buffer object alive for the session; script keeps the
    `ArrayBuffer` from the single `sharedbufferreceived` event and never calls
    `releaseBuffer`. This is the documented WebView2 model: both parties map
    the same memory and writes are visible to all parties.
@@ -44,8 +51,10 @@ The ring transport replaces that with one arena for the whole session:
 6. Fallbacks stay honest: no free slot, oversized payload, or malformed slot
    content falls back to the ordinary JSON + T008 wire, and every fallback is
    counted (`ring_send_fallbacks` page-side, `ring_replies_fallback`
-   host-side). If `init_ring` itself fails, the host injects the default
-   bench script and the artifact reports `transport: "default"`.
+   host-side). If `init_ring` itself fails, the artifact keeps
+   `transport: "ring_zerocopy"` but reports `ring.replies_ok: 0` and every
+   send in `ring_send_fallbacks`, so the scoreboard gate refuses rather than
+   passing on fallback traffic.
 
 ## How it differs from Tauri and from T008
 
@@ -100,6 +109,16 @@ land in the `perf-windows-latest-ipc` upload. Each artifact also stamps a
 `run` provenance block (run id/url, runner, os, arch, host_id) that
 `benchmark/scoreboard_gate.py` requires. The table stays N/A until those
 artifacts exist; numbers are only filled in from CI-measured runs.
+
+Hosted run 35897843218 produced `ipc-kiri-ring.json` with
+`transport: "ring_zerocopy"` but `ring.replies_ok: 0` and
+`ring_slot_hits: 0` at every size: the host posted the arena before the
+bench listener existed and the bridge released it as failed JSON, so the
+gate rightly refused. The arena is now posted from the bench script's
+`ExecuteScript` completion and the bridge leaves non-JSON buffers alone.
+The artifact's `commit` field also stamped the runner checkout instead of
+the workflow head; it now prefers `GITHUB_SHA`. No ring RTT is claimed
+until a hosted run shows nonzero `ring_slot_hits` and clears the gate.
 
 For context, the last hosted default-wire numbers (Actions run 31988662774,
 20 measured replies per size): 0.92 ms at 16 KiB, 4.75 ms at 256 KiB,

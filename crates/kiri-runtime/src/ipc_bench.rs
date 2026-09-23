@@ -454,7 +454,15 @@ fn summarize(rtt_ms: &[f64]) -> Value {
     })
 }
 
+/// Commit stamp for the artifact. On CI the measured commit is `GITHUB_SHA`
+/// (the workflow head), which can differ from what `git rev-parse` resolves
+/// in a detached or re-checked-out workspace. Locally it falls back to
+/// `rev-parse --short HEAD`; when neither exists the stamp is "unknown",
+/// never an invented SHA.
 fn git_commit() -> String {
+    if let Some(sha) = env_nonempty("GITHUB_SHA") {
+        return sha.trim().chars().take(7).collect();
+    }
     std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
         .output()
@@ -619,6 +627,11 @@ mod tests {
         assert!(script.contains("type: \"cmd\", ring:"));
         assert!(script.contains("ring_resp"));
         assert!(script.contains("ring_slot_hits"));
+        // The page must already be listening for the one-shot
+        // sharedbufferreceived event before the host posts the arena.
+        assert!(script.contains("sharedbufferreceived"));
+        assert!(script.contains("RING.GLOBAL_MAGIC"));
+        assert!(script.contains("waitRing(2000)"));
     }
 
     #[test]
@@ -701,6 +714,36 @@ mod tests {
         assert!(out["run"]["arch"].is_string());
         assert!(out["run"].get("id").is_some());
         assert!(out["run"].get("host_id").is_some());
+    }
+
+    #[test]
+    fn git_commit_prefers_github_sha() {
+        let sha = "8fb3dad0123456789abcdef0123456789abcdef0";
+        std::env::set_var("GITHUB_SHA", sha);
+        let got = git_commit();
+        std::env::remove_var("GITHUB_SHA");
+        assert_eq!(got, &sha[..7]);
+    }
+
+    #[test]
+    fn write_result_stamps_github_sha_when_set() {
+        let sha = "8fb3dad0123456789abcdef0123456789abcdef0";
+        let raw = json!({
+            "type": "ipc_bench",
+            "target": "kiri-host",
+            "runs": 1,
+            "warmup": 0,
+            "results": [{"size_bytes": 0, "rtt_ms": [1.0]}]
+        });
+        let dir = std::env::temp_dir().join("kiri-ipc-commit-stamp");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("ipc.json");
+        std::env::set_var("GITHUB_SHA", sha);
+        let res = write_result(Some(&path), &raw);
+        std::env::remove_var("GITHUB_SHA");
+        res.expect("write");
+        let out: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(out["commit"], "8fb3dad");
     }
 
     #[test]
