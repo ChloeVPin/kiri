@@ -2,7 +2,7 @@
 
 Unresolved items, with the evidence needed to close them.
 
-## Q-001: WebView2 runtime on `windows-latest` GitHub runners (Windows direct backend only) — CLOSED
+## Q-001: WebView2 runtime on `windows-latest` GitHub runners (Windows direct backend only): CLOSED
 
 A `windows-latest` runner DOES have the WebView2 Evergreen runtime installed.
 Verified by correctness run #19: the `Native smoke run (Win32 + WebView2
@@ -24,7 +24,7 @@ never executed on Windows. Open items:
 - QPC-based markers should be cross-checked against the WebView2
   `ProcessFailed`/`NavigationCompleted` ordering.
 
-## Q-003: Tauri baseline IPC latency contribution — RESOLVED (method)
+## Q-003: Tauri baseline IPC latency contribution: RESOLVED (method)
 
 The Tauri baseline routes the `dom`/`frame` markers through
 `__TAURI_INTERNALS__.invoke('kiri_marker')`, which costs more than the wry

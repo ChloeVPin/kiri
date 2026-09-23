@@ -72,7 +72,7 @@ winnable." Claims here are tied to verified gates, not aspirations.
   on CI (no GPU on runners); Tauri has the same limitation. Neither can claim
   a hard Linux render gate on shared CI.
 
-## Measured IPC evidence (two different benches — do not mix them)
+## Measured IPC evidence (two different benches: do not mix them)
 
 ### In-process router only (not what an app feels)
 
@@ -138,25 +138,25 @@ Verified on macOS (this host): the Tauri baseline now emits all 9 markers and
 exits 0, same as the Kiri wry/tao host. This makes the T009 three-way
 comparison (Kiri vs Wry/Tao vs Tauri) a real, apples-to-apples measurement.
 
-## Current hosted scoreboard — run `32730288110` (authoritative)
+## Current hosted scoreboard: run `32730288110` (authoritative)
 
 Workflow `controlled-performance` (`controlled-performance.yml`), commit `0d7e9a6`,
 runners `macos-latest` + `windows-latest`. Each startup target: 20 measured launches;
-Wry/Tao: 3 warmups with **45 s** timeout (symmetric, `continue-on-error: true` soft until proven stable — see `CROSS_PLATFORM_STATUS.md:98`); Kiri/Tauri: 20 runs/25 s with hard gates (`if-no-files-found: error`, `continue-on-error: false`). IPC: 20 batch iterations × 6 payload sizes through live WebView. Hosted runners are directional, not universal hardware claims. Raw artifacts retained by the Actions run.
+Wry/Tao: 3 warmups with **45 s** timeout (symmetric, `continue-on-error: true` soft until proven stable; see `CROSS_PLATFORM_STATUS.md:98`); Kiri/Tauri: 20 runs/25 s with hard gates (`if-no-files-found: error`, `continue-on-error: false`). IPC: 20 batch iterations × 6 payload sizes through live WebView. Hosted runners are directional, not universal hardware claims. Raw artifacts retained by the Actions run.
 
-### Startup — process wall-clock (median p50; p95 where recorded)
+### Startup: process wall-clock (median p50; p95 where recorded)
 
 | runner | Kiri startup p50 | Tauri startup p50 | Wry/Tao startup | verdict |
 |--------|----------------:|-----------------:|-----------------|---------|
-| macos-latest | 851 ms | 1,856 ms | complete (prior run 1,730 ms p50) / incomplete after 45 s on this run — soft, not a hard compare | Kiri faster on this run, but variance is large across hosted runs (see historical: 1,819 ms vs 1,641 ms flipped) — do not claim universal win |
+| macos-latest | 851 ms | 1,856 ms | complete (prior run 1,730 ms p50) / incomplete after 45 s on this run; soft, not a hard compare | Kiri faster on this run, but variance is large across hosted runs (see historical: 1,819 ms vs 1,641 ms flipped); do not claim universal win |
 | windows-latest | 845 ms | 884 ms | **incomplete**: warmup timeout at 45 s (soft, `continue-on-error: true`) | Kiri/Tauri within variance; Wry/Tao not a stable Windows comparison until next hosted run |
 
-Previous run `32696370579` (same workflow, 20 s warmup) for reference — p50/p95:
+Previous run `32696370579` (same workflow, 20 s warmup) for reference; p50/p95:
 `macos-latest` Kiri 1,819.6/1,952.1 vs Tauri 1,641.4/1,919.6, Wry/Tao 1,730.4/1,893.8 complete; `windows-latest` Kiri 831.2/850.7 vs Tauri 826.5/858.2, Wry/Tao incomplete. The flipped macOS medians (851 vs 1,819 ms) demonstrate hosted noise; startup is **not** a claimed Kiri win.
 
-### Through-webview IPC — batch-mean ms (20 iterations, 6 payload sizes)
+### Through-webview IPC: batch-mean ms (20 iterations, 6 payload sizes)
 
-Latest complete IPC artifacts are from run `32696370579` (same `controlled-performance` workflow, 20 runs; retained because run `32730288110` startup medians were published without a new IPC table — next 45 s-gated run will refresh all three):
+Latest complete IPC artifacts are from run `32696370579` (same `controlled-performance` workflow, 20 runs; retained because run `32730288110` startup medians were published without a new IPC table; next 45 s-gated run will refresh all three):
 
 | payload | Win Kiri | Win Tauri | Mac Kiri | Mac Tauri | note |
 |--------:|---------:|----------:|---------:|----------:|------|
@@ -169,7 +169,7 @@ Latest complete IPC artifacts are from run `32696370579` (same `controlled-perfo
 
 Kiri is faster at 5/6 sizes per runner, but macOS 256 KiB is a counterexample. This supports a **scoped** IPC throughput edge, not a blanket claim. All six IPC sizes completed for both Kiri and Tauri. Shared-buffer crossover (T008) verified on Windows run `31988662774` (`SHARED_BUFFER_REPORT.md`): 20/20 replies via `PostSharedBufferToScript` at 256 KiB and ~1 MiB, zero fallbacks.
 
-### Binary sizes — unstripped release (same hosted runs)
+### Binary sizes: unstripped release (same hosted runs)
 
 | runner | Kiri | Wry/Tao | Tauri | Kiri vs Tauri |
 |--------|-----:|--------:|------:|---------------|
@@ -180,9 +180,9 @@ Kiri is faster at 5/6 sizes per runner, but macOS 256 KiB is a counterexample. T
 
 Wry/Tao is smaller because it does not include Kiri's control plane and native capability layer. Kiri ~3.7× smaller than Tauri (measured) is the honest footprint claim; do not claim parity with the thin Wry/Tao baseline.
 
-**T009 status:** Kiri/Tauri startup + IPC + binary sizes are measured and green on both hosted runners. **Wry/Tao Windows remains soft (`continue-on-error: true`) after 45 s warmup timeout — not a stable three-way until the next hosted `controlled-performance` run completes all three.** `CROSS_PLATFORM_STATUS.md:98` tracks this; `STATUS.md` points here as the single scoreboard.
+**T009 status:** Kiri/Tauri startup + IPC + binary sizes are measured and green on both hosted runners. **Wry/Tao Windows remains soft (`continue-on-error: true`) after 45 s warmup timeout; not a stable three-way until the next hosted `controlled-performance` run completes all three.** `CROSS_PLATFORM_STATUS.md:98` tracks this; `STATUS.md` points here as the single scoreboard.
 
-<details><summary>Historical (superseded) — do not cite; retained for audit</summary>
+<details><summary>Historical (superseded); do not cite; retained for audit</summary>
 
 ## T009 three-way comparison: historical macOS marker leg (SUPERSEDED)
 
@@ -387,8 +387,7 @@ Full historical tables also archived at `docs/archive/COMPETITIVE_HISTORY.md`.
 
 Exceed Tauri by owning the control plane: typed codegen routing, generational
 resource safety, privacy-scoped diagnostics, narrow default capability surface,
-and a frozen cross-platform startup contract. Do not compete on rendering —
-it is the same engine. Win on everything around it, measure it honestly, and
+and a frozen cross-platform startup contract. Do not compete on rendering; it is the same engine. Win on everything around it, measure it honestly, and
 never claim a number we have not run.
 
 

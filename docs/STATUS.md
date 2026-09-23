@@ -31,7 +31,7 @@ integration, and 57 `kiri-runtime`), formatting, native clippy, Windows target
 check/clippy, and both standalone baseline checks. The native macOS build,
 smoke run, and three-cycle stress run passed on the last successful native gate;
 a fresh local retry on 2026-08-24 hit the watchdog before `webview_ready` (see
-`CROSS_PLATFORM_STATUS.md` — retained as **incomplete local evidence vs hosted green**; hosted `macos-latest` + `windows-latest` correctness remains green). The single current performance scoreboard is the hosted run `32730288110` table in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) (historical tables archived at `docs/archive/COMPETITIVE_HISTORY.md`). These results describe the current
+`CROSS_PLATFORM_STATUS.md` (retained as **incomplete local evidence vs hosted green**; hosted `macos-latest` + `windows-latest` correctness remains green). The single current performance scoreboard is the hosted run `32730288110` table in [`COMPETITIVE_ANALYSIS.md`](COMPETITIVE_ANALYSIS.md) (historical tables archived at `docs/archive/COMPETITIVE_HISTORY.md`). These results describe the current
 worktree and should be refreshed after substantive changes.
 
 Local archive assembly was inspected successfully, including the macOS app
@@ -73,7 +73,7 @@ open because its platform objects are event-loop-affine.
 Correctness run `32730288096` and controlled performance run `32730288110`
 (20 runs, `macos-latest` + `windows-latest`) completed successfully across the hosted desktop matrix. The performance
 artifacts retain complete Kiri/Tauri startup and IPC results; Windows Wry/Tao
-startup remains explicitly **incomplete after its 45 s warmup timeout** (soft, `continue-on-error: true` in `controlled-performance.yml:117,122`) until proven stable — see `COMPETITIVE_ANALYSIS.md` current scoreboard and `CROSS_PLATFORM_STATUS.md:98`.
+startup remains explicitly **incomplete after its 45 s warmup timeout** (soft, `continue-on-error: true` in `controlled-performance.yml:117,122`) until proven stable; see `COMPETITIVE_ANALYSIS.md` current scoreboard and `CROSS_PLATFORM_STATUS.md:98`.
 
 The corpus task queue currently marks T001-T008 and T010 complete, with T009
 still in progress. T008's implementation and hosted evidence are summarized
