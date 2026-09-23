@@ -279,7 +279,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
     let Some(state) = rt.ring.as_ref() else {
         let err =
             WireResponse::err(hint, KiriError::protocol_error("ring transport not initialized"));
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         return;
     };
     let base = state.base;
@@ -288,7 +288,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
     if slot_index >= ring::SLOT_COUNT as u64 {
         let err =
             WireResponse::err(hint, KiriError::protocol_error("ring slot index out of bounds"));
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         return;
     }
@@ -309,7 +309,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                         req.request_id,
                         KiriError::protocol_error("ring payload bounds failure"),
                     );
-                    let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                    let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                     rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                     return;
                 }
@@ -319,7 +319,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     hint,
                     KiriError::protocol_error("ring slot does not hold a valid request"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -330,7 +330,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
             hint,
             KiriError::protocol_error("ring request_id does not match control message"),
         );
-        let _ = post_wire_response(&rt.env, &rt.webview, &err);
+        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         return;
     }
@@ -342,7 +342,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     req.request_id,
                     KiriError::protocol_error("ring utf-8 payload is not valid utf-8"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -354,7 +354,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                     req.request_id,
                     KiriError::protocol_error("ring json payload does not parse"),
                 );
-                let _ = post_wire_response(&rt.env, &rt.webview, &err);
+                let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
                 rt.ring_fallback = rt.ring_fallback.saturating_add(1);
                 return;
             }
@@ -364,7 +364,7 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
                 req.request_id,
                 KiriError::protocol_error("unsupported ring codec"),
             );
-            let _ = post_wire_response(&rt.env, &rt.webview, &err);
+            let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
             rt.ring_fallback = rt.ring_fallback.saturating_add(1);
             return;
         }
@@ -380,19 +380,19 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         codec: req.codec,
         payload,
     };
-    let response = rt.dispatch_cmd(&request);
+    let gated = rt.dispatch_cmd(&request);
     rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
 
     // Publish the reply into the same slot. The echo fast path copies the
     // string bytes verbatim; every other response shape is serialized once
     // as JSON. Oversized replies fall back to the ordinary wire (which keeps
     // its own T008 one-shot shared-buffer path).
-    let echo = ring_echo_bytes(&response);
+    let echo = ring_echo_bytes(&gated.response);
     let json_body;
     let (flags, body): (u8, &[u8]) = match echo {
         Some(bytes) => (ring::RESP_ECHO_STRING, bytes),
         None => {
-            json_body = serde_json::to_vec(&response).unwrap_or_default();
+            json_body = serde_json::to_vec(&gated.response).unwrap_or_default();
             (ring::RESP_JSON, json_body.as_slice())
         }
     };
@@ -417,11 +417,18 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         );
         rt.ring_ok = rt.ring_ok.saturating_add(1);
     } else {
-        let used = post_wire_response(&rt.env, &rt.webview, &response);
+        let used = post_wire_response(
+            &rt.env,
+            &rt.webview,
+            &gated.response,
+            gated.grant.as_ref(),
+            rt.caller,
+            request.command_id,
+        );
         rt.ring_fallback = rt.ring_fallback.saturating_add(1);
         if used {
             rt.shared_buffer_ok = rt.shared_buffer_ok.saturating_add(1);
-        } else if serde_json::to_string(&response).map(|s| s.len()).unwrap_or(0) > 64 * 1024 {
+        } else if serde_json::to_string(&gated.response).map(|s| s.len()).unwrap_or(0) > 64 * 1024 {
             rt.shared_buffer_fallback = rt.shared_buffer_fallback.saturating_add(1);
         }
     }
