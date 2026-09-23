@@ -10,7 +10,9 @@ use std::collections::HashMap;
 
 use kiri_core::app_menu::MenuItem;
 use kiri_core::error::{Error, Result};
-use muda::{IsMenuItem, Menu, Submenu};
+use muda::{IsMenuItem, Menu};
+#[cfg(target_os = "macos")]
+use muda::Submenu;
 
 use crate::menu_dispatch::OperationKind;
 
