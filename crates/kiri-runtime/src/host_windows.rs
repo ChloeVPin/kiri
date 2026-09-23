@@ -396,7 +396,18 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
             (ring::RESP_JSON, json_body.as_slice())
         }
     };
-    let published = {
+    // The shared-slot reply leg accepts the same currency as the T008
+    // one-shot shared-buffer post: a live ZcIpcGrant bound to this caller +
+    // command. A denied request carries no grant, so its reply must never
+    // reach the arena and falls back to the ordinary JSON wire below.
+    let authorized = ring::ring_reply_authorized(
+        gated.grant.as_ref(),
+        rt.caller,
+        request.command_id,
+        body,
+        qpc_now_ns(),
+    );
+    let published = authorized && {
         let arena = unsafe { std::slice::from_raw_parts_mut(base, len) };
         match ring::slot_mut(arena, slot_index) {
             Some(slot) => {
@@ -417,11 +428,15 @@ fn handle_ring_request(rt: &mut HostRuntime, ring_val: &serde_json::Value) {
         );
         rt.ring_ok = rt.ring_ok.saturating_add(1);
     } else {
+        // Unauthorized replies cross only the plain JSON wire with no
+        // shared-buffer authority; an authorized reply whose slot write
+        // failed keeps its grant for the T008 one-shot path.
+        let grant = if authorized { gated.grant.as_ref() } else { None };
         let used = post_wire_response(
             &rt.env,
             &rt.webview,
             &gated.response,
-            gated.grant.as_ref(),
+            grant,
             rt.caller,
             request.command_id,
         );
