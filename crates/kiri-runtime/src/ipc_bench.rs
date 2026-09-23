@@ -27,11 +27,51 @@ pub const WATCHDOG_MS: u32 = 180_000;
 /// 1_048_578 bytes and be rejected by the validator.
 pub const DEFAULT_SIZES: &[usize] = &[0, 64, 1024, 16_384, 262_144, 1_048_574];
 
+/// Through-webview transport the bench exercises. `Default` is the current
+/// wire: JSON replies up to 64 KiB and one-shot T008 shared buffers above.
+/// `RingZerocopy` opts into the spike transport: one host-owned shared slot
+/// arena posted once with read-write access, raw payload bytes in slots, and
+/// tiny JSON control messages (see docs/ZEROCOPY_IPC_MOONSHOT.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcBenchTransport {
+    Default,
+    RingZerocopy,
+}
+
+impl IpcBenchTransport {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            IpcBenchTransport::Default => "default",
+            IpcBenchTransport::RingZerocopy => "ring_zerocopy",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "default" | "json" | "t008_shared" => Some(IpcBenchTransport::Default),
+            "ring_zerocopy" | "ring" => Some(IpcBenchTransport::RingZerocopy),
+            _ => None,
+        }
+    }
+}
+
 /// JavaScript injected into the Kiri WebView. Uses the real
 /// `window.ipc.postMessage` / `window.kiri.send` path and waits for
 /// `window.kiri.onResponse` (host `evaluate_script` of the wire response).
-pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
+///
+/// With `transport == IpcBenchTransport::RingZerocopy` the same script also
+/// consumes the host-owned slot arena (`window.__kiriRing`, captured from the
+/// one-time `sharedbufferreceived` event): request payloads are written as
+/// raw bytes into a claimed slot, replies are read back from the same slot,
+/// and only tiny JSON control messages cross `postMessage` both ways.
+pub fn kiri_script(
+    runs: u32,
+    warmup: u32,
+    sizes: &[usize],
+    transport: IpcBenchTransport,
+) -> String {
     let sizes_json = serde_json::to_string(sizes).unwrap_or_else(|_| "[]".into());
+    let want_ring = transport == IpcBenchTransport::RingZerocopy;
     format!(
         r#"(function () {{
   if (window.__kiriIpcBenchStarted) return;
@@ -41,13 +81,112 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
   var CONCURRENCY = {concurrency};
   var SIZES = {sizes_json};
   var TIMEOUT = {timeout};
+  var WANT_RING = {want_ring};
+  var TRANSPORT = WANT_RING ? "ring_zerocopy" : "default";
+  var RING = {{
+    GLOBAL_MAGIC: {global_magic},
+    SLOT_MAGIC: {slot_magic},
+    GLOBAL_HDR: {global_hdr},
+    SLOT_HDR: {slot_hdr},
+    STATE_FREE: 0, STATE_REQ: 1, STATE_RESP: 2,
+    CODEC_JSON: 1, CODEC_UTF8: 2,
+    RESP_JSON: 0, RESP_ECHO: 1
+  }};
   window.__kiriIpcSeq = window.__kiriIpcSeq || 1;
+  window.__kiriRing = window.__kiriRing || null;
+  window.__kiriRingSeq = window.__kiriRingSeq || 0;
+  window.__kiriRingHits = window.__kiriRingHits || 0;
+  window.__kiriRingFallbacks = window.__kiriRingFallbacks || 0;
+  window.__kiriRingSlots = window.__kiriRingSlots || {{}};
+  function ringReady() {{ return !!window.__kiriRing; }}
+  function waitRing(ms) {{
+    return new Promise(function (resolve) {{
+      if (ringReady()) {{ resolve(true); return; }}
+      var t0 = performance.now();
+      var iv = setInterval(function () {{
+        if (ringReady()) {{ clearInterval(iv); resolve(true); }}
+        else if (performance.now() - t0 > ms) {{ clearInterval(iv); resolve(false); }}
+      }}, 5);
+    }});
+  }}
+  function ringClaim() {{
+    var r = window.__kiriRing;
+    if (!r) return -1;
+    for (var n = 0; n < r.slotCount; n++) {{
+      var i = (r.next + n) % r.slotCount;
+      var base = r.arena + i * r.slotBytes;
+      if (r.dv.getUint8(base + 4) === RING.STATE_FREE) {{
+        r.next = (i + 1) % r.slotCount;
+        return i;
+      }}
+    }}
+    return -1;
+  }}
+  function ringFree(i) {{
+    var r = window.__kiriRing;
+    if (!r) return;
+    r.dv.setUint8(r.arena + i * r.slotBytes + 4, RING.STATE_FREE);
+  }}
+  function sendRing(id, payload) {{
+    var r = window.__kiriRing;
+    var slot = ringClaim();
+    if (slot < 0) return false;
+    var codec, bytes;
+    if (typeof payload === "string") {{
+      codec = RING.CODEC_UTF8;
+      bytes = new TextEncoder().encode(payload);
+    }} else {{
+      codec = RING.CODEC_JSON;
+      bytes = new TextEncoder().encode(JSON.stringify(payload === undefined ? null : payload));
+    }}
+    if (bytes.length > r.payloadCap) return false;
+    var base = r.arena + slot * r.slotBytes;
+    new Uint8Array(r.buf, base + RING.SLOT_HDR, bytes.length).set(bytes);
+    r.dv.setUint32(base + 0, RING.SLOT_MAGIC, true);
+    r.dv.setUint8(base + 5, 0);
+    r.dv.setUint16(base + 6, codec, true);
+    var seq = ++window.__kiriRingSeq;
+    r.dv.setBigUint64(base + 8, BigInt(seq), true);
+    r.dv.setBigUint64(base + 16, BigInt(id), true);
+    r.dv.setUint32(base + 24, 1, true);
+    r.dv.setUint32(base + 28, bytes.length, true);
+    r.dv.setUint8(base + 4, RING.STATE_REQ);
+    window.__kiriRingSlots[id] = slot;
+    window.chrome.webview.postMessage({{ type: "cmd", ring: {{ slot: slot, request_id: id }} }});
+    return true;
+  }}
+  function ringResponse(d) {{
+    var r = window.__kiriRing;
+    if (!r || typeof d.slot !== "number" || d.slot < 0 || d.slot >= r.slotCount) return;
+    var base = r.arena + d.slot * r.slotBytes;
+    if (r.dv.getUint32(base + 0, true) !== RING.SLOT_MAGIC) return;
+    if (r.dv.getUint8(base + 4) !== RING.STATE_RESP) return;
+    var rid = Number(r.dv.getBigUint64(base + 16, true));
+    var flags = r.dv.getUint8(base + 5);
+    var plen = r.dv.getUint32(base + 28, true);
+    var resp;
+    try {{
+      var bytes = new Uint8Array(r.buf, base + RING.SLOT_HDR, plen);
+      if (flags === RING.RESP_ECHO) {{
+        resp = {{ request_id: rid,
+          payload: {{ pong: true, echo: new TextDecoder("utf-8").decode(bytes) }} }};
+      }} else {{
+        resp = JSON.parse(new TextDecoder("utf-8").decode(bytes));
+      }}
+    }} catch (err) {{ return; }}
+    window.__kiriRingHits++;
+    if (window.kiri && window.kiri.onResponse) window.kiri.onResponse(resp);
+  }}
   if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener && !window.__kiriWebMessageHooked) {{
     window.__kiriWebMessageHooked = true;
     window.chrome.webview.addEventListener("message", function (e) {{
       var d = e.data;
       if (typeof d === "string") {{
         try {{ d = JSON.parse(d); }} catch (err) {{ return; }}
+      }}
+      if (d && d.type === "ring_resp") {{
+        ringResponse(d);
+        return;
       }}
       if (d && d.request_id !== undefined && window.kiri && window.kiri.onResponse) {{
         window.kiri.onResponse(d);
@@ -56,8 +195,20 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
     window.__kiriSharedBufferHits = 0;
     window.chrome.webview.addEventListener("sharedbufferreceived", function (e) {{
       try {{
-        window.__kiriSharedBufferHits++;
         var buf = e.getBuffer();
+        if (buf.byteLength >= RING.GLOBAL_HDR
+            && new DataView(buf).getUint32(0, true) === RING.GLOBAL_MAGIC) {{
+          var dv = new DataView(buf);
+          window.__kiriRing = {{
+            buf: buf, dv: dv, next: 0,
+            slotCount: dv.getUint32(8, true),
+            slotBytes: dv.getUint32(12, true),
+            payloadCap: dv.getUint32(16, true),
+            arena: RING.GLOBAL_HDR
+          }};
+          return;
+        }}
+        window.__kiriSharedBufferHits++;
         var text = new TextDecoder("utf-8").decode(new Uint8Array(buf));
         window.chrome.webview.releaseBuffer(buf);
         var d = JSON.parse(text);
@@ -85,16 +236,24 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
       var id = window.__kiriIpcSeq++;
       var timer = setTimeout(function () {{
         delete window.kiri.pending[id];
+        var stale = window.__kiriRingSlots[id];
+        if (stale !== undefined) {{ delete window.__kiriRingSlots[id]; ringFree(stale); }}
         reject(new Error("ipc timeout after " + TIMEOUT + "ms"));
       }}, TIMEOUT);
       window.kiri.pending[id] = function (resp) {{
         clearTimeout(timer);
+        var s = window.__kiriRingSlots[id];
+        if (s !== undefined) {{ delete window.__kiriRingSlots[id]; ringFree(s); }}
         if (resp && resp.error) {{
           reject(new Error((resp.error && resp.error.message) || "ipc error"));
         }} else {{
           resolve(resp);
         }}
       }};
+      if (WANT_RING) {{
+        if (ringReady() && sendRing(id, payload)) return;
+        window.__kiriRingFallbacks++;
+      }}
       var payloadJson = JSON.stringify(payload);
       var payloadLen = typeof TextEncoder === "function"
         ? new TextEncoder().encode(payloadJson).length
@@ -116,6 +275,7 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
     return "a".repeat(size);
   }}
   async function run() {{
+    if (WANT_RING) await waitRing(2000);
     var results = [];
     for (var s = 0; s < SIZES.length; s++) {{
       var size = SIZES[s];
@@ -125,6 +285,8 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
       }}
       var samples = [];
       var hitsBefore = window.__kiriSharedBufferHits || 0;
+      var ringBefore = window.__kiriRingHits || 0;
+      var ringFbBefore = window.__kiriRingFallbacks || 0;
       var tBatch = performance.now();
       for (var i = 0; i < RUNS; i++) {{
         var t0 = performance.now();
@@ -141,6 +303,8 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         concurrentBatches.push(performance.now() - concurrentStart);
       }}
       var hits = (window.__kiriSharedBufferHits || 0) - hitsBefore;
+      var ringHits = (window.__kiriRingHits || 0) - ringBefore;
+      var ringFb = (window.__kiriRingFallbacks || 0) - ringFbBefore;
       results.push({{
         size_bytes: size,
         rtt_ms: samples,
@@ -149,13 +313,17 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         concurrent_batch_ms: concurrentBatches,
         concurrency: CONCURRENCY,
         shared_buffer_hits: hits,
-        shared_buffer_used: hits > 0
+        shared_buffer_used: hits > 0,
+        ring_slot_hits: ringHits,
+        ring_send_fallbacks: ringFb
       }});
     }}
-    post({{ type: "ipc_bench", target: "kiri-host", results: results }});
+    post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT,
+      ring_send_fallbacks: window.__kiriRingFallbacks || 0,
+      results: results }});
   }}
   run().catch(function (err) {{
-    post({{ type: "ipc_bench", target: "kiri-host", error: String(err) }});
+    post({{ type: "ipc_bench", target: "kiri-host", transport: TRANSPORT, error: String(err) }});
   }});
 }})();"#,
         runs = runs,
@@ -163,6 +331,11 @@ pub fn kiri_script(runs: u32, warmup: u32, sizes: &[usize]) -> String {
         concurrency = DEFAULT_CONCURRENCY,
         sizes_json = sizes_json,
         timeout = CALL_TIMEOUT_MS,
+        want_ring = want_ring,
+        global_magic = crate::ring_ipc::GLOBAL_MAGIC,
+        slot_magic = crate::ring_ipc::SLOT_MAGIC,
+        global_hdr = crate::ring_ipc::GLOBAL_HEADER_BYTES,
+        slot_hdr = crate::ring_ipc::SLOT_HEADER_BYTES,
     )
 }
 
@@ -307,6 +480,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
             let concurrency = item.get("concurrency").and_then(|v| v.as_u64());
             let shared_hits = item.get("shared_buffer_hits").and_then(|v| v.as_u64());
             let shared_used = item.get("shared_buffer_used").and_then(|v| v.as_bool());
+            let ring_hits = item.get("ring_slot_hits").and_then(|v| v.as_u64());
+            let ring_fb = item.get("ring_send_fallbacks").and_then(|v| v.as_u64());
             let mut summary = summarize(&rtt);
             if let Some(obj) = summary.as_object_mut() {
                 if let Some(v) = batch_ms {
@@ -325,6 +500,8 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
                 "concurrency": concurrency,
                 "shared_buffer_hits": shared_hits,
                 "shared_buffer_used": shared_used.unwrap_or(false),
+                "ring_slot_hits": ring_hits,
+                "ring_send_fallbacks": ring_fb,
                 "summary": summary,
             }));
         }
@@ -339,6 +516,7 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
         "schema_version": 1,
         "name": "through-webview-ipc",
         "target": raw.get("target").cloned().unwrap_or(json!("unknown")),
+        "transport": raw.get("transport").cloned().unwrap_or(json!("default")),
         "error": raw.get("error").cloned(),
         "commit": git_commit(),
         "created_unix_ns": created,
@@ -349,6 +527,11 @@ pub fn write_result(path: Option<&PathBuf>, raw: &Value) -> Result<(), String> {
             "threshold_bytes": 64 * 1024,
             "replies_ok": raw.get("shared_buffer_replies_ok").cloned().unwrap_or(json!(0)),
             "replies_fallback": raw.get("shared_buffer_replies_fallback").cloned().unwrap_or(json!(0)),
+        },
+        "ring": {
+            "replies_ok": raw.get("ring_replies_ok").cloned().unwrap_or(json!(0)),
+            "replies_fallback": raw.get("ring_replies_fallback").cloned().unwrap_or(json!(0)),
+            "send_fallbacks": raw.get("ring_send_fallbacks").cloned().unwrap_or(json!(0)),
         },
         "results": results_out,
     });
@@ -378,7 +561,7 @@ mod tests {
 
     #[test]
     fn kiri_script_mentions_real_bridge_and_sizes() {
-        let script = kiri_script(7, 2, DEFAULT_SIZES);
+        let script = kiri_script(7, 2, DEFAULT_SIZES, IpcBenchTransport::Default);
         assert!(script.contains("window.kiri.send"));
         assert!(script.contains("command_id: 1"));
         assert!(script.contains("type: \"ipc_bench\""));
@@ -386,7 +569,19 @@ mod tests {
         assert!(script.contains("shared_buffer_used"));
         assert!(script.contains("Promise.all(pending)"));
         assert!(script.contains("concurrent_batch_ms"));
+        assert!(script.contains("WANT_RING = false"));
         assert!(!script.contains("bulk_bench"));
+    }
+
+    #[test]
+    fn kiri_ring_script_enables_ring_transport() {
+        let script = kiri_script(7, 2, DEFAULT_SIZES, IpcBenchTransport::RingZerocopy);
+        assert!(script.contains("WANT_RING = true"));
+        assert!(script.contains("\"ring_zerocopy\""));
+        assert!(script.contains("sendRing(id, payload)"));
+        assert!(script.contains("type: \"cmd\", ring:"));
+        assert!(script.contains("ring_resp"));
+        assert!(script.contains("ring_slot_hits"));
     }
 
     #[test]
