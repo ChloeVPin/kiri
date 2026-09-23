@@ -21,7 +21,7 @@ name = "kiri-host-stress"
 path = "src/bin/kiri-host-stress.rs"
 
 [dependencies]
-kiri-core = { path = "../kiri-core", version = "0.1.6" }
+kiri-core = { path = "../kiri-core", version = "0.1.7" }
 serde.workspace = true
 serde_json.workspace = true
 notify = "8.2.0"
