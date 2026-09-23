@@ -58,6 +58,17 @@ while newest inbound frames are dropped when the delivery queue is full. This
 is a bounded transport policy, but it does not prove a bounded WebView2
 `WebMessageReceived` queue.
 
-- Needed evidence: Level A - WebView2 `WebMessageReceived` delivery model
-  (postMessage is async; does the host side see a bounded queue?), plus a
-  measured stress result.
+- Evidence: Level A - WebView2 `WebMessageReceived` is delivered on the UI
+  thread via the WebView2/COM message pump, and the host cannot read
+  WebView2's internal queue depth. Kiri's bound is therefore a host-owned
+  admit/in-flight gate on command dispatch, not a claim that Chromium's
+  queue is bounded.
+- Resolution (implementation): `kiri_runtime::ipc_inbound::InboundGate`
+  admits at most 32 in-flight control-plane dispatches per host session
+  (matching the menu UI-thread queue capacity in `menu_dispatch`). Both
+  backends call `try_admit` before dispatch; saturation replies with a
+  `busy` wire error for that request id, and the RAII permit releases its
+  slot on drop so panic paths cannot leak capacity. Harness traffic
+  (`ipc_bench`, `menu_smoke`) bypasses the gate by design.
+- Remaining evidence: a measured stress result exercising the saturated
+  gate on both backends.

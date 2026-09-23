@@ -454,6 +454,10 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
     let ipc_bench_injected = Rc::new(Cell::new(false));
     let menu_smoke_done = Rc::new(Cell::new(false));
 
+    // Bounded host admit gate for control-plane commands (Q-005 / D-008):
+    // a flooded frontend gets `busy` instead of unbounded dispatch work.
+    let ipc_inbound = crate::ipc_inbound::InboundGate::new();
+
     // Shared slot so the IPC handler can post responses back to the webview
     // once it exists (the handler is created on the builder before build()).
     let webview_slot: Rc<RefCell<Option<wry::WebView>>> = Rc::new(RefCell::new(None));
@@ -505,6 +509,7 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
             let ipc_bench_done = ipc_bench_done.clone();
             let ipc_bench_out = ipc_bench_out.clone();
             let menu_smoke_done = menu_smoke_done.clone();
+            let ipc_inbound = ipc_inbound.clone();
             move |msg| {
                 if std::env::var_os("KIRI_DEBUG").is_some() {
                     // Debug mode must not turn into a payload logger. IPC
@@ -558,6 +563,20 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         );
                         post_response(&webview_slot, &err);
                         return;
+                    };
+                    // Host-owned admit gate: at most IN_FLIGHT_CAPACITY
+                    // dispatches run at once; beyond that the request is
+                    // answered with `busy`. The permit frees its slot on drop,
+                    // so panic paths cannot leak capacity.
+                    let _permit = match ipc_inbound.try_admit() {
+                        Ok(permit) => permit,
+                        Err(error) => {
+                            post_response(
+                                &webview_slot,
+                                &WireResponse::err(request.request_id, error),
+                            );
+                            return;
+                        }
                     };
                     let mut sink = diagnostics.clone();
                     if !markers.borrow().has(Marker::FirstInvokeDispatched) {
