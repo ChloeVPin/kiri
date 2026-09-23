@@ -1042,12 +1042,14 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
               } catch (err) {}
             });
           }
+          var domPosted = false;
           function postDom() {
+            if (domPosted) return;
+            domPosted = true;
             window.kiri.post({ type: 'ready', phase: 'dom' });
           }
-          if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', postDom);
-          } else {
+          document.addEventListener('DOMContentLoaded', postDom);
+          if (document.readyState !== 'loading') {
             postDom();
           }
           requestAnimationFrame(function () {
@@ -1383,6 +1385,19 @@ fn handle_web_message(
                 rt.markers.record(Marker::AppReady, qpc_now_ns());
             }
             Some("frame") => {
+                // Same fallback as the dom arm: a painted frame implies
+                // navigation and DOM completed. If the frame message
+                // arrives without a prior dom message (observed on WebView2
+                // CI: first_animation_frame present, webview_ready and
+                // dom_ready absent), recover the earlier markers before
+                // arming smoke exit.
+                if !rt.markers.has(Marker::WebViewReady) {
+                    rt.markers.record(Marker::WebViewReady, qpc_now_ns());
+                }
+                if !rt.markers.has(Marker::DomReady) {
+                    rt.markers.record(Marker::DomReady, qpc_now_ns());
+                    rt.markers.record(Marker::AppReady, qpc_now_ns());
+                }
                 rt.markers.record(Marker::FirstAnimationFrame, qpc_now_ns());
                 if rt.options.ipc_bench && !rt.ipc_bench_injected {
                     rt.ipc_bench_injected = true;

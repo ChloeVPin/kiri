@@ -108,9 +108,16 @@ const BRIDGE_SCRIPT: &str = r#"
           window.__TAURI_INTERNALS__.invoke('kiri_marker', { json: s });
         }
       }
-      window.addEventListener('DOMContentLoaded', function () {
+      var domPosted = false;
+      function postDom() {
+        if (domPosted) return;
+        domPosted = true;
         post({ type: 'ready', phase: 'dom' });
-      });
+      }
+      window.addEventListener('DOMContentLoaded', postDom);
+      if (document.readyState !== 'loading') {
+        postDom();
+      }
       requestAnimationFrame(function () {
         post({ type: 'ready', phase: 'frame' });
       });
@@ -620,6 +627,16 @@ fn run_inner(options: HostOptions) -> Result<StartupMarkers, i32> {
                         record(&markers, Marker::AppReady);
                     }
                     Some("frame") => {
+                        // Recover webview_ready/dom_ready if the frame
+                        // message arrived without a prior dom message
+                        // (parity with the Windows host's frame fallback).
+                        if !markers.borrow().has(Marker::WebViewReady) {
+                            record(&markers, Marker::WebViewReady);
+                        }
+                        if !markers.borrow().has(Marker::DomReady) {
+                            record(&markers, Marker::DomReady);
+                            record(&markers, Marker::AppReady);
+                        }
                         record(&markers, Marker::FirstAnimationFrame);
                     }
                     _ => {}
