@@ -107,6 +107,26 @@ frontend and compile-time embedded frontend, and IPC batch means
 with raw round-trip p95/p99 plus bounded eight-request concurrent-batch p95/p99.
 The report must retain all views: batch means
 capture throughput, while tails expose contention and scheduling regressions.
+
+## Scoreboard proof gate
+
+`benchmark/scoreboard_gate.py` validates through-webview IPC artifacts
+against the publish contract in `docs/SCOREBOARD_PROOF.md`. Anything headed
+for the scoreboard must pass it first:
+
+```bash
+python3 benchmark/scoreboard_gate.py check artifacts/ipc-kiri.json artifacts/ipc-tauri.json
+```
+
+The gate REFUSES in-process microbenches (`bulk_bench`), artifacts missing
+run/runner/commit provenance or iteration/warmup counts, fixture/example
+data, and `shared-buffer`/`zero-copy` claims that lack per-size proof counts
+(`shared_buffer_used`, `shared_buffer_hits`) plus reply/fallback counts.
+`kiri-host --ipc-bench` and the Tauri baseline stamp provenance from the
+environment automatically; `scoreboard_gate.py stamp` injects it into older
+artifacts. The refusal reasons are printed so a blocked chart states exactly
+what evidence is missing.
+
 ## T007 ordinary-message bulk-path benchmark
 
 `crates/kiri-core/examples/bulk_bench.rs` measures the kiri-core JSON control

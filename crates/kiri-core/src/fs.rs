@@ -329,8 +329,7 @@ mod tests {
     #[test]
     fn oversized_write_hits_backpressure() {
         let (scope, dir) = sandbox();
-        let mut limits = Limits::default();
-        limits.max_single_bulk_bytes = 4;
+        let limits = Limits { max_single_bulk_bytes: 4, ..Limits::default() };
         let svc = FsService::new(scope, limits);
         let big = base64::engine::general_purpose::STANDARD.encode(vec![0u8; 1024]);
         let err = svc.write(dir.join("big.bin").to_str().unwrap(), &big, false).unwrap_err();

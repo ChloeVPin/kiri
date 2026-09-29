@@ -1,10 +1,10 @@
-//! `kiri-host`: the native host binary.
+//! `kiri-ipc-app`: single-binary host for the embedded IPC demo.
 //!
-//! Serves the shared blank frontend and runs the startup sequence, emitting
-//! the startup result JSON. The backend is selected automatically (direct
-//! Win32 + WebView2 on Windows, wry/tao elsewhere). In smoke mode (`--smoke`)
-//! it exits by itself after the first animation frame plus
-//! `--exit-after-ready-ms`, gated by a watchdog so CI cannot hang.
+//! Same CLI surface as `kiri-host`. With no `--frontend` it serves the UI
+//! packed at compile time from `frontend/` (see `.cargo/config.toml`), so the
+//! shipped artifact is this one file. On Windows the packed bytes are
+//! materialized to a temp dir because WebView2 virtual-host mapping requires
+//! a real directory; the binary still ships alone.
 
 use std::path::PathBuf;
 
@@ -14,7 +14,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut frontend_dir: Option<PathBuf> = None;
     let mut markers_out: Option<PathBuf> = None;
-    let mut title = "Kiri".to_string();
+    let mut title = "Kiri IPC".to_string();
     let mut width = 1024u32;
     let mut height = 768u32;
     let mut smoke = false;
@@ -24,7 +24,6 @@ fn main() {
     let mut ipc_bench_runs = kiri_runtime::ipc_bench::DEFAULT_RUNS;
     let mut ipc_bench_out: Option<PathBuf> = None;
     let mut ipc_bench_sizes: Option<Vec<usize>> = None;
-    let mut ipc_bench_transport = kiri_runtime::ipc_bench::IpcBenchTransport::Default;
 
     let mut i = 0;
     while i < args.len() {
@@ -70,21 +69,11 @@ fn main() {
             "--ipc-bench-sizes" => {
                 i += 1;
                 if let Some(v) = args.get(i) {
-                    ipc_bench_sizes =
-                        Some(v.split(',').filter_map(|s| s.trim().parse::<usize>().ok()).collect());
-                }
-            }
-            "--ipc-bench-transport" => {
-                i += 1;
-                match args.get(i).and_then(|v| kiri_runtime::ipc_bench::IpcBenchTransport::parse(v))
-                {
-                    Some(t) => ipc_bench_transport = t,
-                    None => {
-                        eprintln!(
-                            "unknown --ipc-bench-transport (want default|ring_zerocopy|protocol_ring)"
-                        );
-                        std::process::exit(2);
-                    }
+                    ipc_bench_sizes = Some(
+                        v.split(',')
+                            .filter_map(|s| s.trim().parse::<usize>().ok())
+                            .collect(),
+                    );
                 }
             }
             "--exit-after-ready-ms" => {
@@ -101,11 +90,10 @@ fn main() {
             }
             "--help" | "-h" => {
                 println!(
-                    "kiri-host: native host (cross-platform)\n\
-                     usage: kiri-host [--frontend DIR] [--markers-out PATH] [--smoke]\n\
+                    "kiri-ipc-app: single-binary Kiri host with embedded UI\n\
+                     usage: kiri-ipc-app [--frontend DIR] [--markers-out PATH] [--smoke]\n\
                      \x20  [--ipc-bench] [--ipc-bench-runs N] [--ipc-bench-out PATH]\n\
                      \x20  [--ipc-bench-sizes 0,64,1024,...]\n\
-                     \x20  [--ipc-bench-transport default|ring_zerocopy|protocol_ring]\n\
                      \x20  [--title T] [--width N] [--height N]\n\
                      \x20  [--exit-after-ready-ms N] [--watchdog-ms N]\n\
                      \x20  watchdog-ms 0 disables the ready watchdog"
@@ -122,7 +110,7 @@ fn main() {
 
     let frontend_dir = {
         let env_frontend = std::env::var_os("KIRI_FRONTEND").map(PathBuf::from);
-        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kiri-host"));
+        let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("kiri-ipc-app"));
         match kiri_runtime::frontend::resolve_frontend_source(frontend_dir, env_frontend, &exe) {
             Ok(kiri_runtime::frontend::FrontendSource::Directory(dir)) => Some(dir),
             Ok(kiri_runtime::frontend::FrontendSource::Embedded) => None,
@@ -155,7 +143,6 @@ fn main() {
     options.ipc_bench = ipc_bench;
     options.ipc_bench_runs = ipc_bench_runs;
     options.ipc_bench_out = ipc_bench_out;
-    options.ipc_bench_transport = ipc_bench_transport;
     if let Some(sizes) = ipc_bench_sizes {
         if !sizes.is_empty() {
             options.ipc_bench_sizes = sizes;
