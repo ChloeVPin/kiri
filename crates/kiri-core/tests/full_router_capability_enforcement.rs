@@ -234,6 +234,7 @@ impl kiri_core::notification::NotificationRunner for StubNotificationRunner {
 
 /// Host-policy seeds for the second gate. Empty vecs / deny flags match a
 /// host that registered the surface but installed no allowlist entries.
+#[derive(Default)]
 struct AllowlistSeeds {
     http_hosts: Vec<String>,
     shell_commands: Vec<AllowedCommand>,
@@ -243,20 +244,6 @@ struct AllowlistSeeds {
     /// When true, PathScope allows reads under the temp root (escape tests).
     fs_read: bool,
     fs_write: bool,
-}
-
-impl Default for AllowlistSeeds {
-    fn default() -> Self {
-        Self {
-            http_hosts: vec![],
-            shell_commands: vec![],
-            event_channels: vec![],
-            opener_url_schemes: vec![],
-            opener_file_extensions: vec![],
-            fs_read: false,
-            fs_write: false,
-        }
-    }
 }
 
 fn full_router() -> Router {
