@@ -312,6 +312,7 @@ fn decoy_allowlists() -> Allow {
             id: "new".to_string(),
             label: "New".to_string(),
             action: "new".to_string(),
+            accelerator: None,
         }],
     }
 }
@@ -351,6 +352,7 @@ fn granted_allowlists() -> Allow {
             id: "quit".to_string(),
             label: "Quit".to_string(),
             action: "quit".to_string(),
+            accelerator: None,
         }],
     }
 }
