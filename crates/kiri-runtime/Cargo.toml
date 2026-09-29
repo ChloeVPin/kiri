@@ -46,5 +46,15 @@ arboard = "3"
 tao = "0.36"
 wry = "0.56.1"
 
+# muda builds menu children through objc2's MainThreadMarker, which asserts it
+# is on the process main thread. The libtest harness runs every #[test] on a
+# spawned thread, so this target opts out of the harness: its main() is the
+# process main thread and the real construction path is covered on macOS.
+[[test]]
+name = "native_menu_main_thread"
+path = "tests/native_menu_main_thread.rs"
+harness = false
+
 [dev-dependencies]
+muda = "0.19.3"
 serde_json.workspace = true

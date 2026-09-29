@@ -180,17 +180,10 @@ mod tests {
         }
     }
 
-    #[test]
-    #[cfg_attr(
-        target_os = "macos",
-        ignore = "muda macOS Submenu must be built on the process main thread; \
-                  the macOS native menu smoke job in correctness.yml covers this path"
-    )]
-    fn set_items_accepts_host_accelerator() {
-        let mut menu = NativeMenu::new();
-        menu.set_items(&[item("quit", Some("CmdOrCtrl+Q")), item("show", None)]).unwrap();
-        assert_eq!(menu.item_ids.len(), 2);
-    }
+    // The host-accelerator construction path cannot be asserted from a
+    // `#[test]`: muda needs the process main thread and libtest runs each
+    // test on a spawned thread. It is covered for real, on the main thread, by
+    // tests/native_menu_main_thread.rs (harness = false).
 
     #[test]
     fn set_items_rejects_invalid_accelerator() {
