@@ -5,13 +5,16 @@ native host plus a packed web UI. JavaScript can only reach what the host named
 twice: a capability bit **and** an allowlist (host, command, path, template,
 channel, or scheme). That contract is defined in [`PRODUCT.md`](PRODUCT.md).
 
-**Status (honest):** the latest **published** host is
-**[v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6)**. Workspace
-`Cargo.toml` may already say `0.1.7`; that is source, not a download. Until OS
-notarization / Authenticode, double-click onboarding without a cheatsheet,
-no-clone embed-from-CI, and a kept-current public scoreboard all land, treat
-this as an **early runtime + demo**, not a finished Tauri replacement
-([`PRODUCT.md`](PRODUCT.md), [`VS_TAURI.md`](VS_TAURI.md)).
+**Published vs tree:** the download/scaffold path uses the latest
+**[GitHub Release](https://github.com/ChloeVPin/kiri/releases/latest)** —
+currently **[v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6)**.
+`Cargo.toml` on `main` may already say `0.1.7`; that is source, not what
+`create-kiri-app` fetches. Until OS notarization / Authenticode, double-click
+onboarding without a cheatsheet, no-clone embed-from-CI, and a kept-current
+public scoreboard all land, treat this as an **early runtime + demo**, not a
+finished Tauri replacement ([`PRODUCT.md`](PRODUCT.md),
+[`VS_TAURI.md`](VS_TAURI.md)). Details:
+[`STATUS.md`](STATUS.md) (public release skew).
 
 ## What you can do today
 
@@ -23,55 +26,82 @@ this as an **early runtime + demo**, not a finished Tauri replacement
 | CI zip of host + UI | Copy `templates/ship-app.yml` (sidecar frontend, not embed) | CI |
 | One binary, UI inside | Copy `templates/embed-ipc-app/` + `templates/embed-ipc-app.yml` | CI + Rust |
 
-## Platforms in the latest RELEASES.json
+## Platforms in the public RELEASES.json
 
-Only these assets exist in [v0.1.6](https://github.com/ChloeVPin/kiri/releases/tag/v0.1.6):
+Only these keys ship in the live manifest today:
 
 - `darwin-aarch64` (Apple Silicon)
 - `linux-x86_64`
 - `windows-x86_64`
 
-Intel Mac and Linux ARM are **not** published; the scaffolder will error with a
-missing platform URL.
+Intel Mac (`darwin-x86_64`) and Linux aarch64 are **not** in the public
+manifest yet. The scaffolder understands those platform names but will fail
+looking up a URL until a release adds them.
 
 ## Platform prerequisites
 
-- macOS: system WebView (Apple Silicon for published archives).
-- Windows: Evergreen WebView2 runtime.
-- Linux: GTK 3 and WebKit2GTK 4.1. Debian/Ubuntu:
-  `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`. Other distros: install the
-  equivalent packages.
+- macOS: macOS with its system WebView runtime (Apple Silicon for published
+  archives).
+- Windows: Windows with the Evergreen WebView2 runtime.
+- Linux: GTK 3 and WebKit2GTK 4.1 runtime libraries. Debian/Ubuntu users
+  can install them with `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`.
+  Other distros: install the equivalent packages.
 
-Kiri's public archives are **application-level** Ed25519 signed (`RELEASES.json`)
-but **unsigned by the OS**. macOS may show an unidentified-developer
-(Gatekeeper) warning; Windows may show SmartScreen. Suitable for evaluation and
-development; notarization, Authenticode, and distro package signing remain
-separate release work.
+Kiri's current public archives are application-level Ed25519 signed
+(`RELEASES.json`) but **unsigned by the OS** — not notarized, not
+Authenticode, not App Store / Microsoft Store ready. macOS may show an
+unidentified-developer (Gatekeeper) warning; use right-click → **Open** the
+first time. Windows may show SmartScreen. Suitable for evaluation and
+development; native notarization, Authenticode signing, and distro package
+signing remain separate release work.
 
 ## 1. Scaffold an app (no git tree required)
 
-There is no crates.io / npm / brew package yet. The evaluation path downloads
-the latest **published** release host:
+Prefer downloading or cloning the scaffolder, then running it locally so you
+can read it before it touches your machine:
+
+```sh
+# from a clone of this repo
+./tools/create-kiri-app.sh ~/Desktop/my-kiri-app
+
+# or download the script alone, then run it
+curl -fsSL -o create-kiri-app.sh \
+  https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh
+chmod +x create-kiri-app.sh
+./create-kiri-app.sh ~/Desktop/my-kiri-app
+```
+
+Pipe-to-bash still works for quick evaluation (same script; still tracks
+published `RELEASES.json`, not tree `Cargo.toml`):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.sh | bash -s ~/Desktop/my-kiri-app
 ```
 
-Prefer not to pipe to bash? Clone this repo and run
-`./tools/create-kiri-app.sh ~/Desktop/my-kiri-app` instead (same script; can use
-local templates when present).
+Prefer not to pipe to bash? Run the script from a clone instead (same script;
+can use local templates when present).
 
-On Windows PowerShell:
+On Windows PowerShell, prefer downloading the script first:
+
+```powershell
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.ps1 -OutFile create-kiri-app.ps1
+& .\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
+```
+
+Or from a clone:
+
+```powershell
+& .\tools\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
+```
+
+One-liner (evaluation):
 
 ```powershell
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/ChloeVPin/kiri/main/tools/create-kiri-app.ps1))) "$HOME\Desktop\my-kiri-app"
 ```
 
-Or, from a clone:
-
-```powershell
-& .\tools\create-kiri-app.ps1 "$HOME\Desktop\my-kiri-app"
-```
+This downloads the latest **published** release host and starter UI, then
+assembles a runnable app.
 
 ### Run what you just created
 
