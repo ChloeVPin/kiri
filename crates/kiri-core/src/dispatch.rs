@@ -349,9 +349,10 @@ pub mod capability_bit {
     /// Map a command id to the capability bit it requires. Keeps plugin command
     /// registration in lockstep with the inline `Router::with_*` definitions so
     /// a command can only be registered with the authority it is supposed to
-    /// enforce. Unknown ids map to `PING` (harmless liveness-only authority).
-    pub fn for_command(id: u32) -> u32 {
-        match id {
+    /// enforce. Fail closed: unmapped ids return `None` so dispatch rejects
+    /// them instead of silently inheriting `PING` authority.
+    pub fn for_command(id: u32) -> Option<u32> {
+        let bit = match id {
             crate::dispatch::command_id::PING => PING,
             crate::dispatch::command_id::DIAGNOSTICS => DIAGNOSTICS,
             crate::dispatch::command_id::RESOURCES_OPEN
@@ -429,8 +430,9 @@ pub mod capability_bit {
                 MENU
             }
             crate::dispatch::command_id::PLUGIN_LIST => PLUGIN,
-            _ => PING,
-        }
+            _ => return None,
+        };
+        Some(bit)
     }
 }
 
@@ -454,6 +456,10 @@ struct Command {
 pub struct Router {
     commands: HashMap<u32, Command>,
     limits: Limits,
+    /// Channel allowlist shared with legacy `EVENT_EMIT` / `EVENT_LISTEN`.
+    /// Starts empty (fail-closed). `with_event` installs the host allowlist so
+    /// both the R-3 legacy ids and the audit-16 surface enforce the same set.
+    event_channel_allowlist: Arc<Mutex<crate::event::EventAllowlist>>,
 }
 
 impl Default for Router {
@@ -464,7 +470,11 @@ impl Default for Router {
 
 impl Router {
     pub fn new() -> Self {
-        let mut router = Router { commands: HashMap::new(), limits: Limits::default() };
+        let mut router = Router {
+            commands: HashMap::new(),
+            limits: Limits::default(),
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        };
         router.register_ping();
         router
     }
@@ -473,12 +483,20 @@ impl Router {
     /// built-in commands come exclusively from loaded plugins (R-2), proving the
     /// registration path instead of relying on inline defaults.
     pub fn new_empty() -> Self {
-        Router { commands: HashMap::new(), limits: Limits::default() }
+        Router {
+            commands: HashMap::new(),
+            limits: Limits::default(),
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        }
     }
 
     /// Build an empty router with an explicit limit set (tests + tuning).
     pub fn new_with_limits(limits: Limits) -> Self {
-        Router { commands: HashMap::new(), limits }
+        Router {
+            commands: HashMap::new(),
+            limits,
+            event_channel_allowlist: Arc::new(Mutex::new(crate::event::EventAllowlist::default())),
+        }
     }
 
     /// Attach a shared diagnostics sink and register the `kiri.diag` command.
@@ -562,6 +580,10 @@ impl Router {
     /// host facts and never touch the filesystem or network. The event bus is
     /// an in-process broadcast so the trusted frontend and native tooling share
     /// one channel (parity with Tauri's `event` module, R-3).
+    ///
+    /// Legacy `EVENT_EMIT` / `EVENT_LISTEN` consult the shared channel
+    /// allowlist (installed by [`Self::with_event`]); with no allowlist they
+    /// fail closed (`ScopeDenied`), matching the restricted audit-16 surface.
     pub fn with_platform(mut self, events: crate::platform::EventBus) -> Self {
         let mut os_required = CapabilityBits::empty();
         os_required.set(capability_bit::PLATFORM);
@@ -594,6 +616,7 @@ impl Router {
         );
 
         let emit_bus = events.clone();
+        let emit_allow = self.event_channel_allowlist.clone();
         let mut emit_required = CapabilityBits::empty();
         emit_required.set(capability_bit::EVENT);
         self.register(
@@ -603,6 +626,9 @@ impl Router {
                 let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
                     Error::protocol_error("kiri.event.emit requires string event")
                 })?;
+                let allow = emit_allow.lock().unwrap();
+                crate::event::ensure_channel_allowed(&allow, name, "emit")?;
+                drop(allow);
                 let data = payload.get("payload").cloned().unwrap_or(serde_json::Value::Null);
                 emit_bus.publish(name, data);
                 Ok(serde_json::json!({ "emitted": true }))
@@ -610,6 +636,7 @@ impl Router {
         );
 
         let listen_bus = events.clone();
+        let listen_allow = self.event_channel_allowlist.clone();
         let mut listen_required = CapabilityBits::empty();
         listen_required.set(capability_bit::EVENT);
         self.register(
@@ -619,6 +646,9 @@ impl Router {
                 let name = payload.get("event").and_then(|v| v.as_str()).ok_or_else(|| {
                     Error::protocol_error("kiri.event.listen requires string event")
                 })?;
+                let allow = listen_allow.lock().unwrap();
+                crate::event::ensure_channel_allowed(&allow, name, "listen")?;
+                drop(allow);
                 let id = listen_bus.subscribe(name);
                 Ok(serde_json::json!({ "listener_id": id }))
             }),
@@ -859,6 +889,10 @@ impl Router {
     /// cross-module events. Exceeds Tauri's unrestricted event module on the
     /// security axis.
     pub fn with_event(mut self, service: crate::event::EventService) -> Self {
+        // Install the identical allowlist into the legacy EVENT_EMIT/LISTEN
+        // handlers registered by `with_platform` (shared Arc). Fail-closed
+        // until this runs: an empty default deny-list is already in place.
+        *self.event_channel_allowlist.lock().unwrap() = (*service.allowlist()).clone();
         for (id, required, handler) in crate::event::event_handlers(service) {
             self.register(id, required, handler);
         }
@@ -951,6 +985,15 @@ impl Router {
     /// Returns true when the command id is registered.
     pub fn is_known(&self, id: u32) -> bool {
         self.commands.contains_key(&id)
+    }
+
+    /// Returns the exact required capability bits registered for `id`, or
+    /// `None` when the command is not registered. The through-webview gate
+    /// (`zc_ipc_gate`) authorizes against this value, so the pipe enforces
+    /// precisely what this router will dispatch with and unmapped ids fail
+    /// closed instead of falling back to a harmless bit.
+    pub fn required_bits(&self, id: u32) -> Option<CapabilityBits> {
+        self.commands.get(&id).map(|c| c.required)
     }
 
     /// Dispatch one parsed wire request from an already-identified caller.
@@ -1118,7 +1161,8 @@ impl StaticRouter {
     /// the same authorization decision expressed as a side-effect-free
     /// function. Used by the audit harness to verify the full id -> bit
     /// matrix without constructing a WebView (T005: auditable routing).
-    pub fn required_capability(&self, id: u32) -> u32 {
+    /// Returns `None` for unmapped ids (fail closed).
+    pub fn required_capability(&self, id: u32) -> Option<u32> {
         capability_bit::for_command(id)
     }
 
@@ -1143,7 +1187,12 @@ impl StaticRouter {
                 )));
             }
         };
-        let required = capability_bit::for_command(request.command_id);
+        let Some(required) = capability_bit::for_command(request.command_id) else {
+            return Err(Error::protocol_error(format!(
+                "unmapped command id {}",
+                request.command_id
+            )));
+        };
         let mut required_bits = CapabilityBits::empty();
         required_bits.set(required);
         if !caller_capabilities.is_superset_of(&required_bits) {
@@ -1244,7 +1293,7 @@ mod tests {
     fn malformed_payload_length_rejected() {
         let router = Router::new();
         let mut req = ping_request(1, json!(null));
-        req.payload_len = req.payload_len + 1; // declared != actual
+        req.payload_len += 1; // declared != actual
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(CallerId(1), &caller_caps(), &req, &mut sink);
         assert!(resp.error.is_some());
@@ -1260,6 +1309,45 @@ mod tests {
         let resp = router.dispatch(CallerId(1), &caller_caps(), &req, &mut sink);
         assert!(resp.error.is_some());
         assert_eq!(resp.error.as_ref().unwrap().code, crate::error::ErrorCode::ProtocolError);
+    }
+
+    #[test]
+    fn for_command_fails_closed_on_unmapped_ids() {
+        // Locking test for the fail-open arm: an unmapped id must resolve to
+        // `None`, never to the PING bit that the trusted frontend holds.
+        for id in [0u32, 4242, u32::MAX] {
+            assert_eq!(
+                capability_bit::for_command(id),
+                None,
+                "unmapped command id {id} must not map to a capability bit"
+            );
+        }
+        // The real ping command keeps its PING mapping.
+        assert_eq!(capability_bit::for_command(command_id::PING), Some(capability_bit::PING));
+    }
+
+    #[test]
+    fn unmapped_ids_denied_when_only_ping_granted() {
+        // A caller holding only PING must not reach an unmapped id through
+        // either dispatch surface.
+        let mut caps = CapabilityBits::empty();
+        caps.set(capability_bit::PING);
+
+        let router = Router::new();
+        let mut sink = RingTraceSink::new(16);
+        for id in [0u32, 4242, u32::MAX] {
+            let req = WireRequest::new(id, 1, 1, json!(null));
+            let resp = router.dispatch(CallerId(1), &caps, &req, &mut sink);
+            assert!(resp.error.is_some(), "unmapped id {id} dispatched with only PING granted");
+        }
+
+        let sr = StaticRouter::new();
+        for id in [0u32, 4242, u32::MAX] {
+            let req = WireRequest::new(id, 1, 1, json!(null));
+            let res = sr.authorize(&caps, &req);
+            assert!(res.is_err(), "unmapped id {id} authorized with only PING granted");
+            assert_eq!(sr.required_capability(id), None);
+        }
     }
 
     #[test]
@@ -1362,7 +1450,18 @@ mod tests {
 
     fn platform_router() -> (Router, crate::platform::EventBus) {
         let bus = crate::platform::EventBus::new();
-        let router = Router::new().with_platform(bus.clone());
+        // Host-equivalent: legacy R-3 + allowlisted audit-16 on one bus.
+        // Include "greeting" so the legacy emit/listen round-trip test can
+        // exercise the happy path without reopening the allowlist hole.
+        let allow = crate::event::EventAllowlist::new(vec![crate::event::AllowedChannel {
+            name: "greeting".to_string(),
+        }]);
+        let router =
+            Router::new().with_platform(bus.clone()).with_event(crate::event::EventService::new(
+                std::sync::Arc::new(bus.clone()),
+                allow,
+                Limits::default(),
+            ));
         (router, bus)
     }
 
@@ -1477,7 +1576,7 @@ mod tests {
         assert_eq!(res.unwrap_err().code, crate::error::ErrorCode::Unauthorized);
         // name + required bit are resolved purely from the catalog.
         assert_eq!(sr.command_name(command_id::PING), Some("kiri.ping"));
-        assert_eq!(sr.required_capability(command_id::PING), capability_bit::PING);
+        assert_eq!(sr.required_capability(command_id::PING), Some(capability_bit::PING));
     }
 
     #[test]
@@ -1491,7 +1590,7 @@ mod tests {
         let (name, bit) = res.unwrap();
         assert_eq!(name, "kiri.ping");
         assert_eq!(bit, capability_bit::PING);
-        assert_eq!(sr.is_known(command_id::PING), true);
+        assert!(sr.is_known(command_id::PING));
     }
 
     #[test]
