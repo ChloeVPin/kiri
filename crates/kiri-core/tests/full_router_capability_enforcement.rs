@@ -391,7 +391,12 @@ fn caps(bits: &[u32]) -> CapabilityBits {
     c
 }
 
-fn assert_scope_denied(router: &Router, granted: &CapabilityBits, id: u32, payload: serde_json::Value) {
+fn assert_scope_denied(
+    router: &Router,
+    granted: &CapabilityBits,
+    id: u32,
+    payload: serde_json::Value,
+) {
     let req = WireRequest::new(id, id as u64, 1, payload);
     let mut sink = RingTraceSink::new(16);
     let resp = router.dispatch(CallerId(1), granted, &req, &mut sink);
@@ -421,10 +426,7 @@ fn every_command_denied_without_capabilities() {
         let req = WireRequest::new(id, id as u64, 1, json!(null));
         let mut sink = RingTraceSink::new(16);
         let resp = router.dispatch(caller, &empty, &req, &mut sink);
-        assert!(
-            resp.error.is_some(),
-            "command id {id} MUST be denied with empty capabilities",
-        );
+        assert!(resp.error.is_some(), "command id {id} MUST be denied with empty capabilities",);
         assert_eq!(
             resp.error.as_ref().unwrap().code,
             ErrorCode::Unauthorized,
