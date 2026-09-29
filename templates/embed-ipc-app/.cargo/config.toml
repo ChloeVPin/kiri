@@ -1,0 +1,9 @@
+# Packs `frontend/` into the host binary at compile time. `relative = true`
+# resolves the value against the directory containing `.cargo/` (the app
+# root), so it works from any checkout path. kiri-runtime's build script
+# reads this variable; it is the equivalent of Tauri's `frontendDist`.
+#
+# `--frontend DIR` and `KIRI_FRONTEND` still override the packed UI at
+# runtime, which keeps edit-and-refresh development fast.
+[env]
+KIRI_EMBED_FRONTEND = { value = "frontend", relative = true }

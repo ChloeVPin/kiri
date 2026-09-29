@@ -21,7 +21,7 @@ name = "kiri-host-stress"
 path = "src/bin/kiri-host-stress.rs"
 
 [dependencies]
-kiri-core = { path = "../kiri-core", version = "0.1.7" }
+kiri-core = { path = "../kiri-core", version = "0.1.8" }
 serde.workspace = true
 serde_json.workspace = true
 notify = "8.2.0"
@@ -44,7 +44,10 @@ windows = { version = "0.62", features = [
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 arboard = "3"
 tao = "0.36"
-wry = "0.56.1"
+# linux-body passes fetch/XHR request bodies to custom protocol handlers on
+# WebKitGTK (Tauri enables the same feature); macOS bodies always flow. The
+# protocol_ring transport needs it so Linux hosts can serve POST invokes.
+wry = { version = "0.56.1", features = ["linux-body"] }
 
 [dev-dependencies]
 serde_json.workspace = true

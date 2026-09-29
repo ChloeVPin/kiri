@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kiri IPC</title>
+  <!-- kiri-embed-ipc-demo -->
+  <style>
+    :root {
+      --ink: #1a1410;
+      --soot: #2c241c;
+      --bone: #e8dcc8;
+      --rust: #c45c26;
+      --ash: #8a7a68;
+      --line: #3a3028;
+      --ok: #6abe3a;
+      --err: #d4452f;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      background: var(--ink);
+      color: var(--bone);
+      font: 15px/1.45 "Avenir Next", "Segoe UI", sans-serif;
+    }
+    .wrap {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 2.5rem 1.5rem;
+    }
+    main { width: min(30rem, 100%); }
+    header { text-align: center; margin-bottom: 1.5rem; }
+    header img { width: 72px; height: 72px; display: block; margin: 0 auto 0.9rem; }
+    h1 {
+      font-family: Palatino, "Iowan Old Style", "Times New Roman", serif;
+      font-weight: 600;
+      font-size: 2rem;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.3rem;
+    }
+    .lede { margin: 0; color: var(--ash); }
+    dl { margin: 0 0 1.25rem; border-top: 1px solid var(--line); }
+    .row {
+      display: grid;
+      grid-template-columns: 8.5rem 1fr;
+      gap: 0.75rem;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    dt {
+      margin: 0;
+      font-size: 0.68rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--ash);
+      padding-top: 0.2rem;
+    }
+    dd { margin: 0; font-variant-numeric: tabular-nums; word-break: break-all; }
+    section h2 {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.14em;
+      color: var(--ash); margin: 0 0 0.6rem; font-weight: 600;
+    }
+    .card {
+      background: var(--soot); border: 1px solid var(--line); border-radius: 6px;
+      padding: 1rem; margin-bottom: 1.25rem;
+    }
+    .controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 0.8rem; }
+    select, input {
+      appearance: none; border: 1px solid var(--line); background: var(--ink);
+      color: var(--bone); font: inherit; padding: 0.5rem 0.6rem; border-radius: 4px;
+      width: 7rem;
+    }
+    button {
+      flex: 1 1 8rem;
+      appearance: none; border: 1px solid var(--line); background: var(--ink);
+      color: var(--bone); font: inherit; padding: 0.55rem 0.75rem; cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover { border-color: var(--rust); }
+    button:focus-visible { outline: 2px solid var(--rust); outline-offset: 2px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; text-align: center; }
+    .stats .k { font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ash); }
+    .stats .v { font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+    .log {
+      margin-top: 0.8rem; max-height: 7rem; overflow-y: auto;
+      font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ash);
+    }
+    .log .entry { margin: 0 0 2px; word-break: break-all; }
+    .log .entry.ok { color: var(--ok); }
+    .log .entry.err { color: var(--err); }
+    .skip-link {
+      position: absolute; left: 0.75rem; top: -3rem; z-index: 1;
+      padding: 0.5rem 0.75rem; background: var(--bone); color: var(--ink);
+    }
+    .skip-link:focus { top: 0.75rem; }
+    #status {
+      margin: 1rem 0 0; text-align: center; font-size: 0.72rem;
+      letter-spacing: 0.14em; text-transform: uppercase; color: var(--rust);
+    }
+    #status.err { color: var(--err); }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <div class="wrap">
+    <main id="main-content">
+      <header>
+        <img src="kiri.svg" alt="">
+        <h1>Kiri IPC</h1>
+        <p class="lede">One binary. The UI was packed at compile time and every
+        number below crosses the webview IPC boundary.</p>
+      </header>
+      <dl>
+        <div class="row"><dt>Version</dt><dd id="ver">&hellip;</dd></div>
+        <div class="row"><dt>OS</dt><dd id="os">&hellip;</dd></div>
+        <div class="row"><dt>Arch</dt><dd id="arch">&hellip;</dd></div>
+        <div class="row"><dt>Bridge</dt><dd id="bridge">&hellip;</dd></div>
+      </dl>
+      <section>
+        <h2>Through-webview round-trip (window.kiri.send)</h2>
+        <div class="card">
+          <div class="controls">
+            <select id="size" aria-label="Payload size">
+              <option value="0">0 B</option>
+              <option value="1024">1 KiB</option>
+              <option value="16384">16 KiB</option>
+              <option value="65536" selected>64 KiB</option>
+              <option value="262144">256 KiB</option>
+            </select>
+            <input id="runs" type="number" min="1" max="5000" value="100" aria-label="Iterations">
+            <button type="button" id="run">Run pings</button>
+          </div>
+          <div class="stats">
+            <div><div class="k">min</div><div class="v" id="s-min">-</div></div>
+            <div><div class="k">mean</div><div class="v" id="s-mean">-</div></div>
+            <div><div class="k">p95</div><div class="v" id="s-p95">-</div></div>
+            <div><div class="k">shared buf</div><div class="v" id="s-sb">0</div></div>
+          </div>
+          <div class="log" id="log" role="log" aria-live="polite" aria-label="IPC log"></div>
+        </div>
+      </section>
+      <p id="status" role="status" aria-live="polite">connecting&hellip;</p>
+    </main>
+  </div>
+  <script src="kiri.js"></script>
+  <script>
+    (function () {
+      // Through-webview IPC, the same wire shape as the host --ipc-bench path.
+      // window.kiri.send posts a WireRequest to the native router; the host
+      // answers via window.kiri.onResponse. On WebView2 the host may reply
+      // with PostSharedBufferToScript for large payloads (zero-copy shared
+      // buffer); we count those replies separately.
+      var status = document.getElementById("status");
+      var logEl = document.getElementById("log");
+      function setStatus(text, err) {
+        status.textContent = text;
+        status.className = err ? "err" : "";
+      }
+      function set(id, value) { document.getElementById(id).textContent = value; }
+      function log(msg, kind) {
+        var e = document.createElement("div");
+        e.className = "entry" + (kind ? " " + kind : "");
+        e.textContent = msg;
+        logEl.prepend(e);
+        while (logEl.children.length > 40) logEl.removeChild(logEl.lastChild);
+      }
+
+      var api = window.kiri;
+      if (!api || typeof api.send !== "function") {
+        setStatus("bridge missing", true);
+        return;
+      }
+
+      set("bridge",
+        (window.chrome && window.chrome.webview && window.chrome.webview.postMessage)
+          ? "chrome.webview (WebView2)"
+          : (window.ipc && window.ipc.postMessage) ? "window.ipc (wry)" : "unknown");
+
+      // Count WebView2 shared-buffer replies. Today large pongs arrive this
+      // way; when the zero-copy transport lands it rides the same event.
+      window.__kiriSharedBufferHits = 0;
+      if (window.chrome && window.chrome.webview && window.chrome.webview.addEventListener) {
+        window.chrome.webview.addEventListener("sharedbufferreceived", function () {
+          window.__kiriSharedBufferHits++;
+          set("s-sb", String(window.__kiriSharedBufferHits));
+        });
+      }
+
+      Promise.all([api.app.version(), api.platform.os(), api.platform.arch()])
+        .then(function (parts) {
+          set("ver", parts[0]);
+          set("os", parts[1]);
+          set("arch", parts[2]);
+          setStatus("live");
+        })
+        .catch(function (e) { setStatus(String(e.message || e), true); });
+
+      api.pending = api.pending || Object.create(null);
+      window.__kiriIpcSeq = window.__kiriIpcSeq || 1;
+
+      function ping(payload) {
+        return new Promise(function (resolve, reject) {
+          var id = window.__kiriIpcSeq++;
+          var timer = setTimeout(function () {
+            delete api.pending[id];
+            reject(new Error("ipc timeout"));
+          }, 30000);
+          api.pending[id] = function (resp) {
+            clearTimeout(timer);
+            if (resp && resp.error) {
+              reject(new Error((resp.error && resp.error.message) || "ipc error"));
+            } else {
+              resolve(resp);
+            }
+          };
+          var payloadJson = JSON.stringify(payload === undefined ? null : payload);
+          var payloadLen = typeof TextEncoder === "function"
+            ? new TextEncoder().encode(payloadJson).length
+            : payloadJson.length;
+          api.send({
+            magic: "KRI1",
+            version: 1,
+            flags: 1,
+            command_id: 1,
+            request_id: id,
+            payload_len: payloadLen,
+            codec: 1,
+            payload: payload === undefined ? null : payload
+          });
+        });
+      }
+
+      function percentile(sorted, p) {
+        if (!sorted.length) return 0;
+        var k = (sorted.length - 1) * p;
+        var f = Math.floor(k);
+        var c = Math.min(f + 1, sorted.length - 1);
+        return f === c ? sorted[f] : sorted[f] + (sorted[c] - sorted[f]) * (k - f);
+      }
+
+      var running = false;
+      document.getElementById("run").addEventListener("click", function () {
+        if (running) return;
+        running = true;
+        var size = parseInt(document.getElementById("size").value, 10) || 0;
+        var runs = Math.max(1, Math.min(5000, parseInt(document.getElementById("runs").value, 10) || 1));
+        var payload = size === 0 ? null : "a".repeat(size);
+        var samples = [];
+        setStatus("running " + runs + " pings at " + size + " B");
+        var chain = Promise.resolve();
+        var i = 0;
+        function step() {
+          if (i >= runs) return Promise.resolve();
+          var t0 = performance.now();
+          return ping(payload).then(function () {
+            samples.push(performance.now() - t0);
+            i++;
+            return step();
+          });
+        }
+        chain = step();
+        chain.then(function () {
+          samples.sort(function (a, b) { return a - b; });
+          var mean = samples.reduce(function (s, x) { return s + x; }, 0) / samples.length;
+          set("s-min", samples[0].toFixed(2) + " ms");
+          set("s-mean", mean.toFixed(2) + " ms");
+          set("s-p95", percentile(samples, 0.95).toFixed(2) + " ms");
+          setStatus("live");
+          log(runs + " pings at " + size + " B: mean " + mean.toFixed(2) + " ms, p95 " +
+            percentile(samples, 0.95).toFixed(2) + " ms", "ok");
+        }).catch(function (e) {
+          setStatus(String(e.message || e), true);
+          log("ping failed after " + samples.length + ": " + (e.message || e), "err");
+        }).then(function () { running = false; });
+      });
+    })();
+  </script>
+</body>
+</html>

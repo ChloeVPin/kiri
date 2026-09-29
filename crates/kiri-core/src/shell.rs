@@ -47,7 +47,9 @@ impl ShellAllowlist {
     }
 
     /// Whether `program` with `args` is permitted under the allowlist.
-    fn allows(&self, program: &str, args: &[String]) -> bool {
+    /// `pub(crate)` so the through-webview gate can evaluate the exact same
+    /// allowlist decision the service applies.
+    pub(crate) fn allows(&self, program: &str, args: &[String]) -> bool {
         self.commands.iter().any(|c| {
             c.program == program
                 && args.len() >= c.args.len()
