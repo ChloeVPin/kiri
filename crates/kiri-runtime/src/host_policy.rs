@@ -46,7 +46,7 @@ pub fn ws_allow_urls() -> Vec<String> {
 }
 
 /// Host allowlist for `kiri.shell.run`. Default-deny: only the exact program
-/// + arg prefix below may spawn. The seed entry is a harmless readonly probe.
+/// + exact argv below may spawn. The seed entry is a harmless readonly probe.
 pub fn shell_allow_commands() -> Vec<kiri_core::shell::AllowedCommand> {
     vec![kiri_core::shell::AllowedCommand {
         program: "echo".to_string(),

@@ -20,6 +20,7 @@ pub mod frontend;
 pub mod fs_watch_ctl;
 pub mod host_policy;
 pub mod ipc_bench;
+pub mod ipc_inbound;
 pub mod markers;
 pub mod menu_dispatch;
 #[cfg(not(target_os = "windows"))]
