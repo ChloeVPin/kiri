@@ -12,3 +12,4 @@ baselines/tauri/gen/
 /kiri-agent-execution-corpus
 # Tauri v2 codegen output (regenerated from build.rs AppManifest::commands)
 baselines/tauri/permissions/
+__pycache__/
