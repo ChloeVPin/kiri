@@ -639,10 +639,7 @@ mod tests {
             ),
             &mut NoopTraceSink,
         );
-        assert_eq!(
-            denied.error.as_ref().unwrap().code,
-            crate::error::ErrorCode::ScopeDenied
-        );
+        assert_eq!(denied.error.as_ref().unwrap().code, crate::error::ErrorCode::ScopeDenied);
     }
 
     #[test]
@@ -670,10 +667,7 @@ mod tests {
             &mut NoopTraceSink,
         );
         assert!(denied.error.is_some(), "POST must be denied when method not on allowlist");
-        assert_eq!(
-            denied.error.as_ref().unwrap().code,
-            crate::error::ErrorCode::ScopeDenied
-        );
+        assert_eq!(denied.error.as_ref().unwrap().code, crate::error::ErrorCode::ScopeDenied);
         let ok = r.dispatch(
             CallerId(1),
             &granted,
