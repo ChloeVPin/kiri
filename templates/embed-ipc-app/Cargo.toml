@@ -1,0 +1,24 @@
+# Single-binary Kiri app template. Copy this directory into your app repo.
+#
+# `cargo build --release` produces one `kiri-ipc-app` binary with the UI in
+# `frontend/` compiled in (see .cargo/config.toml). No host zip download,
+# no frontend folder next to the shipped binary.
+
+[package]
+name = "kiri-ipc-app"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Single-binary Kiri app: embedded frontend exercising through-webview IPC"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+# Tracks kiri main. For a real app, pin a tag or rev so builds reproduce:
+#   kiri-runtime = { git = "https://github.com/ChloeVPin/kiri", tag = "vX.Y.Z" }
+# When the zero-copy IPC transport lands on main, this same manifest picks it
+# up; only the bridge internals change, the frontend API stays window.kiri.send.
+kiri-runtime = { git = "https://github.com/ChloeVPin/kiri" }
+
+# Standalone package even when copied inside another workspace.
+[workspace]

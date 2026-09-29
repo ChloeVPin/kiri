@@ -110,7 +110,9 @@ impl MethodAllowlist {
 
 /// Extract the authority (host[:port]) from an `http`/`https` URL without a URL
 /// crate. Returns `None` for malformed input so the service can reject it.
-fn authority_of(url: &str) -> Option<String> {
+/// `pub(crate)` so the through-webview gate can evaluate the exact same host
+/// allowlist decision the service applies.
+pub(crate) fn authority_of(url: &str) -> Option<String> {
     let without_scheme = url.strip_prefix("http://").or_else(|| url.strip_prefix("https://"))?;
     let authority = without_scheme.split('/').next().unwrap_or("");
     let authority = authority.split('?').next().unwrap_or("");
@@ -498,8 +500,7 @@ mod tests {
 
     #[test]
     fn response_over_size_cap_is_rejected() {
-        let mut limits = Limits::default();
-        limits.max_single_bulk_bytes = 100;
+        let limits = Limits { max_single_bulk_bytes: 100, ..Limits::default() };
         let svc = HttpService::new(
             Arc::new(StubHttpClient { status: 200, body: vec![0u8; 2048] }),
             HostAllowlist::new(vec!["big.example.com".to_string()]),

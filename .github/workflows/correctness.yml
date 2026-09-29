@@ -38,6 +38,9 @@ jobs:
       - name: Test benchmark harness schema
         run: python -m unittest benchmark/test_harness.py
 
+      - name: Test scoreboard proof gate
+        run: python -m unittest benchmark/test_scoreboard_gate.py
+
       - if: runner.os != 'Windows'
         name: Validate shell tooling
         run: bash -n tools/create-kiri-app.sh tools/packaging/package.sh tools/packaging/make-app.sh tools/packaging/make-dmg.sh
