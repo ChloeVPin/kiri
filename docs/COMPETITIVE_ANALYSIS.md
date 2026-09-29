@@ -74,6 +74,12 @@ winnable." Claims here are tied to verified gates, not aspirations.
 
 ## Measured IPC evidence (two different benches: do not mix them)
 
+> Publishing rule: every through-webview IPC artifact quoted on this
+> scoreboard must pass `benchmark/scoreboard_gate.py`
+> (`docs/SCOREBOARD_PROOF.md`). The gate refuses in-process microbenches,
+> missing run/runner/commit provenance, and `shared-buffer`/`zero-copy`
+> claims that lack per-size proof counts plus fallback counts.
+
 ### In-process router only (not what an app feels)
 
 `cargo run -q --release -p kiri-core --example bulk_bench` drives
