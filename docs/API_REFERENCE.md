@@ -60,13 +60,13 @@ host-owned controller.
 |--------|----|------------|---------|
 | `api.window.title()` | 14 | window | current title |
 | `api.window.setTitle(title)` | 15 | window | new title |
-| `api.window.show()` | 16 | window | — |
-| `api.window.hide()` | 17 | window | — |
-| `api.window.minimize()` | 18 | window | — |
-| `api.window.maximize()` | 19 | window | — |
-| `api.window.restore()` | 20 | window | — |
-| `api.window.close()` | 21 | window | — |
-| `api.window.focus()` | 22 | window | — |
+| `api.window.show()` | 16 | window | (none) |
+| `api.window.hide()` | 17 | window | (none) |
+| `api.window.minimize()` | 18 | window | (none) |
+| `api.window.maximize()` | 19 | window | (none) |
+| `api.window.restore()` | 20 | window | (none) |
+| `api.window.close()` | 21 | window | (none) |
+| `api.window.focus()` | 22 | window | (none) |
 | `api.window.state.save(geometry)` | 49 | window_state | persisted geometry |
 | `api.window.state.load()` | 50 | window_state | saved geometry |
 
@@ -224,7 +224,9 @@ an attacker-signed release.
 
 ## CLI (id 66)
 
-Structured, allowlist-scoped argv. Exceeds Tauri's raw `process.argv`.
+Structured, allowlist-scoped argv. Exceeds Tauri's raw `process.argv`. `raw`
+is rebuilt through the same host allowlist (argv[0], positionals, and declared
+flags/options only), and `full` cannot widen past it.
 
 | Method | Id | Capability | Returns |
 |--------|----|------------|---------|

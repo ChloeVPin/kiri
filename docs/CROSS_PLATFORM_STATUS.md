@@ -10,7 +10,7 @@ Do not fake completion: a lane is "verified" only when a gate actually ran
 and passed on that platform's real runtime. Cross-checked (compile only) and
 blocked are called out explicitly.
 
-## macOS (wry/tao) — VERIFIED, this host
+## macOS (wry/tao): VERIFIED, this host
 
 The day-to-day verification target. Real GPU, real WebView.
 
@@ -45,7 +45,7 @@ G-12 menu: `kiri.menu.set` (72) / `kiri.menu.invoke` (73) is wired via
 gate on `macos-latest` in `correctness.yml:134`. Manual keyboard/screen-reader
 check is the remaining human eye-test.
 
-## Windows (Win32 + WebView2) — VERIFIED on real Windows (CI)
+## Windows (Win32 + WebView2); VERIFIED on real Windows (CI)
 
 `host_windows.rs` is `#[cfg(target_os = "windows")]` and cannot build or run
 on this Mac. The only local evidence is compile-level.
@@ -79,7 +79,7 @@ listener with a document.readyState check; the existing dom-message fallback
 then also recovers webview_ready. Now genuinely green on real Windows.
 
 
-## Linux (wry/tao) — CROSS-CHECKED, blocked on execution
+## Linux (wry/tao): CROSS-CHECKED, blocked on execution
 
 Same backend as macOS (`host_cross.rs`), so it compiles and unit-tests with
 the rest of the workspace. A real WebView render is impossible to verify here
@@ -97,7 +97,7 @@ run #15/#16 where the headless smoke always hit the watchdog).
 ## Capability / command catalog (T011)
 
 `kiri.open` and `kiri.close` require the `RESOURCES` capability (bit 2),
-enforced by the shared validate pipeline — JavaScript cannot self-grant.
+enforced by the shared validate pipeline; JavaScript cannot self-grant.
 Resource access is owner + generation validated by `ResourceTable`; a stale
 or wrong-owner handle is rejected. `gen/commands.ts` regenerated to include
 both (id 3 / id 4).
