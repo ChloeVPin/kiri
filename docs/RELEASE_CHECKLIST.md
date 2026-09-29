@@ -2,7 +2,7 @@
 
 Unsigned artifacts are emitted with an Ed25519 `RELEASES.json`. Native OS signing
 (Apple notarization, Windows Authenticode) is out of scope; the pipeline logs
-`OS signing not configured — emitting unsigned artifact (production requires certs)`
+`OS signing not configured; emitting unsigned artifact (production requires certs)`
 and is ready to accept `APPLE_CERT` / `WINDOWS_CERT` via env vars when certs exist.
 Set `KIRI_ALLOW_UNSIGNED=0` to require a cert and fail fast.
 

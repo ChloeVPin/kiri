@@ -52,7 +52,10 @@ impl ShellAllowlist {
     /// forbid-extension rule. A longer argv after an allowlisted prefix is
     /// refused — prefix matching would let a frontend append flags like
     /// `--evil` onto a seeded probe such as `echo kiri-probe`.
-    fn allows(&self, program: &str, args: &[String]) -> bool {
+    ///
+    /// `pub(crate)` so the through-webview gate can evaluate the exact same
+    /// allowlist decision the service applies.
+    pub(crate) fn allows(&self, program: &str, args: &[String]) -> bool {
         self.commands.iter().any(|c| c.program == program && c.args.as_slice() == args)
     }
 
@@ -272,11 +275,7 @@ mod tests {
             serde_json::json!({ "program": "echo", "args": ["kiri-probe", "--evil"] }),
         );
         assert!(!denied["error"].is_null(), "argv extension must be denied: {denied}");
-        assert_eq!(
-            denied["error"]["code"],
-            "scope_denied",
-            "expected ScopeDenied, got: {denied}"
-        );
+        assert_eq!(denied["error"]["code"], "scope_denied", "expected ScopeDenied, got: {denied}");
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! Both backends (`host_cross.rs` on macOS/Linux, `host_windows.rs` on
 //! Windows) call these same functions so the security posture is identical
 //! on every platform. A divergence here would mean one backend is weaker
-//! than the other — this module exists so that cannot happen by accident.
+//! than the other: this module exists so that cannot happen by accident.
 //!
 //! Each function returns the seed allowlist for a capability-gated surface.
 //! In a real app these would be loaded from a `kiri.toml` config file; for
@@ -170,6 +170,41 @@ pub fn notification_templates() -> Vec<kiri_core::notification::NotificationTemp
             args: 1,
         },
     ]
+}
+
+/// The unified fail-closed gate for the through-webview / shared-buffer IPC
+/// pipe (`kiri_core::zc_ipc_gate`). Both backends share this construction so
+/// the permit policy is identical on every platform: a divergence here would
+/// mean one backend admits requests the other denies.
+///
+/// Each `admit` call declares the second gate for a surface, next to the
+/// mint call site, instead of distributing allowlist wiring across the host
+/// backends. Undeclared surfaces stay capability-only on this pipe; their
+/// in-service allowlists still run at execute time.
+pub fn zc_ipc_gate() -> kiri_core::zc_ipc_gate::ZcIpcGate {
+    use kiri_core::dispatch::command_id;
+    let mut gate = kiri_core::zc_ipc_gate::ZcIpcGate::new();
+    for id in [
+        command_id::HTTP_GET,
+        command_id::HTTP_POST,
+        command_id::HTTP_PUT,
+        command_id::HTTP_PATCH,
+        command_id::HTTP_DELETE,
+    ] {
+        gate.admit(
+            id,
+            kiri_core::zc_ipc_gate::http_host_admission(kiri_core::http::HostAllowlist::new(
+                http_allow_hosts(),
+            )),
+        );
+    }
+    gate.admit(
+        command_id::SHELL_RUN,
+        kiri_core::zc_ipc_gate::shell_command_admission(kiri_core::shell::ShellAllowlist::new(
+            shell_allow_commands(),
+        )),
+    );
+    gate
 }
 
 /// Host-pinned Ed25519 public key for the signed-update verifier (audit-18).

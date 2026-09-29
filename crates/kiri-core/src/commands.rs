@@ -35,16 +35,17 @@ pub struct CommandSpec {
 
 impl CommandSpec {
     /// Resolve the declared capability to a capability bit. The mapping is a
-    /// fixed, small table; unknown names fall back to bit 0 (ping) so the
-    /// catalog stays usable while the capability set grows.
-    pub fn capability_bit(&self) -> u32 {
+    /// fixed, small table; unknown names return `None` so an unmapped catalog
+    /// entry fails closed instead of silently inheriting the ping bit.
+    pub fn capability_bit(&self) -> Option<u32> {
         capability_bit_for(self.capability)
     }
 }
 
-/// Fixed capability-name -> bit mapping. Kept tiny and explicit.
-fn capability_bit_for(name: &str) -> u32 {
-    match name {
+/// Fixed capability-name -> bit mapping. Kept tiny and explicit. Fail closed:
+/// an unrecognized name returns `None`, never the ping bit.
+fn capability_bit_for(name: &str) -> Option<u32> {
+    Some(match name {
         "ping" => crate::dispatch::capability_bit::PING,
         "diag" => crate::dispatch::capability_bit::DIAGNOSTICS,
         "resources" => crate::dispatch::capability_bit::RESOURCES,
@@ -59,6 +60,9 @@ fn capability_bit_for(name: &str) -> u32 {
         "shell" => crate::dispatch::capability_bit::SHELL,
         "notification" => crate::dispatch::capability_bit::NOTIFICATION,
         "dialog" => crate::dispatch::capability_bit::DIALOG,
+        "shortcut" => crate::dispatch::capability_bit::SHORTCUT,
+        "autostart" => crate::dispatch::capability_bit::AUTOSTART,
+        "store" => crate::dispatch::capability_bit::STORE,
         "deeplink" => crate::dispatch::capability_bit::DEEPLINK,
         "opener" => crate::dispatch::capability_bit::OPENER,
         "window_state" => crate::dispatch::capability_bit::WINDOW_STATE,
@@ -70,8 +74,8 @@ fn capability_bit_for(name: &str) -> u32 {
         "ws" => crate::dispatch::capability_bit::WS,
         "menu" => crate::dispatch::capability_bit::MENU,
         "plugin" => crate::dispatch::capability_bit::PLUGIN,
-        _ => 0,
-    }
+        _ => return None,
+    })
 }
 
 /// The command catalog. Ordered by `id` ascending for stable iteration.
@@ -472,13 +476,13 @@ pub fn command_name(id: u32) -> Option<&'static str> {
     COMMANDS.iter().find(|c| c.id == id).map(|c| c.name)
 }
 
-/// Capability bits required by a command ID, or empty if unknown.
-pub fn required_capabilities(id: u32) -> CapabilityBits {
+/// Capability bits required by a command ID, or `None` if the id is unknown
+/// or its declared capability does not resolve to a bit (fail closed).
+pub fn required_capabilities(id: u32) -> Option<CapabilityBits> {
+    let spec = COMMANDS.iter().find(|c| c.id == id)?;
     let mut bits = CapabilityBits::empty();
-    if let Some(spec) = COMMANDS.iter().find(|c| c.id == id) {
-        bits.set(spec.capability_bit());
-    }
-    bits
+    bits.set(spec.capability_bit()?);
+    Some(bits)
 }
 
 /// Emit a deterministic TypeScript surface for the catalog. Each command
@@ -561,7 +565,22 @@ mod tests {
 
     #[test]
     fn unknown_id_has_no_capability() {
-        assert!(required_capabilities(999).is_empty());
+        assert!(required_capabilities(999).is_none());
+    }
+
+    #[test]
+    fn every_catalog_capability_name_resolves_to_a_bit() {
+        // Fail closed lock: an unmapped capability name must not fall back to
+        // the ping bit. Every catalog entry has to resolve explicitly.
+        for spec in COMMANDS {
+            assert!(
+                spec.capability_bit().is_some(),
+                "catalog command {} has unmapped capability {:?}",
+                spec.name,
+                spec.capability
+            );
+            assert!(required_capabilities(spec.id).is_some());
+        }
     }
 
     #[test]
