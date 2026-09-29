@@ -38,30 +38,57 @@ pub fn is_app_origin(origin: &str) -> bool {
 /// Policy for navigations initiated by the page.
 ///
 /// Returns `true` only when the target is the application origin (or an
-/// in-page fragment/relative navigation that stays within it). Remote
-/// navigations are rejected so a remote page can never retain privileged
-/// bridge access (specs/SECURITY.md, Navigation).
+/// in-page fragment/relative navigation that stays within it). Fail closed:
+/// any absolute URL with a non-app scheme (including `file:`, `blob:`,
+/// `ftp:`, protocol-relative `//…`) is denied so a compromised page cannot
+/// keep privileged bridge access after navigating away (specs/SECURITY.md,
+/// Navigation; D-010 shared policy). Exact `about:blank` is allowed because
+/// WebView hosts bootstrap with that document before the app origin loads.
 pub fn is_navigation_allowed(target: &str) -> bool {
     let target = target.trim();
     if target.is_empty() {
         return false;
     }
-    // Allow same-origin and relative/fragment navigations; reject anything
-    // that escapes to a remote scheme (http/https other than the app origin,
-    // or any other scheme).
+    // Protocol-relative URLs resolve against the document scheme and escape
+    // the application origin.
+    if target.starts_with("//") {
+        return false;
+    }
     if target.starts_with("http://") || target.starts_with("https://") {
         return is_app_origin(target);
     }
     if target.starts_with("kiri://") {
         return target == CROSS_APP_ORIGIN || target.starts_with(&format!("{CROSS_APP_ORIGIN}/"));
     }
-    // Relative paths, fragments, and javascript: are not remote navigations
-    // that would load a new document from another origin; the webview keeps
-    // the current (application) document. Block javascript: and data: URIs.
-    if target.starts_with("javascript:") || target.starts_with("data:") {
+    // WebView hosts briefly load `about:blank` before the application origin.
+    // That document has no bridge privileges; allow only the exact blank URL.
+    if target == "about:blank" {
+        return true;
+    }
+    // Absolute URLs with any other scheme fail closed. Relative paths and
+    // fragments (no RFC 3986 scheme) stay on the current application document.
+    if has_uri_scheme(target) {
         return false;
     }
     true
+}
+
+/// True when `target` begins with an RFC 3986 scheme (`ALPHA *(ALPHA / DIGIT /
+/// "+" / "-" / ".")` followed by `:`). Used so unknown schemes fail closed
+/// instead of being treated as relative paths.
+fn has_uri_scheme(target: &str) -> bool {
+    let Some(colon) = target.find(':') else {
+        return false;
+    };
+    let scheme = &target[..colon];
+    let mut chars = scheme.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_ascii_alphabetic() {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
 }
 
 /// Authoritative capability assignment for a trusted native caller.
@@ -173,6 +200,8 @@ mod tests {
     fn only_app_origin_navigations_allowed() {
         assert!(is_navigation_allowed(CROSS_APP_ORIGIN));
         assert!(is_navigation_allowed(WINDOWS_APP_ORIGIN));
+        assert!(is_navigation_allowed("kiri://localhost/index.html"));
+        assert!(is_navigation_allowed("https://app.localhost/index.html"));
         assert!(!is_navigation_allowed("https://evil.example.com/"));
         assert!(!is_navigation_allowed("http://app.local/"));
         assert!(!is_navigation_allowed("javascript:alert(1)"));
@@ -180,6 +209,27 @@ mod tests {
         // relative/fragment stays within the document
         assert!(is_navigation_allowed("#section"));
         assert!(is_navigation_allowed("/index.html"));
+        assert!(is_navigation_allowed("index.html"));
+        assert!(is_navigation_allowed("./assets/app.js"));
+    }
+
+    #[test]
+    fn navigation_fails_closed_on_non_app_schemes() {
+        // Previously returned true for any non-http(s)/non-kiri/non-js/non-data
+        // target (fail-open). These must deny.
+        assert!(!is_navigation_allowed("file:///etc/passwd"));
+        assert!(!is_navigation_allowed("file://C:/Windows/System32"));
+        assert!(is_navigation_allowed("about:blank"));
+        assert!(!is_navigation_allowed("about:srcdoc"));
+        assert!(!is_navigation_allowed("blob:https://evil.example/uuid"));
+        assert!(!is_navigation_allowed("ftp://evil.example/payload"));
+        assert!(!is_navigation_allowed("ws://evil.example/socket"));
+        assert!(!is_navigation_allowed("wss://evil.example/socket"));
+        assert!(!is_navigation_allowed("vbscript:msgbox(1)"));
+        assert!(!is_navigation_allowed("mailto:attacker@example.com"));
+        // Protocol-relative escapes the application origin.
+        assert!(!is_navigation_allowed("//evil.example.com/"));
+        assert!(!is_navigation_allowed("//evil.example.com/path"));
     }
 
     #[test]
