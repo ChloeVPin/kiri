@@ -84,11 +84,31 @@ impl NativeMenuWindows {
         self.actions.get(id).map(|(item, action)| (item.as_str(), action.as_str()))
     }
 
+    /// Accelerator table for the installed menu, handed to
+    /// `TranslateAcceleratorW` in the message loop (the documented muda
+    /// Windows pattern). `None` when no menu is installed, so the loop keeps
+    /// the plain translate/dispatch path.
+    pub fn haccel(&self) -> Option<windows::Win32::UI::WindowsAndMessaging::HACCEL> {
+        if self.installed {
+            self.menu.as_ref().map(|menu| {
+                windows::Win32::UI::WindowsAndMessaging::HACCEL(menu.haccel() as *mut _)
+            })
+        } else {
+            None
+        }
+    }
+
     fn set_items(&mut self, items: &[MenuItem]) -> Result<()> {
-        let native_items: Vec<muda::MenuItem> = items
-            .iter()
-            .map(|item| muda::MenuItem::with_id(item.id.clone(), item.label.clone(), true, None))
-            .collect();
+        let mut native_items: Vec<muda::MenuItem> = Vec::with_capacity(items.len());
+        for item in items {
+            let accelerator = crate::menu_accel::parse_accelerator(item)?;
+            native_items.push(muda::MenuItem::with_id(
+                item.id.clone(),
+                item.label.clone(),
+                true,
+                accelerator,
+            ));
+        }
         let refs: Vec<&dyn IsMenuItem> =
             native_items.iter().map(|item| item as &dyn IsMenuItem).collect();
         self.menu = Some(Menu::with_items(&refs).map_err(|e| {

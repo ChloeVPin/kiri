@@ -16,6 +16,13 @@ pub fn http_allow_hosts() -> Vec<String> {
     vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
 }
 
+/// Method allowlist for `kiri.http.*`. Seed is GET-only so a granted HTTP
+/// capability cannot escalate into POST/PUT/PATCH/DELETE without an explicit
+/// host opt-in (pass additional verbs via `HttpService::with_methods`).
+pub fn http_allow_methods() -> Vec<String> {
+    vec!["GET".to_string()]
+}
+
 /// Host glob allowlist for `kiri.fs.*` relative to the fs root. Empty would
 /// be root-only; the seed uses a safe read-only data scope.
 pub fn fs_glob_patterns() -> Vec<String> {
@@ -233,14 +240,24 @@ pub fn tray_items() -> Vec<kiri_core::tray::TrayItem> {
 }
 
 /// Host allowlist for `kiri.menu.*` (audit item 14 twin). Seed mirrors tray
-/// items so both hosts share one menu surface policy.
+/// items so both hosts share one menu surface policy, and carries the
+/// host-owned accelerator seed so the menu accelerator survives the twin
+/// collapse (this seed is exactly what main's local host_cross::menu_items
+/// used to hold before the twins moved here).
 pub fn menu_items() -> Vec<kiri_core::app_menu::MenuItem> {
     tray_items()
         .into_iter()
-        .map(|item| kiri_core::app_menu::MenuItem {
-            id: item.id,
-            label: item.label,
-            action: item.action,
+        .map(|item| {
+            let accelerator = match item.id.as_str() {
+                "quit" => Some("CmdOrCtrl+Q".to_string()),
+                _ => None,
+            };
+            kiri_core::app_menu::MenuItem {
+                id: item.id,
+                label: item.label,
+                action: item.action,
+                accelerator,
+            }
         })
         .collect()
 }

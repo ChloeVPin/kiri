@@ -32,14 +32,18 @@ use crate::limits::Limits;
 pub const MENU_CAPABILITY: u32 = 26;
 
 /// One host-approved menu item. The frontend references id only; it cannot
-/// supply or alter the label or the action. action is a bounded, host-defined
-/// identifier echoed back to the frontend when the item fires, so the frontend
-/// logic is data, not a free native menu built by untrusted code.
+/// supply or alter the label, the action, or the accelerator. action is a
+/// bounded, host-defined identifier echoed back to the frontend when the item
+/// fires, so the frontend logic is data, not a free native menu built by
+/// untrusted code. accelerator, when present, is a host-owned shortcut string
+/// in the native menu backend's syntax (for muda: `CmdOrCtrl+Q`); the native
+/// adapter parses it and fails closed on an invalid string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MenuItem {
     pub id: String,
     pub label: String,
     pub action: String,
+    pub accelerator: Option<String>,
 }
 
 /// Host-configured allowlist of menu items. Default-deny: an item is shown/
@@ -127,6 +131,9 @@ impl MenuService {
             })?;
             self.limits.check_bulk_object(item.label.len() as u64)?;
             self.limits.check_bulk_object(item.action.len() as u64)?;
+            if let Some(accelerator) = &item.accelerator {
+                self.limits.check_bulk_object(accelerator.len() as u64)?;
+            }
             resolved.push(item);
         }
         self.runner.set_menu(&resolved)?;
@@ -201,12 +208,12 @@ mod tests {
     use std::sync::Mutex;
 
     struct StubMenu {
-        menu: Mutex<Vec<String>>,
+        menu: Mutex<Vec<MenuItem>>,
         invoked: Mutex<Vec<MenuInvoked>>,
     }
     impl MenuRunner for StubMenu {
         fn set_menu(&self, items: &[MenuItem]) -> Result<()> {
-            *self.menu.lock().unwrap() = items.iter().map(|i| i.id.clone()).collect();
+            *self.menu.lock().unwrap() = items.to_vec();
             Ok(())
         }
         fn invoke(&self, id: &str, action: &str) -> Result<()> {
@@ -224,22 +231,26 @@ mod tests {
                 id: "new".to_string(),
                 label: "New Window".to_string(),
                 action: "new".to_string(),
+                accelerator: None,
             },
             MenuItem {
                 id: "quit".to_string(),
                 label: "Quit".to_string(),
                 action: "quit".to_string(),
+                accelerator: Some("CmdOrCtrl+Q".to_string()),
             },
         ])
     }
 
+    fn router_with_stub() -> (Router, Arc<StubMenu>) {
+        let stub =
+            Arc::new(StubMenu { menu: Mutex::new(Vec::new()), invoked: Mutex::new(Vec::new()) });
+        let svc = MenuService::new(stub.clone(), allow(), Limits::default());
+        (Router::new_with_limits(Limits::default()).with_menu(svc), stub)
+    }
+
     fn router() -> Router {
-        let svc = MenuService::new(
-            Arc::new(StubMenu { menu: Mutex::new(Vec::new()), invoked: Mutex::new(Vec::new()) }),
-            allow(),
-            Limits::default(),
-        );
-        Router::new_with_limits(Limits::default()).with_menu(svc)
+        router_with_stub().0
     }
 
     fn dispatch(router: &Router, id: u32, payload: Value) -> Value {
@@ -288,10 +299,36 @@ mod tests {
         let out = dispatch(
             &r,
             command_id::MENU_INVOKE,
-            serde_json::json!({ "id": "quit", "label": "EVIL", "action": "evil" }),
+            serde_json::json!({
+                "id": "quit",
+                "label": "EVIL",
+                "action": "evil",
+                "accelerator": "CmdOrCtrl+Shift+Delete"
+            }),
         );
         assert!(out["error"].is_null(), "unexpected error: {out}");
         assert_eq!(out["payload"]["action"], "quit");
+    }
+
+    #[test]
+    fn frontend_supplied_accelerator_is_ignored_host_allowlist_wins() {
+        let (r, stub) = router_with_stub();
+        let out = dispatch(
+            &r,
+            command_id::MENU_SET,
+            serde_json::json!({
+                "ids": ["new", "quit"],
+                "accelerator": "Ctrl+Alt+Delete",
+                "items": [{ "id": "new", "accelerator": "Ctrl+Alt+Delete" }]
+            }),
+        );
+        assert!(out["error"].is_null(), "unexpected error: {out}");
+        let applied = stub.menu.lock().unwrap();
+        assert_eq!(applied.len(), 2);
+        assert_eq!(applied[0].id, "new");
+        assert_eq!(applied[0].accelerator, None);
+        assert_eq!(applied[1].id, "quit");
+        assert_eq!(applied[1].accelerator.as_deref(), Some("CmdOrCtrl+Q"));
     }
 
     #[test]
