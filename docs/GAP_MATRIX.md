@@ -1,6 +1,6 @@
 # Kiri vs Tauri - Gap Matrix and Exceed Roadmap
 
-Last updated: 2026-08-19. Honest, evidence-tied list of what Tauri ships that
+Last updated: 2026-09-23. Honest, evidence-tied list of what Tauri ships that
 Kiri does not, ranked by winnability and value. Levels: A = Tauri/Kiri
 source or docs; B = maintained impl; D = inference.
 
@@ -23,23 +23,25 @@ source or docs; B = maintained impl; D = inference.
 | G-1 | Mobile (iOS/Android) | Absent (desktop only) | Hard / long |
 | G-2 | 50+ official plugins + ecosystem | ABI implemented (R-2) + host-owned external plugin loader + manifest wired into startup (default-deny JSON manifest + name->descriptor registry). Third-party plugins load only when host-approved by name and only expose allowlisted commands (fail-closed). Exceeds Tauri's plugin model (trusts any plugin on path) on the security axis. Ecosystem breadth (50+ plugins, catalogs) still absent. | Medium |
 | G-3 | Bundler + autoupdater | Signed-update verifier done; no packaging/signing (needs certs) | Medium / blocked on certs |
-| G-4 | tauri:// full protocol (range, mime, cache) | kiri:// mime+range+ETag+origin allowlist on Linux/macOS; Windows parity pending real hardware | Medium |
+| G-4 | tauri:// full protocol (range, mime, cache) | DONE on desktop hosts: `kiri://` mime+range+ETag+origin allowlist on Linux/macOS (`assets.rs` + async custom protocol); Windows serves the same app origin via WebView2 `WebResourceRequested` (`host_windows.rs` `handle_app_resource` → `serve_checked` / `serve_embedded`). | Medium |
 | G-5 | JS API breadth (cli, process) | DONE: kiri.cli.args (id 66) structured + allowlist-scoped, exceeds Tauri process.argv; process partially covered by shell/sidecar | Easy (cli) / Medium (process) |
 | G-9 | HTTP verbs beyond GET | DONE: kiri.http.post/put/patch/delete with body + method allowlist (exceeds Tauri) | Easy/Medium |
 | G-10 | fs watch | Native `notify` backend now wires `kiri.fs.watch/unwatch` (ids 67/68) to a host-allowlisted path inside PathScope on all desktop builds; event payloads retain only the approved target path and bounded event kind. | Medium |
 | G-11 | WebSocket / protocol upgrade | Native `tungstenite` worker transport supports bounded `ws://` and `wss://` connections; TLS uses native certificate roots, while exact URL authorization remains host-owned. The default seed allowlist contains only local `ws://` endpoints, so production `wss://` use requires an explicit signed host policy entry. | Medium |
-| G-12 | App menu (not just tray) | Command surface and host-owned allowlist are present, but native menu transport remains `service_unavailable` on current hosts. | Medium |
+| G-12 | App menu (not just tray) | DONE for ordinary host-owned items: `MenuDispatcher` + muda adapters wired on Linux/macOS/Windows event loops; `kiri.menu.set`/`invoke` (72/73) capability+allowlist gated; `examples/menu-smoke` hard-gates hosted correctness. Remaining: manual keyboard/screen-reader eye-test, plus submenus/checkboxes/radio/roles/icons/accelerators (each needs per-platform acceptance). See `docs/ARCHITECTURE_MENU.md`. | Medium |
 | G-13 | Updater JS binding | DONE: kiri.updater.check (id 61) wired backend + JS binding + tests (audit-18) | Easy |
 | G-7 | Docs, templates, community, brand | Early-stage, tiny | Process |
 
 ## Where Tauri is currently better (do not fake)
 
 - F-1 Asset loading maturity: Tauri embeds `frontendDist` assets at build time
-  and serves them through its asset resolver. Kiri's Linux/macOS `kiri://`
-  path retains runtime filesystem support, MIME/range/ETag/origin checks, and
-  now resolves asynchronously so disk reads do not block the WebView event
-  thread. Windows uses WebView2 folder mapping; embedded-asset parity remains
-  unimplemented.
+  and serves them through its asset resolver. Kiri packs a compile-time
+  frontend (`embed.rs` / `KIRI_EMBED_FRONTEND`) and serves MIME/range/ETag on
+  Linux/macOS over async `kiri://`; Windows serves the same packed bytes (or
+  `--frontend` disk root) through WebView2 `WebResourceRequested` without
+  requiring folder mapping for the embedded path. Remaining maturity gap is
+  mostly ergonomics and cache policy breadth vs Tauri's asset resolver, not
+  "Windows embed missing."
 - F-3 Ergonomics/examples: Tauri #[tauri::command] and plugin ecosystem are the
   de-facto standard with huge example coverage; Kiri numeric routing is
   auditable but has near-zero examples. Through-webview IPC vs invoke is now
@@ -55,13 +57,16 @@ source or docs; B = maintained impl; D = inference.
 5. ~~G-11 WebSocket~~ DONE for bounded `ws://` and `wss://` transport:
    `kiri.ws` remains host-allowlisted and uses native certificate roots for
    TLS; production `wss://` endpoints require an explicit host policy entry.
-6. G-12 App menu: host-owned command and allowlist exist, but native menu
-   rendering and activation transport remain open.
+6. ~~G-12 App menu transport~~ DONE for ordinary items (dispatcher + muda +
+   menu-smoke). Next: record manual eye-tests; then allowlisted submenus /
+   accelerators without letting JS invent labels/actions.
 7. G-3 Packaging - once signing certs exist, build MSI/dmg/AppImage and wire the
    signed-update verifier into release.
 8. G-1 Mobile - out of scope until desktop dominant; record as hypothesis.
-9. Windows T009 / through-webview IPC vs Tauri - macOS local release is recorded;
-   Windows is still unrun.
+9. T009 three-way scoreboard - Kiri/Tauri startup+IPC measured on hosted
+   macOS+Windows; Windows Wry/Tao startup remains soft-incomplete after warmup
+   timeout (see `COMPETITIVE_ANALYSIS.md` / Benchmark Honesty lane). Do not
+   invent substitute numbers.
 
 ## Honest bottom line
 
@@ -73,8 +78,9 @@ Developer docs (GETTING_STARTED.md, API_REFERENCE.md) and an interactive
 demo (examples/demo) now ship.
 
 Fastest path to exceed on every winnable dimension:
-All currently implemented desktop surface gaps (G-9, G-13, G-5, G-10, and
-bounded G-11) have headless or loopback evidence. G-12 native menu transport,
-G-3 OS signing/distribution, production `wss://` policy entries, ecosystem breadth, and G-1 mobile
-remain open.
-Mac and all preserve the security model.
+All currently implemented desktop surface gaps (G-9, G-13, G-5, G-10,
+bounded G-11, G-4 desktop protocol parity, and G-12 ordinary menu items) have
+headless, loopback, or hosted smoke evidence. Remaining open: G-12 menu depth +
+manual a11y eye-test, G-3 OS signing/distribution, production `wss://` policy
+entries, ecosystem breadth, G-1 mobile, and a stable Windows Wry/Tao leg for
+T009. Preserve the security model on every change.
