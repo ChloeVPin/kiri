@@ -165,6 +165,18 @@ jobs:
         continue-on-error: true
         run: ./target/release/kiri-host --frontend examples/blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-transport protocol_ring --ipc-bench-out artifacts/ipc-kiri-proto-ring.json
 
+      # protocol_inline is the answer-on-protocol-thread follow-up spike:
+      # same KRSL frames over the same kiri:// endpoints, but kiri.ping
+      # invokes are dispatched through the shared ZcIpcGate inside the wry
+      # protocol callback and answered without the parked-responder +
+      # event-loop hop. The artifact proves engagement via
+      # protocol_inline.answered_inline / .parked / .replies_fallback.
+      - name: Through-webview IPC (Kiri, protocol_inline)
+        if: runner.os == 'macOS'
+        timeout-minutes: 8
+        continue-on-error: true
+        run: ./target/release/kiri-host --frontend examples/blank --ipc-bench --ipc-bench-runs 20 --ipc-bench-transport protocol_inline --ipc-bench-out artifacts/ipc-kiri-proto-inline.json
+
       - name: Through-webview IPC (Tauri)
         if: runner.os == 'macOS'
         timeout-minutes: 8
@@ -193,10 +205,10 @@ jobs:
         shell: bash
         run: |
           failed=0
-          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json artifacts/ipc-kiri-proto-ring.json; do
+          for f in artifacts/ipc-kiri.json artifacts/ipc-tauri.json artifacts/ipc-kiri-ring.json artifacts/ipc-kiri-proto-ring.json artifacts/ipc-kiri-proto-inline.json; do
             if [ -f "$f" ]; then
               python3 benchmark/scoreboard_gate.py check "$f" || failed=1
-            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ] && [ "$f" != "artifacts/ipc-kiri-proto-ring.json" ]; then
+            elif [ "$f" != "artifacts/ipc-kiri-ring.json" ] && [ "$f" != "artifacts/ipc-kiri-proto-ring.json" ] && [ "$f" != "artifacts/ipc-kiri-proto-inline.json" ]; then
               echo "::warning::$f missing; no IPC artifact to validate"
             fi
           done
