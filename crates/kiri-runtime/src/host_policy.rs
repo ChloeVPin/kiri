@@ -16,6 +16,13 @@ pub fn http_allow_hosts() -> Vec<String> {
     vec!["api.example.com".to_string(), "127.0.0.1".to_string(), "localhost".to_string()]
 }
 
+/// Method allowlist for `kiri.http.*`. Seed is GET-only so a granted HTTP
+/// capability cannot escalate into POST/PUT/PATCH/DELETE without an explicit
+/// host opt-in (pass additional verbs via `HttpService::with_methods`).
+pub fn http_allow_methods() -> Vec<String> {
+    vec!["GET".to_string()]
+}
+
 /// Host glob allowlist for `kiri.fs.*` relative to the fs root. Empty would
 /// be root-only; the seed uses a safe read-only data scope.
 pub fn fs_glob_patterns() -> Vec<String> {
