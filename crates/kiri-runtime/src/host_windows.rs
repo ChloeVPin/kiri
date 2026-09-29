@@ -1020,7 +1020,9 @@ fn attach_windows_surface(
             let _ = std::fs::create_dir_all(&fs_scope.root);
             router.with_fs_service(
                 kiri_core::fs::FsService::new(fs_scope, kiri_core::limits::Limits::default())
-                    .with_glob(kiri_core::capabilities::GlobScope::new(crate::host_policy::fs_glob_patterns())),
+                    .with_glob(kiri_core::capabilities::GlobScope::new(
+                        crate::host_policy::fs_glob_patterns(),
+                    )),
             )
         }
         Surface::Window => router.with_window(
@@ -1053,7 +1055,9 @@ fn attach_windows_surface(
                 std::sync::Arc::new(
                     crate::notification_ctl::win_notify::WinNotificationRunner::new(),
                 ),
-                kiri_core::notification::NotificationAllowlist::new(crate::host_policy::notification_templates()),
+                kiri_core::notification::NotificationAllowlist::new(
+                    crate::host_policy::notification_templates(),
+                ),
                 kiri_core::limits::Limits::default(),
             ))
         }
@@ -1084,7 +1088,10 @@ fn attach_windows_surface(
         )),
         Surface::Opener => router.with_opener(kiri_core::opener::OpenerService::new(
             std::sync::Arc::new(crate::opener_ctl::win_opener::WinOpenerRunner::new()),
-            kiri_core::opener::OpenerAllowlist::new(crate::host_policy::opener_url_schemes(), crate::host_policy::opener_file_extensions()),
+            kiri_core::opener::OpenerAllowlist::new(
+                crate::host_policy::opener_url_schemes(),
+                crate::host_policy::opener_file_extensions(),
+            ),
             kiri_core::limits::Limits::default(),
         )),
         Surface::WindowState => {
