@@ -595,6 +595,8 @@ pub(crate) struct HostRuntime {
     pub shared_buffer_ok: u32,
     /// T008: replies over 64 KiB that fell back to JSON.
     pub shared_buffer_fallback: u32,
+    /// Bounded host admit gate for control-plane commands (Q-005 / D-008).
+    pub ipc_inbound: crate::ipc_inbound::InboundGate,
     /// Zero-copy spike: the reusable shared slot arena, present only when the
     /// `ring_zerocopy` bench transport was requested and posting succeeded.
     pub ring: Option<RingState>,
@@ -1212,6 +1214,7 @@ unsafe fn run_host_inner(options: &HostOptions) -> Result<StartupMarkers, String
         exit_code: 0,
         shared_buffer_ok: 0,
         shared_buffer_fallback: 0,
+        ipc_inbound: crate::ipc_inbound::InboundGate::new(),
         ring: None,
         ring_ok: 0,
         ring_fallback: 0,
@@ -1362,6 +1365,18 @@ fn handle_web_message(
     if let Some(req_val) = value.get("request") {
         match serde_json::from_value::<WireRequest>(req_val.clone()) {
             Ok(request) => {
+                // Host-owned admit gate: at most IN_FLIGHT_CAPACITY
+                // dispatches run at once; beyond that the request is answered
+                // with `busy`. The permit frees its slot on drop, so panic
+                // paths cannot leak capacity.
+                let _permit = match rt.ipc_inbound.try_admit() {
+                    Ok(permit) => permit,
+                    Err(error) => {
+                        let err = WireResponse::err(request.request_id, error);
+                        let _ = post_wire_response(&rt.env, &rt.webview, &err, None, rt.caller, 0);
+                        return;
+                    }
+                };
                 let gated = rt.dispatch_cmd(&request);
                 rt.diagnostics.set_open_resources(rt.resources.lock().unwrap().len() as u32);
                 let used = post_wire_response(

@@ -125,5 +125,12 @@ Records of architectural decisions. Evidence levels per corpus AGENTS.md.
 
 - D-007 (closed): WebView2 runtime availability on `windows-latest` was
   verified by native smoke and stress runs, including the shared-buffer path.
-- D-008 (open): backpressure policy for the IPC bridge (T006) - recorded in
-  `OPEN_QUESTIONS.md`.
+- D-008 (implementation landed, measurement open): backpressure policy for
+  the IPC bridge (T006). The host-owned admit gate
+  (`kiri_runtime::ipc_inbound::InboundGate`, capacity 32, `busy` wire error
+  on saturation, RAII permit) now bounds webview -> host command dispatch on
+  both backends. The bound is host-owned in-flight capacity: WebView2
+  `WebMessageReceived` arrives on the UI thread via the COM message pump and
+  its internal queue depth is not observable, so no claim is made about
+  Chromium's queue. A measured stress result remains open in
+  `OPEN_QUESTIONS.md` Q-005.
