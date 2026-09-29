@@ -181,6 +181,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        target_os = "macos",
+        ignore = "muda macOS Submenu must be built on the process main thread; \
+                  the macOS native menu smoke job in correctness.yml covers this path"
+    )]
     fn set_items_accepts_host_accelerator() {
         let mut menu = NativeMenu::new();
         menu.set_items(&[item("quit", Some("CmdOrCtrl+Q")), item("show", None)]).unwrap();
